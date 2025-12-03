@@ -7,11 +7,13 @@ from finsim.config import get_settings
 from finsim.models import (
     AnnuityComparison,
     AnnuityComparisonResult,
+    MortalityRates,
     SavedSimulation,
     SimulationInput,
     SimulationResult,
 )
 from finsim.simulation import MonteCarloSimulator, compare_to_annuity
+from finsim.mortality import get_mortality_rates, calculate_survival_curve
 from finsim.supabase_client import (
     delete_simulation,
     get_user_simulations,
@@ -78,6 +80,24 @@ async def run_simulation(params: SimulationInput):
     return simulator.run()
 
 
+@app.get("/mortality/{gender}", response_model=MortalityRates)
+async def get_mortality(gender: str, start_age: int = 65, end_age: int = 100):
+    """
+    Get mortality rates and survival curve for a given gender.
+
+    Returns annual mortality rates and cumulative survival probability.
+    """
+    if gender not in ["male", "female"]:
+        raise HTTPException(status_code=400, detail="Gender must be 'male' or 'female'")
+
+    mortality_rates = get_mortality_rates(gender)
+    ages = list(range(start_age, end_age + 1))
+    rates = [mortality_rates.get(age, mortality_rates[max(k for k in mortality_rates if k <= age)]) for age in ages]
+    survival = calculate_survival_curve(start_age, end_age + 1, gender)
+
+    return MortalityRates(ages=ages, rates=rates, survival_curve=survival)
+
+
 @app.post("/compare-annuity", response_model=AnnuityComparisonResult)
 async def compare_annuity_endpoint(comparison: AnnuityComparison):
     """
@@ -88,11 +108,12 @@ async def compare_annuity_endpoint(comparison: AnnuityComparison):
     simulator = MonteCarloSimulator(comparison.simulation_input)
     sim_result = simulator.run()
 
+    n_years = comparison.simulation_input.max_age - comparison.simulation_input.current_age
     annuity_comparison = compare_to_annuity(
         simulation_result=sim_result,
         annuity_monthly_payment=comparison.annuity_monthly_payment,
         annuity_guarantee_years=comparison.annuity_guarantee_years,
-        n_years=comparison.simulation_input.n_years,
+        n_years=n_years,
     )
 
     return AnnuityComparisonResult(
