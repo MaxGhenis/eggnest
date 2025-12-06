@@ -10,7 +10,7 @@ export function HomePage() {
       <section className="hero">
         <nav className="nav">
           <a href="/" className="logo">
-            <img src="/logo.svg" alt="FinSim" height="32" />
+            <img src="/logo.svg" alt="EggNest" height="32" />
           </a>
           <div className="nav-links">
             <a href="#features">Features</a>
@@ -64,20 +64,20 @@ export function HomePage() {
               {/* Outer confidence band (5th-95th) */}
               <path
                 d="M 50 100 Q 120 90, 200 60 T 395 25 L 395 195 Q 280 180, 200 170 T 50 140 Z"
-                fill="rgba(99, 102, 241, 0.1)"
+                fill="rgba(217, 119, 6, 0.1)"
               />
 
               {/* Inner confidence band (25th-75th) */}
               <path
                 d="M 50 115 Q 120 105, 200 80 T 395 50 L 395 175 Q 280 165, 200 155 T 50 130 Z"
-                fill="rgba(99, 102, 241, 0.15)"
+                fill="rgba(217, 119, 6, 0.15)"
               />
 
               {/* Median line */}
               <path
                 d="M 50 120 Q 150 110, 250 100 T 395 95"
                 fill="none"
-                stroke="#6366f1"
+                stroke="#d97706"
                 strokeWidth="3"
                 strokeLinecap="round"
               />
@@ -85,20 +85,20 @@ export function HomePage() {
               {/* Legend */}
               <g transform="translate(260, 50)">
                 <rect x="0" y="0" width="130" height="70" fill="white" rx="4" opacity="0.9" />
-                <rect x="10" y="12" width="20" height="3" fill="#6366f1" />
+                <rect x="10" y="12" width="20" height="3" fill="#d97706" />
                 <text x="35" y="16" fontSize="10" fill="#374151">Median outcome</text>
-                <rect x="10" y="30" width="20" height="8" fill="rgba(99, 102, 241, 0.25)" />
+                <rect x="10" y="30" width="20" height="8" fill="rgba(217, 119, 6, 0.25)" />
                 <text x="35" y="36" fontSize="10" fill="#374151">Likely range</text>
-                <rect x="10" y="48" width="20" height="8" fill="rgba(99, 102, 241, 0.1)" />
+                <rect x="10" y="48" width="20" height="8" fill="rgba(217, 119, 6, 0.1)" />
                 <text x="35" y="54" fontSize="10" fill="#374151">Possible range</text>
               </g>
 
               {/* Annotation arrow pointing to fan */}
-              <text x="85" y="55" fontSize="10" fill="#6366f1" fontWeight="500">10,000 simulations</text>
-              <path d="M 130 60 L 150 80" stroke="#6366f1" strokeWidth="1" fill="none" markerEnd="url(#arrowhead)" />
+              <text x="85" y="55" fontSize="10" fill="#d97706" fontWeight="500">10,000 simulations</text>
+              <path d="M 130 60 L 150 80" stroke="#d97706" strokeWidth="1" fill="none" markerEnd="url(#arrowhead)" />
             </svg>
             <p className="chart-caption">
-              See the full range of possible outcomes—not just one rosy projection.
+              Each line is a possible future. Which one will be yours?
             </p>
           </div>
         </div>
@@ -106,25 +106,24 @@ export function HomePage() {
 
       {/* Problem */}
       <section className="problem" id="why">
-        <h2>The 4% rule is a guess.</h2>
+        <h2>Averages hide the risk.</h2>
         <p>
-          Most retirement calculators use averages. But markets don't move in
-          averages—they crash, they boom, they surprise. A single "expected
-          return" hides the range of outcomes that could make or break your
-          retirement.
+          Most retirement calculators show one number: your "expected" outcome.
+          But markets don't move in averages—they crash, they boom, they surprise.
+          A single projection hides the range of outcomes that could make or break
+          your retirement.
         </p>
         <div className="problem-stats">
           <div className="stat">
-            <span className="stat-value">30%</span>
+            <span className="stat-value">2x</span>
             <span className="stat-label">
-              of retirees following the 4% rule run out of money in bad
-              sequences
+              difference between good and bad market sequences with identical average returns
             </span>
           </div>
           <div className="stat">
-            <span className="stat-value">$200K+</span>
+            <span className="stat-value">$400K+</span>
             <span className="stat-label">
-              difference between 25th and 75th percentile outcomes
+              gap between 25th and 75th percentile outcomes on a $1M portfolio
             </span>
           </div>
         </div>
@@ -184,7 +183,7 @@ export function HomePage() {
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
             </div>
-            <h3>Plan Together</h3>
+            <h3>Couples Planning</h3>
             <p>
               Retiring with a partner? Model both of you—different ages, incomes,
               and Social Security benefits.
@@ -254,10 +253,10 @@ export function HomePage() {
 
       {/* CTA */}
       <section className="cta">
-        <h2>Stop guessing. Start simulating.</h2>
-        <p>Free to use. No account required.</p>
+        <h2>See your odds. Make better decisions.</h2>
+        <p>Free to use. No account required. Results in 30 seconds.</p>
         <a href={APP_URL} className="btn-primary btn-large">
-          Launch the Simulator
+          Run Your Simulation
         </a>
       </section>
 
@@ -283,13 +282,13 @@ export function HomePage() {
         </div>
         <div className="footer-bottom">
           <p>
-            Tax calculations powered by{" "}
+            © {new Date().getFullYear()} EggNest. Tax calculations powered by{" "}
             <a href="https://policyengine.org" target="_blank" rel="noopener">
               PolicyEngine
             </a>
           </p>
           <p className="disclaimer">
-            EggNest provides educational projections only. This is not financial
+            EggNest provides educational projections only and is not financial
             advice. Consult a qualified financial advisor for personalized
             recommendations.
           </p>

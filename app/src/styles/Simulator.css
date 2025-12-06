@@ -1,17 +1,18 @@
 /* Simulator page styles */
 
 .simulator {
-  --primary: #6366f1;
-  --primary-dark: #4f46e5;
-  --primary-light: #818cf8;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --text: #1f2937;
-  --text-muted: #6b7280;
-  --bg: #ffffff;
-  --bg-alt: #f9fafb;
-  --border: #e5e7eb;
+  /* Uses design tokens from design-tokens.css */
+  --primary: var(--color-primary);
+  --primary-dark: var(--color-primary-dark);
+  --primary-light: var(--color-primary-light);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --danger: var(--color-danger);
+  --text: var(--color-text);
+  --text-muted: var(--color-text-muted);
+  --bg: var(--color-bg);
+  --bg-alt: var(--color-bg-alt);
+  --border: var(--color-border);
 
   min-height: 100vh;
   background: var(--bg-alt);
@@ -122,7 +123,7 @@
 .input-group select:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
 }
 
 .input-group input[type="number"] {
@@ -167,7 +168,7 @@
 .input-with-prefix:focus-within,
 .input-with-suffix:focus-within {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
 }
 
 .input-with-prefix span,
@@ -429,7 +430,7 @@
 }
 
 .summary-table tr.highlight {
-  background: #fafaff;
+  background: #fffbeb;
 }
 
 .summary-table tr.highlight td {
@@ -493,7 +494,7 @@
 }
 
 .comparison-card.highlight {
-  background: #fafaff;
+  background: #fffbeb;
   border: 1px solid var(--primary);
 }
 

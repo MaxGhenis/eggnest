@@ -1,17 +1,19 @@
+/* Uses design tokens from design-tokens.css imported in index.css */
 :root {
-  --primary: #4f46e5;
-  --primary-light: #818cf8;
-  --primary-dark: #3730a3;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --gray-50: #f9fafb;
-  --gray-100: #f3f4f6;
-  --gray-200: #e5e7eb;
-  --gray-300: #d1d5db;
-  --gray-500: #6b7280;
-  --gray-700: #374151;
-  --gray-900: #111827;
+  /* Legacy aliases - migrate to --color-* over time */
+  --primary: var(--color-primary);
+  --primary-light: var(--color-primary-light);
+  --primary-dark: var(--color-primary-dark);
+  --success: var(--color-success);
+  --warning: var(--color-warning);
+  --danger: var(--color-danger);
+  --gray-50: var(--color-gray-50);
+  --gray-100: var(--color-gray-100);
+  --gray-200: var(--color-gray-200);
+  --gray-300: var(--color-gray-300);
+  --gray-500: var(--color-gray-500);
+  --gray-700: var(--color-gray-700);
+  --gray-900: var(--color-gray-900);
 }
 
 * {
@@ -114,7 +116,7 @@ body {
 .form-group select:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
 }
 
 .input-with-prefix,

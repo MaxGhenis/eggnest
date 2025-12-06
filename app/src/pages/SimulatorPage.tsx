@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Plot from "react-plotly.js";
 import { runSimulation, compareAnnuity, type SimulationInput, type SimulationResult, type SpouseInput, type AnnuityInput } from "../lib/api";
+import { colors, chartColors } from "../lib/design-tokens";
 import "../styles/Simulator.css";
 
 // In production, this is eggnest.co
@@ -569,7 +570,7 @@ export function SimulatorPage() {
                       y: result.percentile_paths.p95,
                       type: "scatter",
                       mode: "lines",
-                      line: { color: "rgba(99, 102, 241, 0.2)", width: 0 },
+                      line: { color: "rgba(217, 119, 6, 0.2)", width: 0 },
                       showlegend: false,
                       hoverinfo: "skip",
                     },
@@ -579,8 +580,8 @@ export function SimulatorPage() {
                       type: "scatter",
                       mode: "lines",
                       fill: "tonexty",
-                      fillcolor: "rgba(99, 102, 241, 0.1)",
-                      line: { color: "rgba(99, 102, 241, 0.2)", width: 0 },
+                      fillcolor: "rgba(217, 119, 6, 0.1)",
+                      line: { color: "rgba(217, 119, 6, 0.2)", width: 0 },
                       name: "5th-95th percentile",
                     },
                     // 25th-75th percentile band
@@ -589,7 +590,7 @@ export function SimulatorPage() {
                       y: result.percentile_paths.p75,
                       type: "scatter",
                       mode: "lines",
-                      line: { color: "rgba(99, 102, 241, 0.3)", width: 1 },
+                      line: { color: "rgba(217, 119, 6, 0.3)", width: 1 },
                       showlegend: false,
                       hoverinfo: "skip",
                     },
@@ -599,8 +600,8 @@ export function SimulatorPage() {
                       type: "scatter",
                       mode: "lines",
                       fill: "tonexty",
-                      fillcolor: "rgba(99, 102, 241, 0.15)",
-                      line: { color: "rgba(99, 102, 241, 0.3)", width: 1 },
+                      fillcolor: "rgba(217, 119, 6, 0.15)",
+                      line: { color: "rgba(217, 119, 6, 0.3)", width: 1 },
                       name: "25th-75th percentile",
                     },
                     // Median
@@ -609,7 +610,7 @@ export function SimulatorPage() {
                       y: result.percentile_paths.p50,
                       type: "scatter",
                       mode: "lines",
-                      line: { color: "#6366f1", width: 3 },
+                      line: { color: chartColors.primary, width: 3 },
                       name: "Median",
                     },
                   ]}
@@ -619,11 +620,11 @@ export function SimulatorPage() {
                     margin: { l: 80, r: 40, t: 20, b: 60 },
                     xaxis: {
                       title: { text: "Age" },
-                      gridcolor: "#e5e7eb",
+                      gridcolor: colors.gray200,
                     },
                     yaxis: {
                       title: { text: "Portfolio Value" },
-                      gridcolor: "#e5e7eb",
+                      gridcolor: colors.gray200,
                       tickformat: "$,.0f",
                     },
                     legend: {

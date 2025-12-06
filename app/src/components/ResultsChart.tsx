@@ -61,7 +61,7 @@ export function ResultsChart({ result }: ResultsChartProps) {
             type="monotone"
             dataKey="p95"
             stroke="none"
-            fill="#e0e7ff"
+            fill="#fef3c7"
             name="95th percentile"
           />
           <Area
@@ -76,7 +76,7 @@ export function ResultsChart({ result }: ResultsChartProps) {
           <Line
             type="monotone"
             dataKey="p75"
-            stroke="#818cf8"
+            stroke="#f59e0b"
             strokeWidth={1}
             dot={false}
             name="75th percentile"
@@ -84,7 +84,7 @@ export function ResultsChart({ result }: ResultsChartProps) {
           <Line
             type="monotone"
             dataKey="p25"
-            stroke="#818cf8"
+            stroke="#f59e0b"
             strokeWidth={1}
             dot={false}
             name="25th percentile"
@@ -94,7 +94,7 @@ export function ResultsChart({ result }: ResultsChartProps) {
           <Line
             type="monotone"
             dataKey="p50"
-            stroke="#4f46e5"
+            stroke="#d97706"
             strokeWidth={3}
             dot={false}
             name="Median"

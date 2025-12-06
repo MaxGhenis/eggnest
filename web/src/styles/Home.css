@@ -1,14 +1,15 @@
 /* Home page styles */
 
 .home {
-  --primary: #6366f1;
-  --primary-dark: #4f46e5;
-  --primary-light: #818cf8;
-  --text: #1f2937;
-  --text-muted: #6b7280;
-  --bg: #ffffff;
-  --bg-alt: #f9fafb;
-  --border: #e5e7eb;
+  /* Uses design tokens from design-tokens.css */
+  --primary: var(--color-primary);
+  --primary-dark: var(--color-primary-dark);
+  --primary-light: var(--color-primary-light);
+  --text: var(--color-text);
+  --text-muted: var(--color-text-muted);
+  --bg: var(--color-bg);
+  --bg-alt: var(--color-bg-alt);
+  --border: var(--color-border);
 
   width: 100%;
   min-height: 100vh;
@@ -62,7 +63,7 @@
 /* Hero */
 .hero {
   min-height: 90vh;
-  background: linear-gradient(135deg, #f0f1ff 0%, #ffffff 50%, #f0fdf4 100%);
+  background: linear-gradient(135deg, #fffbeb 0%, #ffffff 50%, #fef3c7 100%);
 }
 
 .hero-content {
@@ -127,7 +128,7 @@
 
 .btn-secondary:hover {
   border-color: var(--primary);
-  background: #fafaff;
+  background: #fffbeb;
 }
 
 .btn-large {
@@ -272,7 +273,7 @@
 .feature-icon {
   width: 48px;
   height: 48px;
-  background: #eef2ff;
+  background: #fef3c7;
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -386,7 +387,7 @@
 }
 
 .cta .btn-primary:hover {
-  background: #f0f0ff;
+  background: #fef3c7;
 }
 
 /* Footer */

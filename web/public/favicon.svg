@@ -1,6 +1,7 @@
+<!-- Color from shared/design-tokens.ts: colors.primary (#d97706) -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <!-- Egg shape -->
-  <ellipse cx="16" cy="17" rx="11" ry="13" fill="#6366f1"/>
+  <ellipse cx="16" cy="17" rx="11" ry="13" fill="#d97706"/>
 
   <!-- Monte Carlo paths emanating from egg (nest of possibilities) -->
   <!-- Light band (outer range) -->
