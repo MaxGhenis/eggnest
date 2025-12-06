@@ -1,5 +1,7 @@
-import { Link } from "react-router-dom";
 import "../styles/Home.css";
+
+// In production, this is app.eggnest.co
+const APP_URL = import.meta.env.PROD ? "https://app.eggnest.co" : "http://localhost:5174";
 
 export function HomePage() {
   return (
@@ -7,13 +9,15 @@ export function HomePage() {
       {/* Hero */}
       <section className="hero">
         <nav className="nav">
-          <div className="logo">FinSim</div>
+          <a href="/" className="logo">
+            <img src="/logo.svg" alt="FinSim" height="32" />
+          </a>
           <div className="nav-links">
             <a href="#features">Features</a>
             <a href="#how-it-works">How It Works</a>
-            <Link to="/app" className="nav-cta">
+            <a href={APP_URL} className="nav-cta">
               Launch App
-            </Link>
+            </a>
           </div>
         </nav>
 
@@ -28,9 +32,9 @@ export function HomePage() {
             futures for your retirement—not just the rosy average.
           </p>
           <div className="hero-cta">
-            <Link to="/app" className="btn-primary">
+            <a href={APP_URL} className="btn-primary">
               Try the Simulator
-            </Link>
+            </a>
             <a href="#how-it-works" className="btn-secondary">
               See How It Works
             </a>
@@ -39,41 +43,63 @@ export function HomePage() {
 
         <div className="hero-visual">
           <div className="chart-preview">
-            <svg viewBox="0 0 400 200" className="preview-chart">
-              {/* Confidence band */}
+            <svg viewBox="0 0 420 240" className="preview-chart">
+              {/* Y-axis */}
+              <line x1="50" y1="20" x2="50" y2="200" stroke="#e5e7eb" strokeWidth="1" />
+              {/* X-axis */}
+              <line x1="50" y1="200" x2="400" y2="200" stroke="#e5e7eb" strokeWidth="1" />
+
+              {/* Y-axis label */}
+              <text x="15" y="110" fontSize="11" fill="#6b7280" transform="rotate(-90, 15, 110)">Portfolio Value</text>
+
+              {/* X-axis label */}
+              <text x="225" y="230" fontSize="11" fill="#6b7280" textAnchor="middle">Years in Retirement</text>
+
+              {/* X-axis ticks */}
+              <text x="50" y="215" fontSize="10" fill="#9ca3af" textAnchor="middle">0</text>
+              <text x="165" y="215" fontSize="10" fill="#9ca3af" textAnchor="middle">10</text>
+              <text x="280" y="215" fontSize="10" fill="#9ca3af" textAnchor="middle">20</text>
+              <text x="395" y="215" fontSize="10" fill="#9ca3af" textAnchor="middle">30</text>
+
+              {/* Outer confidence band (5th-95th) */}
               <path
-                d="M 20 150 Q 100 140, 200 100 T 380 40 L 380 180 Q 200 160, 100 170 T 20 180 Z"
+                d="M 50 100 Q 120 90, 200 60 T 395 25 L 395 195 Q 280 180, 200 170 T 50 140 Z"
                 fill="rgba(99, 102, 241, 0.1)"
               />
+
+              {/* Inner confidence band (25th-75th) */}
+              <path
+                d="M 50 115 Q 120 105, 200 80 T 395 50 L 395 175 Q 280 165, 200 155 T 50 130 Z"
+                fill="rgba(99, 102, 241, 0.15)"
+              />
+
               {/* Median line */}
               <path
-                d="M 20 160 Q 100 150, 200 120 T 380 80"
+                d="M 50 120 Q 150 110, 250 100 T 395 95"
                 fill="none"
                 stroke="#6366f1"
                 strokeWidth="3"
+                strokeLinecap="round"
               />
-              {/* Upper bound */}
-              <path
-                d="M 20 150 Q 100 140, 200 100 T 380 40"
-                fill="none"
-                stroke="#6366f1"
-                strokeWidth="1"
-                opacity="0.5"
-              />
-              {/* Lower bound */}
-              <path
-                d="M 20 170 Q 100 165, 200 150 T 380 140"
-                fill="none"
-                stroke="#6366f1"
-                strokeWidth="1"
-                opacity="0.5"
-              />
+
+              {/* Legend */}
+              <g transform="translate(260, 50)">
+                <rect x="0" y="0" width="130" height="70" fill="white" rx="4" opacity="0.9" />
+                <rect x="10" y="12" width="20" height="3" fill="#6366f1" />
+                <text x="35" y="16" fontSize="10" fill="#374151">Median outcome</text>
+                <rect x="10" y="30" width="20" height="8" fill="rgba(99, 102, 241, 0.25)" />
+                <text x="35" y="36" fontSize="10" fill="#374151">Likely range</text>
+                <rect x="10" y="48" width="20" height="8" fill="rgba(99, 102, 241, 0.1)" />
+                <text x="35" y="54" fontSize="10" fill="#374151">Possible range</text>
+              </g>
+
+              {/* Annotation arrow pointing to fan */}
+              <text x="85" y="55" fontSize="10" fill="#6366f1" fontWeight="500">10,000 simulations</text>
+              <path d="M 130 60 L 150 80" stroke="#6366f1" strokeWidth="1" fill="none" markerEnd="url(#arrowhead)" />
             </svg>
-            <div className="chart-labels">
-              <span className="label-good">95th percentile</span>
-              <span className="label-median">Median outcome</span>
-              <span className="label-bad">5th percentile</span>
-            </div>
+            <p className="chart-caption">
+              See the full range of possible outcomes—not just one rosy projection.
+            </p>
           </div>
         </div>
       </section>
@@ -106,7 +132,7 @@ export function HomePage() {
 
       {/* Features */}
       <section className="features" id="features">
-        <h2>What makes FinSim different</h2>
+        <h2>What makes EggNest different</h2>
         <div className="feature-grid">
           <div className="feature-card">
             <div className="feature-icon">
@@ -158,10 +184,10 @@ export function HomePage() {
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
             </div>
-            <h3>Joint Planning</h3>
+            <h3>Plan Together</h3>
             <p>
-              Model couples with different ages, incomes, and Social Security.
-              See what happens when one spouse passes.
+              Retiring with a partner? Model both of you—different ages, incomes,
+              and Social Security benefits.
             </p>
           </div>
 
@@ -230,28 +256,28 @@ export function HomePage() {
       <section className="cta">
         <h2>Stop guessing. Start simulating.</h2>
         <p>Free to use. No account required.</p>
-        <Link to="/app" className="btn-primary btn-large">
+        <a href={APP_URL} className="btn-primary btn-large">
           Launch the Simulator
-        </Link>
+        </a>
       </section>
 
       {/* Footer */}
       <footer className="footer">
         <div className="footer-content">
           <div className="footer-brand">
-            <div className="logo">FinSim</div>
-            <p>Monte Carlo retirement planning with real tax calculations.</p>
+            <div className="logo">EggNest</div>
+            <p>Monte Carlo financial planning with real tax calculations.</p>
           </div>
           <div className="footer-links">
             <div className="footer-col">
               <h4>Product</h4>
-              <Link to="/app">Simulator</Link>
+              <a href={APP_URL}>Simulator</a>
               <a href="#features">Features</a>
               <a href="#how-it-works">How It Works</a>
             </div>
             <div className="footer-col">
               <h4>Company</h4>
-              <a href="mailto:hello@finsim.app">Contact</a>
+              <a href="mailto:hello@eggnest.co">Contact</a>
             </div>
           </div>
         </div>
@@ -263,7 +289,7 @@ export function HomePage() {
             </a>
           </p>
           <p className="disclaimer">
-            FinSim provides educational projections only. This is not financial
+            EggNest provides educational projections only. This is not financial
             advice. Consult a qualified financial advisor for personalized
             recommendations.
           </p>

@@ -1,10 +1,10 @@
-"""FinSim API - Main FastAPI application."""
+"""EggNest API - Main FastAPI application."""
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from finsim.config import get_settings
-from finsim.models import (
+from eggnest.config import get_settings
+from eggnest.models import (
     AnnuityComparison,
     AnnuityComparisonResult,
     MortalityRates,
@@ -12,9 +12,9 @@ from finsim.models import (
     SimulationInput,
     SimulationResult,
 )
-from finsim.simulation import MonteCarloSimulator, compare_to_annuity
-from finsim.mortality import get_mortality_rates, calculate_survival_curve
-from finsim.supabase_client import (
+from eggnest.simulation import MonteCarloSimulator, compare_to_annuity
+from eggnest.mortality import get_mortality_rates, calculate_survival_curve
+from eggnest.supabase_client import (
     delete_simulation,
     get_user_simulations,
     save_simulation,
@@ -22,8 +22,8 @@ from finsim.supabase_client import (
 )
 
 app = FastAPI(
-    title="FinSim API",
-    description="Retirement and financial planning simulation API",
+    title="EggNest API",
+    description="Monte Carlo financial planning simulation API",
     version="0.1.0",
 )
 

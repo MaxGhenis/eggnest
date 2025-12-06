@@ -9,6 +9,9 @@
   --bg: #ffffff;
   --bg-alt: #f9fafb;
   --border: #e5e7eb;
+
+  width: 100%;
+  min-height: 100vh;
 }
 
 /* Nav */
@@ -150,17 +153,12 @@
   height: auto;
 }
 
-.chart-labels {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 1rem;
-  font-size: 0.75rem;
+.chart-caption {
+  text-align: center;
+  font-size: 0.9rem;
   color: var(--text-muted);
+  margin: 1rem 0 0;
 }
-
-.label-good { color: #10b981; }
-.label-median { color: var(--primary); font-weight: 600; }
-.label-bad { color: #f59e0b; }
 
 @media (max-width: 900px) {
   .hero-content {

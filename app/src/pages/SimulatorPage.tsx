@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import Plot from "react-plotly.js";
 import { runSimulation, compareAnnuity, type SimulationInput, type SimulationResult, type SpouseInput, type AnnuityInput } from "../lib/api";
 import "../styles/Simulator.css";
+
+// In production, this is eggnest.co
+const HOME_URL = import.meta.env.PROD ? "https://eggnest.co" : "http://localhost:5173";
 
 const US_STATES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
@@ -137,9 +139,9 @@ export function SimulatorPage() {
     <div className="simulator">
       {/* Header */}
       <header className="sim-header">
-        <Link to="/" className="sim-logo">
-          FinSim
-        </Link>
+        <a href={HOME_URL} className="sim-logo">
+          <img src="/logo.svg" alt="FinSim" height="28" />
+        </a>
         <span className="sim-title">Retirement Simulator</span>
       </header>
 
@@ -311,8 +313,7 @@ export function SimulatorPage() {
                   type="checkbox"
                   checked={params.has_spouse}
                   onChange={(e) => updateParam("has_spouse", e.target.checked)}
-                  style={{ marginRight: "0.5rem" }}
-                />
+                                  />
                 Include Spouse
               </label>
             </div>
@@ -379,8 +380,7 @@ export function SimulatorPage() {
                   type="checkbox"
                   checked={params.has_annuity}
                   onChange={(e) => updateParam("has_annuity", e.target.checked)}
-                  style={{ marginRight: "0.5rem" }}
-                />
+                                  />
                 Compare to Annuity
               </label>
               <span className="input-hint">
@@ -437,8 +437,7 @@ export function SimulatorPage() {
                   type="checkbox"
                   checked={params.include_mortality}
                   onChange={(e) => updateParam("include_mortality", e.target.checked)}
-                  style={{ marginRight: "0.5rem" }}
-                />
+                                  />
                 Include Mortality Risk
               </label>
               <span className="input-hint">
