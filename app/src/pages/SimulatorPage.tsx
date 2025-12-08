@@ -1,18 +1,30 @@
 import { useState } from "react";
 import Plot from "react-plotly.js";
-import { runSimulation, compareAnnuity, type SimulationInput, type SimulationResult, type SpouseInput, type AnnuityInput } from "../lib/api";
+import { Wizard, type WizardStep } from "../components/Wizard";
+import { SimulationProgress } from "../components/SimulationProgress";
+import {
+  runSimulationWithProgress,
+  compareAnnuity,
+  type SimulationInput,
+  type SimulationResult,
+  type SpouseInput,
+  type AnnuityInput,
+} from "../lib/api";
 import { colors, chartColors } from "../lib/design-tokens";
 import "../styles/Simulator.css";
+import "../styles/Wizard.css";
 
 // In production, this is eggnest.co
-const HOME_URL = import.meta.env.PROD ? "https://eggnest.co" : "http://localhost:5173";
+const HOME_URL = import.meta.env.PROD
+  ? "https://eggnest.co"
+  : "http://localhost:5173";
 
 const US_STATES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
   "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
   "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
   "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
-  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC"
+  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
 ];
 
 const DEFAULT_PARAMS: SimulationInput = {
@@ -51,7 +63,6 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-// Annuity comparison result type
 interface AnnuityComparisonResult {
   simulation_result: SimulationResult;
   annuity_total_guaranteed: number;
@@ -63,9 +74,12 @@ interface AnnuityComparisonResult {
 export function SimulatorPage() {
   const [params, setParams] = useState<SimulationInput>(DEFAULT_PARAMS);
   const [result, setResult] = useState<SimulationResult | null>(null);
-  const [annuityResult, setAnnuityResult] = useState<AnnuityComparisonResult | null>(null);
+  const [annuityResult, setAnnuityResult] =
+    useState<AnnuityComparisonResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showWizard, setShowWizard] = useState(true);
+  const [progress, setProgress] = useState({ currentYear: 0, totalYears: 0 });
 
   // Spouse state
   const [spouse, setSpouse] = useState<SpouseInput>({
@@ -96,17 +110,17 @@ export function SimulatorPage() {
     setIsLoading(true);
     setError(null);
     setAnnuityResult(null);
+    setProgress({ currentYear: 0, totalYears: params.max_age - params.current_age });
 
     try {
-      // Build full params with spouse and annuity
       const fullParams: SimulationInput = {
         ...params,
         spouse: params.has_spouse ? spouse : undefined,
         annuity: params.has_annuity ? annuity : undefined,
       };
 
-      // If comparing to annuity, use the compare endpoint
       if (params.has_annuity && annuity.monthly_payment > 0) {
+        // Annuity comparison doesn't support streaming yet, use regular API
         const comparison = await compareAnnuity(
           fullParams,
           annuity.monthly_payment,
@@ -115,9 +129,16 @@ export function SimulatorPage() {
         setResult(comparison.simulation_result);
         setAnnuityResult(comparison);
       } else {
-        const simResult = await runSimulation(fullParams);
-        setResult(simResult);
+        // Use streaming API with progress updates
+        for await (const event of runSimulationWithProgress(fullParams)) {
+          if (event.type === "progress") {
+            setProgress({ currentYear: event.year, totalYears: event.total_years });
+          } else if (event.type === "complete") {
+            setResult(event.result);
+          }
+        }
       }
+      setShowWizard(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Simulation failed");
       setResult(null);
@@ -133,635 +154,778 @@ export function SimulatorPage() {
         ? "#f59e0b"
         : "#ef4444";
 
-  // Calculate ages for x-axis
-  const ages = result ? result.percentile_paths.p50.map((_, i) => params.current_age + i) : [];
+  const ages = result
+    ? result.percentile_paths.p50.map((_, i) => params.current_age + i)
+    : [];
+
+  // Wizard steps
+  const wizardSteps: WizardStep[] = [
+    {
+      id: "about",
+      title: "About You",
+      subtitle: "Let's start with some basic information",
+      content: (
+        <div>
+          <div className="wizard-field-row">
+            <div className="wizard-field">
+              <label>Current Age</label>
+              <input
+                type="number"
+                value={params.current_age}
+                onChange={(e) =>
+                  updateParam("current_age", Number(e.target.value))
+                }
+                min={18}
+                max={100}
+              />
+            </div>
+            <div className="wizard-field">
+              <label>Planning To Age</label>
+              <input
+                type="number"
+                value={params.max_age}
+                onChange={(e) =>
+                  updateParam("max_age", Number(e.target.value))
+                }
+                min={params.current_age + 5}
+                max={120}
+              />
+            </div>
+          </div>
+          <div className="wizard-field-row">
+            <div className="wizard-field">
+              <label>Gender</label>
+              <select
+                value={params.gender}
+                onChange={(e) =>
+                  updateParam("gender", e.target.value as "male" | "female")
+                }
+              >
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+              <div className="wizard-field-hint">Used for mortality estimates</div>
+            </div>
+            <div className="wizard-field">
+              <label>State</label>
+              <select
+                value={params.state}
+                onChange={(e) => updateParam("state", e.target.value)}
+              >
+                {US_STATES.map((st) => (
+                  <option key={st} value={st}>
+                    {st}
+                  </option>
+                ))}
+              </select>
+              <div className="wizard-field-hint">For state tax calculations</div>
+            </div>
+          </div>
+          <div className="wizard-field">
+            <label>Filing Status</label>
+            <select
+              value={params.filing_status}
+              onChange={(e) =>
+                updateParam(
+                  "filing_status",
+                  e.target.value as SimulationInput["filing_status"]
+                )
+              }
+            >
+              <option value="single">Single</option>
+              <option value="married_filing_jointly">Married (Joint)</option>
+              <option value="head_of_household">Head of Household</option>
+            </select>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "money",
+      title: "Your Money",
+      subtitle: "How much have you saved, and how much do you need?",
+      content: (
+        <div>
+          <div className="wizard-field">
+            <label>Current Portfolio Value</label>
+            <div className="wizard-field-prefix">
+              <span>$</span>
+              <input
+                type="number"
+                value={params.initial_capital}
+                onChange={(e) =>
+                  updateParam("initial_capital", Number(e.target.value))
+                }
+                min={0}
+                step={10000}
+              />
+            </div>
+            <div className="wizard-field-hint">
+              Total savings and investments you plan to use for retirement
+            </div>
+          </div>
+          <div className="wizard-field">
+            <label>Annual Spending Need</label>
+            <div className="wizard-field-prefix">
+              <span>$</span>
+              <input
+                type="number"
+                value={params.annual_spending}
+                onChange={(e) =>
+                  updateParam("annual_spending", Number(e.target.value))
+                }
+                min={0}
+                step={1000}
+              />
+            </div>
+            <div className="wizard-field-hint">
+              That's ${(params.annual_spending / 12).toLocaleString()} per month
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "income",
+      title: "Income Sources",
+      subtitle: "What income will you have in retirement?",
+      content: (
+        <div>
+          <div className="wizard-field">
+            <label>Monthly Social Security</label>
+            <div className="wizard-field-prefix">
+              <span>$</span>
+              <input
+                type="number"
+                value={params.social_security_monthly}
+                onChange={(e) =>
+                  updateParam("social_security_monthly", Number(e.target.value))
+                }
+                min={0}
+                step={100}
+              />
+            </div>
+            <div className="wizard-field-hint">
+              Starts at retirement age, increases with COLA
+            </div>
+          </div>
+          <div className="wizard-field">
+            <label>Annual Pension</label>
+            <div className="wizard-field-prefix">
+              <span>$</span>
+              <input
+                type="number"
+                value={params.pension_annual}
+                onChange={(e) =>
+                  updateParam("pension_annual", Number(e.target.value))
+                }
+                min={0}
+                step={1000}
+              />
+            </div>
+            <div className="wizard-field-hint">
+              Enter 0 if you don't have a pension
+            </div>
+          </div>
+          <div className="wizard-field">
+            <label>Current Employment Income</label>
+            <div className="wizard-field-prefix">
+              <span>$</span>
+              <input
+                type="number"
+                value={params.employment_income}
+                onChange={(e) =>
+                  updateParam("employment_income", Number(e.target.value))
+                }
+                min={0}
+                step={5000}
+              />
+            </div>
+            <div className="wizard-field-hint">
+              If still working, enter your annual salary
+            </div>
+          </div>
+          {params.employment_income > 0 && (
+            <div className="wizard-field">
+              <label>Retirement Age</label>
+              <input
+                type="number"
+                value={params.retirement_age}
+                onChange={(e) =>
+                  updateParam("retirement_age", Number(e.target.value))
+                }
+                min={params.current_age}
+                max={80}
+              />
+              <div className="wizard-field-hint">
+                When employment income will stop
+              </div>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "spouse",
+      title: "Spouse",
+      subtitle: "Retiring with a partner? Include their details.",
+      optional: true,
+      content: (
+        <div>
+          <label className="wizard-checkbox">
+            <input
+              type="checkbox"
+              checked={params.has_spouse}
+              onChange={(e) => updateParam("has_spouse", e.target.checked)}
+            />
+            <div className="wizard-checkbox-content">
+              <div className="wizard-checkbox-label">Include Spouse</div>
+              <div className="wizard-checkbox-hint">
+                Model retirement for both of you together
+              </div>
+            </div>
+          </label>
+
+          {params.has_spouse && (
+            <div style={{ marginTop: "1.5rem" }}>
+              <div className="wizard-field-row">
+                <div className="wizard-field">
+                  <label>Spouse Age</label>
+                  <input
+                    type="number"
+                    value={spouse.age}
+                    onChange={(e) =>
+                      setSpouse({ ...spouse, age: Number(e.target.value) })
+                    }
+                    min={18}
+                    max={100}
+                  />
+                </div>
+                <div className="wizard-field">
+                  <label>Spouse Gender</label>
+                  <select
+                    value={spouse.gender}
+                    onChange={(e) =>
+                      setSpouse({
+                        ...spouse,
+                        gender: e.target.value as "male" | "female",
+                      })
+                    }
+                  >
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                  </select>
+                </div>
+              </div>
+              <div className="wizard-field">
+                <label>Spouse Monthly Social Security</label>
+                <div className="wizard-field-prefix">
+                  <span>$</span>
+                  <input
+                    type="number"
+                    value={spouse.social_security_monthly}
+                    onChange={(e) =>
+                      setSpouse({
+                        ...spouse,
+                        social_security_monthly: Number(e.target.value),
+                      })
+                    }
+                    min={0}
+                    step={100}
+                  />
+                </div>
+              </div>
+              <div className="wizard-field">
+                <label>Spouse Annual Pension</label>
+                <div className="wizard-field-prefix">
+                  <span>$</span>
+                  <input
+                    type="number"
+                    value={spouse.pension_annual}
+                    onChange={(e) =>
+                      setSpouse({
+                        ...spouse,
+                        pension_annual: Number(e.target.value),
+                      })
+                    }
+                    min={0}
+                    step={1000}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "annuity",
+      title: "Annuity",
+      subtitle: "Compare your portfolio to a guaranteed annuity",
+      optional: true,
+      content: (
+        <div>
+          <label className="wizard-checkbox">
+            <input
+              type="checkbox"
+              checked={params.has_annuity}
+              onChange={(e) => updateParam("has_annuity", e.target.checked)}
+            />
+            <div className="wizard-checkbox-content">
+              <div className="wizard-checkbox-label">Compare to Annuity</div>
+              <div className="wizard-checkbox-hint">
+                See if buying an annuity might be better than investing
+              </div>
+            </div>
+          </label>
+
+          {params.has_annuity && (
+            <div style={{ marginTop: "1.5rem" }}>
+              <div className="wizard-field">
+                <label>Monthly Annuity Payment</label>
+                <div className="wizard-field-prefix">
+                  <span>$</span>
+                  <input
+                    type="number"
+                    value={annuity.monthly_payment}
+                    onChange={(e) =>
+                      setAnnuity({
+                        ...annuity,
+                        monthly_payment: Number(e.target.value),
+                      })
+                    }
+                    min={100}
+                    step={100}
+                  />
+                </div>
+                <div className="wizard-field-hint">
+                  Get a quote from an insurance company
+                </div>
+              </div>
+              <div className="wizard-field">
+                <label>Annuity Type</label>
+                <select
+                  value={annuity.annuity_type}
+                  onChange={(e) =>
+                    setAnnuity({
+                      ...annuity,
+                      annuity_type: e.target
+                        .value as AnnuityInput["annuity_type"],
+                    })
+                  }
+                >
+                  <option value="life_with_guarantee">
+                    Life with Guarantee
+                  </option>
+                  <option value="fixed_period">Fixed Period</option>
+                  <option value="life_only">Life Only</option>
+                </select>
+              </div>
+              {annuity.annuity_type !== "life_only" && (
+                <div className="wizard-field">
+                  <label>Guarantee Period (years)</label>
+                  <input
+                    type="number"
+                    value={annuity.guarantee_years}
+                    onChange={(e) =>
+                      setAnnuity({
+                        ...annuity,
+                        guarantee_years: Number(e.target.value),
+                      })
+                    }
+                    min={1}
+                    max={30}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "review",
+      title: "Review",
+      subtitle: "Check your inputs and run the simulation",
+      content: (
+        <div>
+          <div className="wizard-review">
+            <div className="wizard-review-section">
+              <div className="wizard-review-title">About You</div>
+              <div className="wizard-review-row">
+                <span className="wizard-review-label">Age Range</span>
+                <span className="wizard-review-value">
+                  {params.current_age} to {params.max_age}
+                </span>
+              </div>
+              <div className="wizard-review-row">
+                <span className="wizard-review-label">Location</span>
+                <span className="wizard-review-value">
+                  {params.state}, {params.filing_status.replace(/_/g, " ")}
+                </span>
+              </div>
+            </div>
+
+            <div className="wizard-review-section">
+              <div className="wizard-review-title">Finances</div>
+              <div className="wizard-review-row">
+                <span className="wizard-review-label">Portfolio</span>
+                <span className="wizard-review-value">
+                  {formatCurrency(params.initial_capital)}
+                </span>
+              </div>
+              <div className="wizard-review-row">
+                <span className="wizard-review-label">Annual Spending</span>
+                <span className="wizard-review-value">
+                  {formatCurrency(params.annual_spending)}
+                </span>
+              </div>
+              <div className="wizard-review-row">
+                <span className="wizard-review-label">Social Security</span>
+                <span className="wizard-review-value">
+                  ${params.social_security_monthly.toLocaleString()}/mo
+                </span>
+              </div>
+              {params.pension_annual > 0 && (
+                <div className="wizard-review-row">
+                  <span className="wizard-review-label">Pension</span>
+                  <span className="wizard-review-value">
+                    {formatCurrency(params.pension_annual)}/yr
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {params.has_spouse && (
+              <div className="wizard-review-section">
+                <div className="wizard-review-title">Spouse</div>
+                <div className="wizard-review-row">
+                  <span className="wizard-review-label">Age</span>
+                  <span className="wizard-review-value">{spouse.age}</span>
+                </div>
+                <div className="wizard-review-row">
+                  <span className="wizard-review-label">Social Security</span>
+                  <span className="wizard-review-value">
+                    ${spouse.social_security_monthly.toLocaleString()}/mo
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {params.has_annuity && (
+              <div className="wizard-review-section">
+                <div className="wizard-review-title">Annuity Comparison</div>
+                <div className="wizard-review-row">
+                  <span className="wizard-review-label">Monthly Payment</span>
+                  <span className="wizard-review-value">
+                    ${annuity.monthly_payment.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="error-banner" style={{ marginTop: "1rem" }}>
+              <strong>Error:</strong> {error}
+            </div>
+          )}
+        </div>
+      ),
+    },
+  ];
+
+  // Results view
+  const renderResults = () => (
+    <div className="results-view">
+      <button className="back-to-wizard" onClick={() => setShowWizard(true)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </svg>
+        Edit Inputs
+      </button>
+
+      {/* Key metrics */}
+      <div className="metrics-grid">
+        <div
+          className="metric-card primary"
+          style={{ borderColor: successColor }}
+        >
+          <div className="metric-label">Success Rate</div>
+          <div className="metric-value" style={{ color: successColor }}>
+            {formatPercent(result!.success_rate)}
+          </div>
+          <div className="metric-desc">
+            Probability of not running out of money
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Initial Withdrawal Rate</div>
+          <div className="metric-value">
+            {result!.initial_withdrawal_rate.toFixed(1)}%
+          </div>
+          <div className="metric-desc">From portfolio in year 1</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Median Final Value</div>
+          <div className="metric-value">
+            {formatCurrency(result!.median_final_value)}
+          </div>
+          <div className="metric-desc">
+            50th percentile at age {params.max_age}
+          </div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">10-Year Failure Risk</div>
+          <div className="metric-value">
+            {formatPercent(result!.prob_10_year_failure)}
+          </div>
+          <div className="metric-desc">
+            Probability of depletion within 10 years
+          </div>
+        </div>
+      </div>
+
+      {/* Portfolio chart */}
+      <div className="chart-container">
+        <h3>Portfolio Value Over Time</h3>
+        <Plot
+          data={[
+            {
+              x: ages,
+              y: result!.percentile_paths.p95,
+              type: "scatter",
+              mode: "lines",
+              line: { color: "rgba(217, 119, 6, 0.2)", width: 0 },
+              showlegend: false,
+              hoverinfo: "skip",
+            },
+            {
+              x: ages,
+              y: result!.percentile_paths.p5,
+              type: "scatter",
+              mode: "lines",
+              fill: "tonexty",
+              fillcolor: "rgba(217, 119, 6, 0.1)",
+              line: { color: "rgba(217, 119, 6, 0.2)", width: 0 },
+              name: "5th-95th percentile",
+            },
+            {
+              x: ages,
+              y: result!.percentile_paths.p75,
+              type: "scatter",
+              mode: "lines",
+              line: { color: "rgba(217, 119, 6, 0.3)", width: 1 },
+              showlegend: false,
+              hoverinfo: "skip",
+            },
+            {
+              x: ages,
+              y: result!.percentile_paths.p25,
+              type: "scatter",
+              mode: "lines",
+              fill: "tonexty",
+              fillcolor: "rgba(217, 119, 6, 0.15)",
+              line: { color: "rgba(217, 119, 6, 0.3)", width: 1 },
+              name: "25th-75th percentile",
+            },
+            {
+              x: ages,
+              y: result!.percentile_paths.p50,
+              type: "scatter",
+              mode: "lines",
+              line: { color: chartColors.primary, width: 3 },
+              name: "Median",
+            },
+          ]}
+          layout={{
+            autosize: true,
+            height: 400,
+            margin: { l: 80, r: 40, t: 20, b: 60 },
+            font: { family: "Inter, system-ui, sans-serif" },
+            xaxis: {
+              title: { text: "Age", font: { family: "Inter, system-ui, sans-serif" } },
+              gridcolor: colors.gray200,
+              tickfont: { family: "Inter, system-ui, sans-serif" },
+            },
+            yaxis: {
+              title: { text: "Portfolio Value", font: { family: "Inter, system-ui, sans-serif" } },
+              gridcolor: colors.gray200,
+              tickformat: "$,.0f",
+              tickfont: { family: "Inter, system-ui, sans-serif" },
+            },
+            legend: {
+              x: 0,
+              y: 1.1,
+              orientation: "h",
+              font: { family: "Inter, system-ui, sans-serif" },
+            },
+            paper_bgcolor: "transparent",
+            plot_bgcolor: "transparent",
+            hovermode: "x unified",
+          }}
+          config={{ responsive: true, displayModeBar: false }}
+          style={{ width: "100%" }}
+        />
+      </div>
+
+      {/* Summary table */}
+      <div className="summary-section">
+        <h3>Outcome Distribution</h3>
+        <table className="summary-table">
+          <thead>
+            <tr>
+              <th>Percentile</th>
+              <th>Final Portfolio</th>
+              <th>Interpretation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>5th (worst case)</td>
+              <td>{formatCurrency(result!.percentiles.p5)}</td>
+              <td>Only 5% of outcomes are worse than this</td>
+            </tr>
+            <tr>
+              <td>25th</td>
+              <td>{formatCurrency(result!.percentiles.p25)}</td>
+              <td>25% of outcomes are worse</td>
+            </tr>
+            <tr className="highlight">
+              <td>50th (median)</td>
+              <td>{formatCurrency(result!.percentiles.p50)}</td>
+              <td>The "typical" outcome</td>
+            </tr>
+            <tr>
+              <td>75th</td>
+              <td>{formatCurrency(result!.percentiles.p75)}</td>
+              <td>25% of outcomes are better</td>
+            </tr>
+            <tr>
+              <td>95th (best case)</td>
+              <td>{formatCurrency(result!.percentiles.p95)}</td>
+              <td>Only 5% of outcomes are better</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Taxes info */}
+      <div className="summary-section">
+        <h3>Tax Summary (Median)</h3>
+        <div className="tax-info">
+          <div className="tax-row">
+            <span>Total Withdrawals</span>
+            <span>{formatCurrency(result!.total_withdrawn_median)}</span>
+          </div>
+          <div className="tax-row">
+            <span>Total Taxes Paid</span>
+            <span>{formatCurrency(result!.total_taxes_median)}</span>
+          </div>
+          <div className="tax-row">
+            <span>Net After-Tax Income</span>
+            <span>
+              {formatCurrency(
+                result!.total_withdrawn_median - result!.total_taxes_median
+              )}
+            </span>
+          </div>
+        </div>
+        <p className="tax-note">
+          Tax calculations powered by PolicyEngine-US for accurate federal and{" "}
+          {params.state} state taxes.
+        </p>
+      </div>
+
+      {/* Annuity Comparison Results */}
+      {annuityResult && (
+        <div className="summary-section annuity-comparison">
+          <h3>Annuity Comparison</h3>
+          <div className="comparison-grid">
+            <div className="comparison-card">
+              <div className="comparison-label">Annuity Guaranteed Total</div>
+              <div className="comparison-value">
+                {formatCurrency(annuityResult.annuity_total_guaranteed)}
+              </div>
+              <div className="comparison-desc">
+                Over {annuity.guarantee_years} year guarantee period
+              </div>
+            </div>
+            <div className="comparison-card">
+              <div className="comparison-label">Portfolio Median Total</div>
+              <div className="comparison-value">
+                {formatCurrency(annuityResult.simulation_median_total_income)}
+              </div>
+              <div className="comparison-desc">
+                Median total income from portfolio
+              </div>
+            </div>
+            <div className="comparison-card highlight">
+              <div className="comparison-label">Portfolio Beats Annuity</div>
+              <div
+                className="comparison-value"
+                style={{
+                  color:
+                    annuityResult.probability_simulation_beats_annuity >= 0.6
+                      ? "#10b981"
+                      : annuityResult.probability_simulation_beats_annuity >=
+                          0.4
+                        ? "#f59e0b"
+                        : "#ef4444",
+                }}
+              >
+                {formatPercent(
+                  annuityResult.probability_simulation_beats_annuity
+                )}
+              </div>
+              <div className="comparison-desc">Probability</div>
+            </div>
+          </div>
+          <div className="recommendation">
+            <strong>Recommendation:</strong> {annuityResult.recommendation}
+          </div>
+        </div>
+      )}
+
+      {result!.median_depletion_age && (
+        <div className="warning-banner">
+          <strong>Warning:</strong> In scenarios where the portfolio is
+          depleted, the median depletion occurs at age{" "}
+          {result!.median_depletion_age}. Consider reducing spending or
+          increasing savings.
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="simulator">
       {/* Header */}
       <header className="sim-header">
         <a href={HOME_URL} className="sim-logo">
-          <img src="/logo.svg" alt="FinSim" height="28" />
+          <img src="/logo.svg" alt="EggNest" height="28" />
         </a>
         <span className="sim-title">Retirement Simulator</span>
       </header>
 
-      <div className="sim-layout">
-        {/* Sidebar */}
-        <aside className="sim-sidebar">
-          <div className="sidebar-section">
-            <h3>Demographics</h3>
-            <div className="input-row">
-              <div className="input-group">
-                <label>Current Age</label>
-                <input
-                  type="number"
-                  value={params.current_age}
-                  onChange={(e) => updateParam("current_age", Number(e.target.value))}
-                  min={18}
-                  max={100}
-                />
-              </div>
-              <div className="input-group">
-                <label>Planning To Age</label>
-                <input
-                  type="number"
-                  value={params.max_age}
-                  onChange={(e) => updateParam("max_age", Number(e.target.value))}
-                  min={params.current_age + 5}
-                  max={120}
-                />
-              </div>
-            </div>
-            <div className="input-row">
-              <div className="input-group">
-                <label>Gender</label>
-                <select
-                  value={params.gender}
-                  onChange={(e) => updateParam("gender", e.target.value as "male" | "female")}
-                >
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                </select>
-              </div>
-              <div className="input-group">
-                <label>State</label>
-                <select
-                  value={params.state}
-                  onChange={(e) => updateParam("state", e.target.value)}
-                >
-                  {US_STATES.map((st) => (
-                    <option key={st} value={st}>{st}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="input-group">
-              <label>Filing Status</label>
-              <select
-                value={params.filing_status}
-                onChange={(e) => updateParam("filing_status", e.target.value as SimulationInput["filing_status"])}
-              >
-                <option value="single">Single</option>
-                <option value="married_filing_jointly">Married (Joint)</option>
-                <option value="head_of_household">Head of Household</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="sidebar-section">
-            <h3>Assets & Spending</h3>
-            <div className="input-group">
-              <label>Current Portfolio</label>
-              <div className="input-with-prefix">
-                <span>$</span>
-                <input
-                  type="number"
-                  value={params.initial_capital}
-                  onChange={(e) => updateParam("initial_capital", Number(e.target.value))}
-                  min={0}
-                  step={10000}
-                />
-              </div>
-            </div>
-            <div className="input-group">
-              <label>Annual Spending Need</label>
-              <div className="input-with-prefix">
-                <span>$</span>
-                <input
-                  type="number"
-                  value={params.annual_spending}
-                  onChange={(e) => updateParam("annual_spending", Number(e.target.value))}
-                  min={0}
-                  step={1000}
-                />
-              </div>
-              <span className="input-hint">
-                ${(params.annual_spending / 12).toLocaleString()}/month
-              </span>
-            </div>
-          </div>
-
-          <div className="sidebar-section">
-            <h3>Income Sources</h3>
-            <div className="input-group">
-              <label>Monthly Social Security</label>
-              <div className="input-with-prefix">
-                <span>$</span>
-                <input
-                  type="number"
-                  value={params.social_security_monthly}
-                  onChange={(e) => updateParam("social_security_monthly", Number(e.target.value))}
-                  min={0}
-                  step={100}
-                />
-              </div>
-              <span className="input-hint">
-                Starts at retirement with COLA
-              </span>
-            </div>
-            <div className="input-group">
-              <label>Annual Pension</label>
-              <div className="input-with-prefix">
-                <span>$</span>
-                <input
-                  type="number"
-                  value={params.pension_annual}
-                  onChange={(e) => updateParam("pension_annual", Number(e.target.value))}
-                  min={0}
-                  step={1000}
-                />
-              </div>
-            </div>
-            <div className="input-group">
-              <label>Annual Employment Income</label>
-              <div className="input-with-prefix">
-                <span>$</span>
-                <input
-                  type="number"
-                  value={params.employment_income}
-                  onChange={(e) => updateParam("employment_income", Number(e.target.value))}
-                  min={0}
-                  step={5000}
-                />
-              </div>
-              {params.employment_income > 0 && (
-                <span className="input-hint">
-                  Until age {params.retirement_age}
-                </span>
-              )}
-            </div>
-            {params.employment_income > 0 && (
-              <div className="input-group">
-                <label>Retirement Age</label>
-                <input
-                  type="number"
-                  value={params.retirement_age}
-                  onChange={(e) => updateParam("retirement_age", Number(e.target.value))}
-                  min={params.current_age}
-                  max={80}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Spouse Section */}
-          <div className="sidebar-section">
-            <h3>Spouse/Partner</h3>
-            <div className="input-group">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={params.has_spouse}
-                  onChange={(e) => updateParam("has_spouse", e.target.checked)}
-                                  />
-                Include Spouse
-              </label>
-            </div>
-            {params.has_spouse && (
-              <>
-                <div className="input-row">
-                  <div className="input-group">
-                    <label>Spouse Age</label>
-                    <input
-                      type="number"
-                      value={spouse.age}
-                      onChange={(e) => setSpouse({ ...spouse, age: Number(e.target.value) })}
-                      min={18}
-                      max={100}
-                    />
-                  </div>
-                  <div className="input-group">
-                    <label>Spouse Gender</label>
-                    <select
-                      value={spouse.gender}
-                      onChange={(e) => setSpouse({ ...spouse, gender: e.target.value as "male" | "female" })}
-                    >
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="input-group">
-                  <label>Spouse Monthly SS</label>
-                  <div className="input-with-prefix">
-                    <span>$</span>
-                    <input
-                      type="number"
-                      value={spouse.social_security_monthly}
-                      onChange={(e) => setSpouse({ ...spouse, social_security_monthly: Number(e.target.value) })}
-                      min={0}
-                      step={100}
-                    />
-                  </div>
-                </div>
-                <div className="input-group">
-                  <label>Spouse Annual Pension</label>
-                  <div className="input-with-prefix">
-                    <span>$</span>
-                    <input
-                      type="number"
-                      value={spouse.pension_annual}
-                      onChange={(e) => setSpouse({ ...spouse, pension_annual: Number(e.target.value) })}
-                      min={0}
-                      step={1000}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Annuity Section */}
-          <div className="sidebar-section">
-            <h3>Annuity Comparison</h3>
-            <div className="input-group">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={params.has_annuity}
-                  onChange={(e) => updateParam("has_annuity", e.target.checked)}
-                                  />
-                Compare to Annuity
-              </label>
-              <span className="input-hint">
-                See if an annuity beats your portfolio
-              </span>
-            </div>
-            {params.has_annuity && (
-              <>
-                <div className="input-group">
-                  <label>Monthly Annuity Payment</label>
-                  <div className="input-with-prefix">
-                    <span>$</span>
-                    <input
-                      type="number"
-                      value={annuity.monthly_payment}
-                      onChange={(e) => setAnnuity({ ...annuity, monthly_payment: Number(e.target.value) })}
-                      min={100}
-                      step={100}
-                    />
-                  </div>
-                </div>
-                <div className="input-group">
-                  <label>Annuity Type</label>
-                  <select
-                    value={annuity.annuity_type}
-                    onChange={(e) => setAnnuity({ ...annuity, annuity_type: e.target.value as AnnuityInput["annuity_type"] })}
-                  >
-                    <option value="life_with_guarantee">Life with Guarantee</option>
-                    <option value="fixed_period">Fixed Period</option>
-                    <option value="life_only">Life Only</option>
-                  </select>
-                </div>
-                {annuity.annuity_type !== "life_only" && (
-                  <div className="input-group">
-                    <label>Guarantee Period (years)</label>
-                    <input
-                      type="number"
-                      value={annuity.guarantee_years}
-                      onChange={(e) => setAnnuity({ ...annuity, guarantee_years: Number(e.target.value) })}
-                      min={1}
-                      max={30}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          <div className="sidebar-section">
-            <h3>Simulation Settings</h3>
-            <div className="input-group">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={params.include_mortality}
-                  onChange={(e) => updateParam("include_mortality", e.target.checked)}
-                                  />
-                Include Mortality Risk
-              </label>
-              <span className="input-hint">
-                Accounts for probability of death each year
-              </span>
-            </div>
-            <div className="input-row">
-              <div className="input-group">
-                <label>Expected Return</label>
-                <div className="input-with-suffix">
-                  <input
-                    type="number"
-                    value={(params.expected_return * 100).toFixed(1)}
-                    onChange={(e) => updateParam("expected_return", Number(e.target.value) / 100)}
-                    step={0.5}
-                  />
-                  <span>%</span>
-                </div>
-              </div>
-              <div className="input-group">
-                <label>Volatility</label>
-                <div className="input-with-suffix">
-                  <input
-                    type="number"
-                    value={(params.return_volatility * 100).toFixed(1)}
-                    onChange={(e) => updateParam("return_volatility", Number(e.target.value) / 100)}
-                    step={0.5}
-                  />
-                  <span>%</span>
-                </div>
-              </div>
-            </div>
-            <span className="input-hint">
-              Real returns (after inflation)
-            </span>
-          </div>
-
-          <button
-            className="simulate-btn"
-            onClick={handleSimulate}
-            disabled={isLoading}
-          >
-            {isLoading ? "Running Simulation..." : "Run Simulation"}
-          </button>
-        </aside>
-
-        {/* Main content */}
-        <main className="sim-main">
-          {error && (
-            <div className="error-banner">
-              <strong>Error:</strong> {error}
-            </div>
-          )}
-
-          {!result && !isLoading && (
-            <div className="empty-state">
-              <div className="empty-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M3 3v18h18" />
-                  <path d="M7 16l4-4 4 4 5-6" />
-                </svg>
-              </div>
-              <h2>Configure your simulation</h2>
-              <p>
-                Enter your financial details in the sidebar, then click "Run
-                Simulation" to see thousands of possible outcomes for your
-                retirement.
-              </p>
-            </div>
-          )}
-
-          {isLoading && (
-            <div className="loading-state">
-              <div className="spinner" />
-              <p>Running {params.n_simulations.toLocaleString()} simulations...</p>
-            </div>
-          )}
-
-          {result && (
-            <div className="results">
-              {/* Key metrics */}
-              <div className="metrics-grid">
-                <div className="metric-card primary" style={{ borderColor: successColor }}>
-                  <div className="metric-label">Success Rate</div>
-                  <div className="metric-value" style={{ color: successColor }}>
-                    {formatPercent(result.success_rate)}
-                  </div>
-                  <div className="metric-desc">
-                    Probability of not running out of money
-                  </div>
-                </div>
-                <div className="metric-card">
-                  <div className="metric-label">Initial Withdrawal Rate</div>
-                  <div className="metric-value">
-                    {result.initial_withdrawal_rate.toFixed(1)}%
-                  </div>
-                  <div className="metric-desc">
-                    From portfolio in year 1
-                  </div>
-                </div>
-                <div className="metric-card">
-                  <div className="metric-label">Median Final Value</div>
-                  <div className="metric-value">
-                    {formatCurrency(result.median_final_value)}
-                  </div>
-                  <div className="metric-desc">
-                    50th percentile at age {params.max_age}
-                  </div>
-                </div>
-                <div className="metric-card">
-                  <div className="metric-label">10-Year Failure Risk</div>
-                  <div className="metric-value">
-                    {formatPercent(result.prob_10_year_failure)}
-                  </div>
-                  <div className="metric-desc">
-                    Probability of depletion within 10 years
-                  </div>
-                </div>
-              </div>
-
-              {/* Portfolio chart */}
-              <div className="chart-container">
-                <h3>Portfolio Value Over Time</h3>
-                <Plot
-                  data={[
-                    // 5th-95th percentile band
-                    {
-                      x: ages,
-                      y: result.percentile_paths.p95,
-                      type: "scatter",
-                      mode: "lines",
-                      line: { color: "rgba(217, 119, 6, 0.2)", width: 0 },
-                      showlegend: false,
-                      hoverinfo: "skip",
-                    },
-                    {
-                      x: ages,
-                      y: result.percentile_paths.p5,
-                      type: "scatter",
-                      mode: "lines",
-                      fill: "tonexty",
-                      fillcolor: "rgba(217, 119, 6, 0.1)",
-                      line: { color: "rgba(217, 119, 6, 0.2)", width: 0 },
-                      name: "5th-95th percentile",
-                    },
-                    // 25th-75th percentile band
-                    {
-                      x: ages,
-                      y: result.percentile_paths.p75,
-                      type: "scatter",
-                      mode: "lines",
-                      line: { color: "rgba(217, 119, 6, 0.3)", width: 1 },
-                      showlegend: false,
-                      hoverinfo: "skip",
-                    },
-                    {
-                      x: ages,
-                      y: result.percentile_paths.p25,
-                      type: "scatter",
-                      mode: "lines",
-                      fill: "tonexty",
-                      fillcolor: "rgba(217, 119, 6, 0.15)",
-                      line: { color: "rgba(217, 119, 6, 0.3)", width: 1 },
-                      name: "25th-75th percentile",
-                    },
-                    // Median
-                    {
-                      x: ages,
-                      y: result.percentile_paths.p50,
-                      type: "scatter",
-                      mode: "lines",
-                      line: { color: chartColors.primary, width: 3 },
-                      name: "Median",
-                    },
-                  ]}
-                  layout={{
-                    autosize: true,
-                    height: 400,
-                    margin: { l: 80, r: 40, t: 20, b: 60 },
-                    xaxis: {
-                      title: { text: "Age" },
-                      gridcolor: colors.gray200,
-                    },
-                    yaxis: {
-                      title: { text: "Portfolio Value" },
-                      gridcolor: colors.gray200,
-                      tickformat: "$,.0f",
-                    },
-                    legend: {
-                      x: 0,
-                      y: 1.1,
-                      orientation: "h",
-                    },
-                    paper_bgcolor: "transparent",
-                    plot_bgcolor: "transparent",
-                    hovermode: "x unified",
-                  }}
-                  config={{ responsive: true, displayModeBar: false }}
-                  style={{ width: "100%" }}
-                />
-              </div>
-
-              {/* Summary table */}
-              <div className="summary-section">
-                <h3>Outcome Distribution</h3>
-                <table className="summary-table">
-                  <thead>
-                    <tr>
-                      <th>Percentile</th>
-                      <th>Final Portfolio</th>
-                      <th>Interpretation</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>5th (worst case)</td>
-                      <td>{formatCurrency(result.percentiles.p5)}</td>
-                      <td>Only 5% of outcomes are worse than this</td>
-                    </tr>
-                    <tr>
-                      <td>25th</td>
-                      <td>{formatCurrency(result.percentiles.p25)}</td>
-                      <td>25% of outcomes are worse</td>
-                    </tr>
-                    <tr className="highlight">
-                      <td>50th (median)</td>
-                      <td>{formatCurrency(result.percentiles.p50)}</td>
-                      <td>The "typical" outcome</td>
-                    </tr>
-                    <tr>
-                      <td>75th</td>
-                      <td>{formatCurrency(result.percentiles.p75)}</td>
-                      <td>25% of outcomes are better</td>
-                    </tr>
-                    <tr>
-                      <td>95th (best case)</td>
-                      <td>{formatCurrency(result.percentiles.p95)}</td>
-                      <td>Only 5% of outcomes are better</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Taxes info */}
-              <div className="summary-section">
-                <h3>Tax Summary (Median)</h3>
-                <div className="tax-info">
-                  <div className="tax-row">
-                    <span>Total Withdrawals</span>
-                    <span>{formatCurrency(result.total_withdrawn_median)}</span>
-                  </div>
-                  <div className="tax-row">
-                    <span>Total Taxes Paid</span>
-                    <span>{formatCurrency(result.total_taxes_median)}</span>
-                  </div>
-                  <div className="tax-row">
-                    <span>Net After-Tax Income</span>
-                    <span>
-                      {formatCurrency(
-                        result.total_withdrawn_median - result.total_taxes_median
-                      )}
-                    </span>
-                  </div>
-                </div>
-                <p className="tax-note">
-                  Tax calculations powered by PolicyEngine-US for accurate
-                  federal and {params.state} state taxes.
-                </p>
-              </div>
-
-              {/* Annuity Comparison Results */}
-              {annuityResult && (
-                <div className="summary-section annuity-comparison">
-                  <h3>Annuity Comparison</h3>
-                  <div className="comparison-grid">
-                    <div className="comparison-card">
-                      <div className="comparison-label">Annuity Guaranteed Total</div>
-                      <div className="comparison-value">
-                        {formatCurrency(annuityResult.annuity_total_guaranteed)}
-                      </div>
-                      <div className="comparison-desc">
-                        Over {annuity.guarantee_years} year guarantee period
-                      </div>
-                    </div>
-                    <div className="comparison-card">
-                      <div className="comparison-label">Portfolio Median Total</div>
-                      <div className="comparison-value">
-                        {formatCurrency(annuityResult.simulation_median_total_income)}
-                      </div>
-                      <div className="comparison-desc">
-                        Median total income from portfolio
-                      </div>
-                    </div>
-                    <div className="comparison-card highlight">
-                      <div className="comparison-label">Portfolio Beats Annuity</div>
-                      <div className="comparison-value" style={{
-                        color: annuityResult.probability_simulation_beats_annuity >= 0.6 ? "#10b981" :
-                               annuityResult.probability_simulation_beats_annuity >= 0.4 ? "#f59e0b" : "#ef4444"
-                      }}>
-                        {formatPercent(annuityResult.probability_simulation_beats_annuity)}
-                      </div>
-                      <div className="comparison-desc">
-                        Probability
-                      </div>
-                    </div>
-                  </div>
-                  <div className="recommendation">
-                    <strong>Recommendation:</strong> {annuityResult.recommendation}
-                  </div>
-                </div>
-              )}
-
-              {result.median_depletion_age && (
-                <div className="warning-banner">
-                  <strong>Warning:</strong> In scenarios where the portfolio is
-                  depleted, the median depletion occurs at age{" "}
-                  {result.median_depletion_age}.
-                  Consider reducing spending or increasing savings.
-                </div>
-              )}
-            </div>
-          )}
-        </main>
+      <div className="sim-content">
+        {showWizard ? (
+          <Wizard
+            steps={wizardSteps}
+            onComplete={handleSimulate}
+            isLoading={isLoading}
+            completeButtonText="Run Simulation"
+            loadingButtonText="Running simulation..."
+            loadingContent={
+              <SimulationProgress
+                currentYear={progress.currentYear}
+                totalYears={progress.totalYears}
+              />
+            }
+          />
+        ) : (
+          result && renderResults()
+        )}
       </div>
     </div>
   );

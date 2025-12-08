@@ -77,6 +77,19 @@ export interface MortalityRates {
   survival_curve: number[];
 }
 
+export interface ProgressEvent {
+  type: "progress";
+  year: number;
+  total_years: number;
+}
+
+export interface CompleteEvent {
+  type: "complete";
+  result: SimulationResult;
+}
+
+export type SimulationEvent = ProgressEvent | CompleteEvent;
+
 export async function runSimulation(
   params: SimulationInput,
   token?: string
@@ -100,6 +113,62 @@ export async function runSimulation(
   }
 
   return response.json();
+}
+
+export async function* runSimulationWithProgress(
+  params: SimulationInput,
+  token?: string
+): AsyncGenerator<SimulationEvent, void, unknown> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_URL}/simulate/stream`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(params),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(error.detail || `Simulation failed: ${response.statusText}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("Failed to get response reader");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Process complete SSE messages
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6);
+        if (data.trim()) {
+          try {
+            const event = JSON.parse(data) as SimulationEvent;
+            yield event;
+          } catch (e) {
+            console.error("Failed to parse SSE event:", data, e);
+          }
+        }
+      }
+    }
+  }
 }
 
 export async function getMortalityRates(
