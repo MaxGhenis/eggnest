@@ -43,7 +43,7 @@ export function ThesisPage() {
       {/* Top nav */}
       <nav className="thesis-top-nav">
         <a href="/" className="thesis-logo">
-          <img src="/logo.svg" alt="" className="thesis-logo-icon" />
+          <img src="/favicon.svg" alt="" className="thesis-logo-icon" />
           EggNest
         </a>
       </nav>
@@ -340,50 +340,120 @@ export function ThesisPage() {
       <section className="thesis-section" ref={setRef("competition")}>
         <div className="thesis-content">
           <h2>6. Competitive Landscape</h2>
-          <p>No one does this well.</p>
+          <p>The retirement planning space has several established players, but none combine Monte Carlo simulation with real tax calculations:</p>
 
           <div className="competitor-table">
+            <h3>Direct Competitors (Retirement Planning)</h3>
             <table>
               <thead>
                 <tr>
                   <th>Competitor</th>
-                  <th>What They Do</th>
+                  <th>Pricing</th>
+                  <th>Strengths</th>
                   <th>Gap</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>Retirement calculators</td>
-                  <td>Single decision, no real taxes</td>
-                  <td>Limited scope</td>
+                  <td><strong>MaxiFi</strong></td>
+                  <td>$109-149/yr</td>
+                  <td>Economist-backed (Kotlikoff), living standard focus, Roth optimizer</td>
+                  <td>No real tax integration, complex UI, closed source</td>
                 </tr>
                 <tr>
-                  <td>Tax software</td>
-                  <td>Backward-looking, no simulation</td>
-                  <td>No "what if"</td>
+                  <td><strong>Boldin</strong> (NewRetirement)</td>
+                  <td>Free–$144/yr</td>
+                  <td>250+ inputs, good UI, CFP access option</td>
+                  <td>Tax estimates not actual law, no benefit modeling</td>
                 </tr>
                 <tr>
-                  <td>Salary comparison (Levels.fyi)</td>
-                  <td>Comp data, no tax modeling</td>
-                  <td>No net impact</td>
+                  <td><strong>ProjectionLab</strong></td>
+                  <td>Free–$109/yr</td>
+                  <td>Beautiful charts, excellent what-if scenarios</td>
+                  <td>Tax modeling is estimates, no state-specific accuracy</td>
                 </tr>
                 <tr>
-                  <td>Cost of living (Numbeo)</td>
-                  <td>Rough estimates</td>
-                  <td>No personalization</td>
+                  <td><strong>Pralana</strong></td>
+                  <td>~$100/yr</td>
+                  <td>Most detailed analysis, Excel power users love it</td>
+                  <td>Steep learning curve, Excel-based, limited accessibility</td>
                 </tr>
                 <tr>
-                  <td>Budgeting apps (Mint, YNAB)</td>
-                  <td>Track spending</td>
-                  <td>No future modeling</td>
+                  <td><strong>Empower</strong> (Personal Capital)</td>
+                  <td>Free</td>
+                  <td>Free, account aggregation, solid Monte Carlo</td>
+                  <td>Leads to wealth management sales, simplified tax model</td>
                 </tr>
                 <tr>
-                  <td>Robo-advisors</td>
-                  <td>Investment management</td>
-                  <td>Not decision simulation</td>
+                  <td><strong>FI Calc</strong></td>
+                  <td>Free</td>
+                  <td>Great for FIRE community, historical backtesting</td>
+                  <td>No tax modeling, no benefit integration</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <div className="competitor-table">
+            <h3>Adjacent Categories</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Examples</th>
+                  <th>Gap</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Tax software</td>
+                  <td>TurboTax, H&R Block</td>
+                  <td>Backward-looking only, no "what if" simulation</td>
+                </tr>
+                <tr>
+                  <td>Salary comparison</td>
+                  <td>Levels.fyi, Glassdoor</td>
+                  <td>Comp data but no after-tax net impact</td>
+                </tr>
+                <tr>
+                  <td>Cost of living</td>
+                  <td>Numbeo, BestPlaces</td>
+                  <td>Rough estimates, no personalization</td>
+                </tr>
+                <tr>
+                  <td>Budgeting apps</td>
+                  <td>YNAB, Copilot</td>
+                  <td>Track spending, no future projection</td>
+                </tr>
+                <tr>
+                  <td>Robo-advisors</td>
+                  <td>Betterment, Wealthfront</td>
+                  <td>Investment management, not decision simulation</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="differentiator-section">
+            <h3>EggNest Differentiation</h3>
+            <div className="diff-grid">
+              <div className="diff-item">
+                <strong>Real Tax Calculations</strong>
+                <p>PolicyEngine models actual tax law—federal, state, credits, phase-outs—not estimates</p>
+              </div>
+              <div className="diff-item">
+                <strong>Benefits Integration</strong>
+                <p>SNAP, Medicaid, ACA subsidies, EITC cliffs—the full picture for all income levels</p>
+              </div>
+              <div className="diff-item">
+                <strong>Open Source</strong>
+                <p>Verify the math yourself. No black box. Builds trust competitors can't match</p>
+              </div>
+              <div className="diff-item">
+                <strong>Modern UX</strong>
+                <p>Clean wizard interface, not 250+ input fields. Complexity when you need it</p>
+              </div>
+            </div>
           </div>
 
           <div className="moat-section">

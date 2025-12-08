@@ -544,6 +544,47 @@
   font-weight: 500;
 }
 
+.competitor-table h3 {
+  margin-bottom: 16px;
+  font-size: 1.1rem;
+}
+
+.competitor-table td strong {
+  color: var(--color-text);
+}
+
+/* Differentiator section */
+.differentiator-section {
+  margin-top: 48px;
+}
+
+.diff-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.diff-item {
+  background: var(--color-primary-50);
+  border: 1px solid var(--color-primary-200);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.diff-item strong {
+  display: block;
+  color: var(--color-primary-dark);
+  margin-bottom: 8px;
+  font-size: 1rem;
+}
+
+.diff-item p {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
 /* Moat section */
 .moat-section {
   margin-top: 48px;
