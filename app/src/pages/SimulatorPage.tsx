@@ -50,6 +50,119 @@ const DEFAULT_PARAMS: SimulationInput = {
   dividend_yield: 0.02,
 };
 
+// Example personas for quick-start
+interface Persona {
+  id: string;
+  name: string;
+  description: string;
+  emoji: string;
+  params: SimulationInput;
+  spouse?: SpouseInput;
+}
+
+const EXAMPLE_PERSONAS: Persona[] = [
+  {
+    id: "early-retiree",
+    name: "Early Retiree",
+    description: "55-year-old leaving tech with $1.5M saved",
+    emoji: "🏖️",
+    params: {
+      ...DEFAULT_PARAMS,
+      initial_capital: 1500000,
+      annual_spending: 80000,
+      current_age: 55,
+      max_age: 95,
+      gender: "male",
+      social_security_monthly: 2800,
+      social_security_start_age: 67,
+      state: "CA",
+      filing_status: "single",
+      has_spouse: false,
+    },
+  },
+  {
+    id: "retiring-couple",
+    name: "Retiring Couple",
+    description: "Both 62, $800K saved, ready to retire",
+    emoji: "👫",
+    params: {
+      ...DEFAULT_PARAMS,
+      initial_capital: 800000,
+      annual_spending: 70000,
+      current_age: 62,
+      max_age: 95,
+      gender: "male",
+      social_security_monthly: 2400,
+      social_security_start_age: 67,
+      state: "TX",
+      filing_status: "married_filing_jointly",
+      has_spouse: true,
+    },
+    spouse: {
+      age: 60,
+      gender: "female",
+      social_security_monthly: 1800,
+      social_security_start_age: 67,
+      pension_annual: 0,
+      employment_income: 0,
+      employment_growth_rate: 0.03,
+      retirement_age: 62,
+    },
+  },
+  {
+    id: "conservative-saver",
+    name: "Conservative Saver",
+    description: "67-year-old with pension and modest savings",
+    emoji: "🏦",
+    params: {
+      ...DEFAULT_PARAMS,
+      initial_capital: 400000,
+      annual_spending: 50000,
+      current_age: 67,
+      max_age: 95,
+      gender: "female",
+      social_security_monthly: 2200,
+      social_security_start_age: 67,
+      pension_annual: 18000,
+      state: "FL",
+      filing_status: "single",
+      has_spouse: false,
+    },
+  },
+  {
+    id: "high-earner",
+    name: "High Earner",
+    description: "50-year-old still working, $2M saved",
+    emoji: "💼",
+    params: {
+      ...DEFAULT_PARAMS,
+      initial_capital: 2000000,
+      annual_spending: 120000,
+      current_age: 50,
+      max_age: 95,
+      gender: "male",
+      social_security_monthly: 3500,
+      social_security_start_age: 70,
+      employment_income: 300000,
+      employment_growth_rate: 0.03,
+      retirement_age: 60,
+      state: "NY",
+      filing_status: "married_filing_jointly",
+      has_spouse: true,
+    },
+    spouse: {
+      age: 48,
+      gender: "female",
+      social_security_monthly: 2000,
+      social_security_start_age: 67,
+      pension_annual: 0,
+      employment_income: 150000,
+      employment_growth_rate: 0.03,
+      retirement_age: 60,
+    },
+  },
+];
+
 // Helper to interpret success rate
 function getSuccessRateInterpretation(rate: number): { label: string; description: string; color: string } {
   if (rate >= 0.95) {
@@ -136,6 +249,7 @@ export function SimulatorPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(true);
+  const [showPersonaPicker, setShowPersonaPicker] = useState(true);
   const [progress, setProgress] = useState({ currentYear: 0, totalYears: 0 });
 
   // Spouse state
@@ -162,6 +276,52 @@ export function SimulatorPage() {
     value: SimulationInput[K]
   ) => {
     setParams((prev) => ({ ...prev, [key]: value }));
+  };
+
+  // Load a persona and optionally run simulation immediately
+  const loadPersona = (persona: Persona, runImmediately: boolean = false) => {
+    setParams(persona.params);
+    if (persona.spouse) {
+      setSpouse(persona.spouse);
+    }
+    setShowPersonaPicker(false);
+    if (runImmediately) {
+      // Small delay to let state update
+      setTimeout(() => {
+        handleSimulateWithParams(persona.params, persona.spouse);
+      }, 0);
+    }
+  };
+
+  // Simulate with specific params (used by persona quick-run)
+  const handleSimulateWithParams = async (simParams: SimulationInput, simSpouse?: SpouseInput) => {
+    setIsLoading(true);
+    setError(null);
+    setAnnuityResult(null);
+    setProgress({ currentYear: 0, totalYears: simParams.max_age - simParams.current_age });
+
+    try {
+      const fullParams: SimulationInput = {
+        ...simParams,
+        spouse: simParams.has_spouse ? simSpouse : undefined,
+        annuity: simParams.has_annuity ? annuity : undefined,
+      };
+
+      // Use streaming API with progress updates
+      for await (const event of runSimulationWithProgress(fullParams)) {
+        if (event.type === "progress") {
+          setProgress({ currentYear: event.year, totalYears: event.total_years });
+        } else if (event.type === "complete") {
+          setResult(event.result);
+        }
+      }
+      setShowWizard(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Simulation failed");
+      setResult(null);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSimulate = async () => {
@@ -1109,6 +1269,67 @@ export function SimulatorPage() {
   );
   };
 
+  // Render persona picker
+  const renderPersonaPicker = () => (
+    <div className="persona-picker">
+      <div className="persona-header">
+        <h2>See your retirement outlook in seconds</h2>
+        <p>Choose a profile similar to yours, or start from scratch</p>
+      </div>
+
+      <div className="persona-grid">
+        {EXAMPLE_PERSONAS.map((persona) => (
+          <div key={persona.id} className="persona-card">
+            <div className="persona-emoji">{persona.emoji}</div>
+            <div className="persona-info">
+              <h3>{persona.name}</h3>
+              <p>{persona.description}</p>
+              <div className="persona-stats">
+                <span>{formatCurrency(persona.params.initial_capital)} saved</span>
+                <span>{formatCurrency(persona.params.annual_spending)}/yr spending</span>
+              </div>
+            </div>
+            <div className="persona-actions">
+              <button
+                className="persona-btn-run"
+                onClick={() => loadPersona(persona, true)}
+                disabled={isLoading}
+              >
+                {isLoading ? "Running..." : "Run Simulation"}
+              </button>
+              <button
+                className="persona-btn-customize"
+                onClick={() => loadPersona(persona, false)}
+              >
+                Customize First
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="persona-divider">
+        <span>or</span>
+      </div>
+
+      <button
+        className="persona-start-scratch"
+        onClick={() => setShowPersonaPicker(false)}
+      >
+        Start from scratch with your own numbers
+      </button>
+
+      {isLoading && (
+        <div className="persona-loading">
+          <SimulationProgress
+            currentYear={progress.currentYear}
+            totalYears={progress.totalYears}
+          />
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="simulator">
       {/* Header */}
@@ -1120,7 +1341,9 @@ export function SimulatorPage() {
       </header>
 
       <div className="sim-content">
-        {showWizard ? (
+        {showPersonaPicker && showWizard && !result ? (
+          renderPersonaPicker()
+        ) : showWizard ? (
           <Wizard
             steps={wizardSteps}
             onComplete={handleSimulate}
