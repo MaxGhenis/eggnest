@@ -1,53 +1,63 @@
 /* EggNest Design System - TypeScript tokens for use in JS/TSX */
 
 export const colors = {
-  // Primary - Warm Amber
-  primary: '#d97706',
-  primaryLight: '#f59e0b',
-  primaryDark: '#b45309',
-  primary50: '#fffbeb',
-  primary100: '#fef3c7',
-  primary200: '#fde68a',
+  // Primary - Golden Hour Amber
+  primary: '#c2410c',
+  primaryLight: '#ea580c',
+  primaryDark: '#9a3412',
+  primary50: '#fff7ed',
+  primary100: '#ffedd5',
+  primary200: '#fed7aa',
+
+  // Secondary - Warm Gold
+  gold: '#d97706',
+  goldLight: '#fbbf24',
+  goldPale: '#fef3c7',
 
   // Semantic
-  success: '#10b981',
-  successLight: '#d1fae5',
-  warning: '#eab308',
+  success: '#16a34a',
+  successLight: '#dcfce7',
+  warning: '#ca8a04',
   warningLight: '#fef9c3',
-  danger: '#ef4444',
+  danger: '#dc2626',
   dangerLight: '#fee2e2',
 
-  // Neutrals
-  gray50: '#f9fafb',
-  gray100: '#f3f4f6',
-  gray200: '#e5e7eb',
-  gray300: '#d1d5db',
-  gray400: '#9ca3af',
-  gray500: '#6b7280',
-  gray600: '#4b5563',
-  gray700: '#374151',
-  gray800: '#1f2937',
-  gray900: '#111827',
+  // Neutrals - Warm tinted
+  gray50: '#fafaf9',
+  gray100: '#f5f5f4',
+  gray200: '#e7e5e4',
+  gray300: '#d6d3d1',
+  gray400: '#a8a29e',
+  gray500: '#78716c',
+  gray600: '#57534e',
+  gray700: '#44403c',
+  gray800: '#292524',
+  gray900: '#1c1917',
 
   // Semantic aliases
-  text: '#1f2937',
-  textMuted: '#6b7280',
-  bg: '#ffffff',
-  bgAlt: '#f9fafb',
-  border: '#e5e7eb',
+  text: '#292524',
+  textMuted: '#78716c',
+  bg: '#fffbf5',
+  bgAlt: '#fef7ed',
+  bgCard: '#ffffff',
+  border: '#e7e5e4',
 } as const;
 
 // Chart colors for Plotly, Recharts, etc.
 export const chartColors = {
-  primary: colors.primary,
-  primaryLight: colors.primaryLight,
-  primaryDark: colors.primaryDark,
-  confidence: colors.primary100,  // for confidence bands
+  primary: colors.gold,
+  primaryLight: colors.goldLight,
+  primaryDark: colors.primary,
+  confidence: colors.primary100,
   grid: colors.gray200,
+  // Band colors with opacity
+  bandOuter: 'rgba(217, 119, 6, 0.1)',
+  bandInner: 'rgba(217, 119, 6, 0.15)',
+  lineOuter: 'rgba(217, 119, 6, 0.2)',
+  lineInner: 'rgba(217, 119, 6, 0.3)',
 } as const;
 
 export type ColorKey = keyof typeof colors;
 
-// Logo/favicon color - use this when updating SVG files
-// SVGs can't import variables, so update them manually when this changes
-export const logoColor = colors.primary; // #d97706
+// Logo/favicon color
+export const logoColor = colors.gold; // #d97706
