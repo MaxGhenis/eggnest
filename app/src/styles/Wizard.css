@@ -548,3 +548,38 @@
     min-width: 44px;
   }
 }
+
+/* Validation context */
+.validation-context {
+  margin-top: 1.5rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-md, 12px);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.validation-context.success {
+  background: var(--color-sage-pale, #ecfccb);
+  border: 1px solid var(--color-sage, #65a30d);
+}
+
+.validation-context.warning {
+  background: var(--color-warning-light, #fef9c3);
+  border: 1px solid var(--color-warning, #ca8a04);
+}
+
+.validation-rate {
+  font-size: 1.125rem;
+  color: var(--color-text);
+}
+
+.validation-rate strong {
+  font-weight: 700;
+}
+
+.validation-message {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  flex: 1;
+}

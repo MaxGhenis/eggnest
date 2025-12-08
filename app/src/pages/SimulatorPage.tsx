@@ -34,6 +34,7 @@ const DEFAULT_PARAMS: SimulationInput = {
   max_age: 95,
   gender: "male",
   social_security_monthly: 2000,
+  social_security_start_age: 67,
   pension_annual: 0,
   employment_income: 0,
   employment_growth_rate: 0.03,
@@ -48,6 +49,62 @@ const DEFAULT_PARAMS: SimulationInput = {
   return_volatility: 0.16,
   dividend_yield: 0.02,
 };
+
+// Helper to interpret success rate
+function getSuccessRateInterpretation(rate: number): { label: string; description: string; color: string } {
+  if (rate >= 0.95) {
+    return {
+      label: "Excellent",
+      description: "Very high confidence your money will last. You may even be able to spend more.",
+      color: "#16a34a",
+    };
+  } else if (rate >= 0.90) {
+    return {
+      label: "Good",
+      description: "Strong likelihood of success. This is generally considered a safe plan.",
+      color: "#22c55e",
+    };
+  } else if (rate >= 0.80) {
+    return {
+      label: "Adequate",
+      description: "Reasonable odds, but consider a small buffer. Minor adjustments could help.",
+      color: "#84cc16",
+    };
+  } else if (rate >= 0.70) {
+    return {
+      label: "Marginal",
+      description: "Some risk of running short. Consider reducing spending or increasing savings.",
+      color: "#eab308",
+    };
+  } else if (rate >= 0.50) {
+    return {
+      label: "Risky",
+      description: "Significant chance of depletion. Strongly consider adjusting your plan.",
+      color: "#f97316",
+    };
+  } else {
+    return {
+      label: "High Risk",
+      description: "More likely than not to run out of money. Substantial changes recommended.",
+      color: "#ef4444",
+    };
+  }
+}
+
+// Calculate withdrawal rate context
+function getWithdrawalRateContext(rate: number): { warning: boolean; message: string } {
+  if (rate <= 3) {
+    return { warning: false, message: "Conservative - historically very safe" };
+  } else if (rate <= 4) {
+    return { warning: false, message: "The classic '4% rule' - generally considered safe" };
+  } else if (rate <= 5) {
+    return { warning: true, message: "Slightly aggressive - monitor carefully" };
+  } else if (rate <= 6) {
+    return { warning: true, message: "Aggressive - higher risk of depletion" };
+  } else {
+    return { warning: true, message: "Very high - significant depletion risk" };
+  }
+}
 
 function formatCurrency(value: number): string {
   if (Math.abs(value) >= 1_000_000) {
@@ -86,6 +143,7 @@ export function SimulatorPage() {
     age: 63,
     gender: "female",
     social_security_monthly: 1500,
+    social_security_start_age: 67,
     pension_annual: 0,
     employment_income: 0,
     employment_growth_rate: 0.03,
@@ -244,46 +302,62 @@ export function SimulatorPage() {
       id: "money",
       title: "Your Money",
       subtitle: "How much have you saved, and how much do you need?",
-      content: (
-        <div>
-          <div className="wizard-field">
-            <label>Current Portfolio Value</label>
-            <div className="wizard-field-prefix">
-              <span>$</span>
-              <input
-                type="number"
-                value={params.initial_capital}
-                onChange={(e) =>
-                  updateParam("initial_capital", Number(e.target.value))
-                }
-                min={0}
-                step={10000}
-              />
+      content: (() => {
+        const withdrawalRate = params.initial_capital > 0
+          ? (params.annual_spending / params.initial_capital) * 100
+          : 0;
+        const rateContext = getWithdrawalRateContext(withdrawalRate);
+
+        return (
+          <div>
+            <div className="wizard-field">
+              <label>Current Portfolio Value</label>
+              <div className="wizard-field-prefix">
+                <span>$</span>
+                <input
+                  type="number"
+                  value={params.initial_capital}
+                  onChange={(e) =>
+                    updateParam("initial_capital", Number(e.target.value))
+                  }
+                  min={0}
+                  step={10000}
+                />
+              </div>
+              <div className="wizard-field-hint">
+                Total savings and investments you plan to use for retirement
+              </div>
             </div>
-            <div className="wizard-field-hint">
-              Total savings and investments you plan to use for retirement
+            <div className="wizard-field">
+              <label>Annual Spending Need</label>
+              <div className="wizard-field-prefix">
+                <span>$</span>
+                <input
+                  type="number"
+                  value={params.annual_spending}
+                  onChange={(e) =>
+                    updateParam("annual_spending", Number(e.target.value))
+                  }
+                  min={0}
+                  step={1000}
+                />
+              </div>
+              <div className="wizard-field-hint">
+                That's ${(params.annual_spending / 12).toLocaleString()} per month
+              </div>
             </div>
+
+            {params.initial_capital > 0 && params.annual_spending > 0 && (
+              <div className={`validation-context ${rateContext.warning ? 'warning' : 'success'}`}>
+                <div className="validation-rate">
+                  <strong>{withdrawalRate.toFixed(1)}%</strong> withdrawal rate
+                </div>
+                <div className="validation-message">{rateContext.message}</div>
+              </div>
+            )}
           </div>
-          <div className="wizard-field">
-            <label>Annual Spending Need</label>
-            <div className="wizard-field-prefix">
-              <span>$</span>
-              <input
-                type="number"
-                value={params.annual_spending}
-                onChange={(e) =>
-                  updateParam("annual_spending", Number(e.target.value))
-                }
-                min={0}
-                step={1000}
-              />
-            </div>
-            <div className="wizard-field-hint">
-              That's ${(params.annual_spending / 12).toLocaleString()} per month
-            </div>
-          </div>
-        </div>
-      ),
+        );
+      })(),
     },
     {
       id: "income",
@@ -306,9 +380,33 @@ export function SimulatorPage() {
               />
             </div>
             <div className="wizard-field-hint">
-              Starts at retirement age, increases with COLA
+              Your estimated monthly benefit (check ssa.gov/myaccount)
             </div>
           </div>
+          {params.social_security_monthly > 0 && (
+            <div className="wizard-field">
+              <label>Social Security Start Age</label>
+              <select
+                value={params.social_security_start_age}
+                onChange={(e) =>
+                  updateParam("social_security_start_age", Number(e.target.value))
+                }
+              >
+                <option value={62}>62 (reduced ~30%)</option>
+                <option value={63}>63 (reduced ~25%)</option>
+                <option value={64}>64 (reduced ~20%)</option>
+                <option value={65}>65 (reduced ~13%)</option>
+                <option value={66}>66 (reduced ~7%)</option>
+                <option value={67}>67 (full retirement age)</option>
+                <option value={68}>68 (8% bonus)</option>
+                <option value={69}>69 (16% bonus)</option>
+                <option value={70}>70 (24% bonus)</option>
+              </select>
+              <div className="wizard-field-hint">
+                Claiming earlier reduces benefits; waiting increases them
+              </div>
+            </div>
+          )}
           <div className="wizard-field">
             <label>Annual Pension</label>
             <div className="wizard-field-prefix">
@@ -435,6 +533,30 @@ export function SimulatorPage() {
                   />
                 </div>
               </div>
+              {spouse.social_security_monthly > 0 && (
+                <div className="wizard-field">
+                  <label>Spouse SS Start Age</label>
+                  <select
+                    value={spouse.social_security_start_age}
+                    onChange={(e) =>
+                      setSpouse({
+                        ...spouse,
+                        social_security_start_age: Number(e.target.value),
+                      })
+                    }
+                  >
+                    <option value={62}>62</option>
+                    <option value={63}>63</option>
+                    <option value={64}>64</option>
+                    <option value={65}>65</option>
+                    <option value={66}>66</option>
+                    <option value={67}>67 (FRA)</option>
+                    <option value={68}>68</option>
+                    <option value={69}>69</option>
+                    <option value={70}>70</option>
+                  </select>
+                </div>
+              )}
               <div className="wizard-field">
                 <label>Spouse Annual Pension</label>
                 <div className="wizard-field-prefix">
@@ -583,7 +705,7 @@ export function SimulatorPage() {
               <div className="wizard-review-row">
                 <span className="wizard-review-label">Social Security</span>
                 <span className="wizard-review-value">
-                  ${params.social_security_monthly.toLocaleString()}/mo
+                  ${params.social_security_monthly.toLocaleString()}/mo @ age {params.social_security_start_age}
                 </span>
               </div>
               {params.pension_annual > 0 && (
@@ -635,8 +757,17 @@ export function SimulatorPage() {
     },
   ];
 
+  // What-if scenario helpers
+  const runWhatIfScenario = (modifier: Partial<SimulationInput>) => {
+    setParams((prev) => ({ ...prev, ...modifier }));
+    setShowWizard(true);
+  };
+
   // Results view
-  const renderResults = () => (
+  const renderResults = () => {
+    const interpretation = getSuccessRateInterpretation(result!.success_rate);
+
+    return (
     <div className="results-view">
       <button className="back-to-wizard" onClick={() => setShowWizard(true)}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -644,6 +775,19 @@ export function SimulatorPage() {
         </svg>
         Edit Inputs
       </button>
+
+      {/* Success interpretation banner */}
+      <div className="success-interpretation" style={{ borderColor: interpretation.color }}>
+        <div className="interpretation-header">
+          <span className="interpretation-label" style={{ color: interpretation.color }}>
+            {interpretation.label}
+          </span>
+          <span className="interpretation-rate" style={{ color: interpretation.color }}>
+            {formatPercent(result!.success_rate)} success rate
+          </span>
+        </div>
+        <p className="interpretation-text">{interpretation.description}</p>
+      </div>
 
       {/* Key metrics */}
       <div className="metrics-grid">
@@ -895,8 +1039,75 @@ export function SimulatorPage() {
           increasing savings.
         </div>
       )}
+
+      {/* What-if scenarios */}
+      <div className="what-if-section">
+        <h3>Explore Scenarios</h3>
+        <p className="what-if-description">
+          See how changes affect your success rate
+        </p>
+        <div className="what-if-buttons">
+          <button
+            className="what-if-btn"
+            onClick={() =>
+              runWhatIfScenario({
+                annual_spending: Math.round(params.annual_spending * 0.9),
+              })
+            }
+          >
+            <span className="what-if-icon">↓</span>
+            <span className="what-if-label">Spend 10% less</span>
+            <span className="what-if-value">
+              {formatCurrency(Math.round(params.annual_spending * 0.9))}/yr
+            </span>
+          </button>
+          <button
+            className="what-if-btn"
+            onClick={() =>
+              runWhatIfScenario({
+                annual_spending: Math.round(params.annual_spending * 1.1),
+              })
+            }
+          >
+            <span className="what-if-icon">↑</span>
+            <span className="what-if-label">Spend 10% more</span>
+            <span className="what-if-value">
+              {formatCurrency(Math.round(params.annual_spending * 1.1))}/yr
+            </span>
+          </button>
+          <button
+            className="what-if-btn"
+            onClick={() =>
+              runWhatIfScenario({
+                initial_capital: Math.round(params.initial_capital * 1.1),
+              })
+            }
+          >
+            <span className="what-if-icon">💰</span>
+            <span className="what-if-label">10% more savings</span>
+            <span className="what-if-value">
+              {formatCurrency(Math.round(params.initial_capital * 1.1))}
+            </span>
+          </button>
+          {params.social_security_start_age < 70 && (
+            <button
+              className="what-if-btn"
+              onClick={() =>
+                runWhatIfScenario({
+                  social_security_start_age: 70,
+                })
+              }
+            >
+              <span className="what-if-icon">🕐</span>
+              <span className="what-if-label">Delay SS to 70</span>
+              <span className="what-if-value">+24% benefit</span>
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
+  };
 
   return (
     <div className="simulator">

@@ -10,6 +10,7 @@ class SpouseInput(BaseModel):
     age: int = Field(..., ge=18, le=100, description="Spouse's current age")
     gender: Literal["male", "female"] = Field(default="female", description="Spouse's gender for mortality")
     social_security_monthly: float = Field(default=0, ge=0, description="Spouse's monthly Social Security")
+    social_security_start_age: int = Field(default=67, ge=62, le=70, description="Age when spouse starts Social Security")
     pension_annual: float = Field(default=0, ge=0, description="Spouse's annual pension")
     employment_income: float = Field(default=0, ge=0, description="Spouse's annual employment income")
     employment_growth_rate: float = Field(default=0.03, ge=0, le=0.1, description="Spouse's wage growth rate")
@@ -43,6 +44,7 @@ class SimulationInput(BaseModel):
 
     # Income sources
     social_security_monthly: float = Field(default=0, ge=0, description="Monthly Social Security benefits")
+    social_security_start_age: int = Field(default=67, ge=62, le=70, description="Age when Social Security starts")
     pension_annual: float = Field(default=0, ge=0, description="Annual pension/other guaranteed income")
     employment_income: float = Field(default=0, ge=0, description="Annual employment income (pre-retirement)")
     employment_growth_rate: float = Field(default=0.03, ge=0, le=0.1, description="Annual wage growth rate")

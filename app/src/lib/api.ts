@@ -4,6 +4,7 @@ export interface SpouseInput {
   age: number;
   gender: "male" | "female";
   social_security_monthly: number;
+  social_security_start_age: number;
   pension_annual: number;
   employment_income: number;
   employment_growth_rate: number;
@@ -25,6 +26,7 @@ export interface SimulationInput {
 
   // Income sources
   social_security_monthly: number;
+  social_security_start_age: number;
   pension_annual: number;
   employment_income: number;
   employment_growth_rate: number;
