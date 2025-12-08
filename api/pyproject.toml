@@ -6,16 +6,16 @@ build-backend = "hatchling.build"
 packages = ["eggnest"]
 
 [project]
-name = "eggnest-api"
+name = "eggnest"
 version = "0.1.0"
-description = "EggNest API - Monte Carlo financial planning simulation with real tax calculations"
+description = "EggNest - Monte Carlo financial planning with real tax calculations"
 readme = "../README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "EggNest", email = "hello@eggnest.co"},
 ]
-keywords = ["finance", "simulation", "monte-carlo", "retirement", "planning"]
+keywords = ["finance", "simulation", "monte-carlo", "retirement", "planning", "cli"]
 
 dependencies = [
     "fastapi>=0.109.0",
@@ -28,7 +28,14 @@ dependencies = [
     "scipy>=1.10.0",
     "httpx>=0.26.0",
     "policyengine-us>=1.0.0",
+    # CLI dependencies
+    "click>=8.0",
+    "rich>=13.0",
+    "pyyaml>=6.0",
 ]
+
+[project.scripts]
+eggnest = "eggnest.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -39,7 +46,7 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.5.0",
 ]
-supabase = [
+cli = [
     "supabase>=2.0.0",
     "python-jose[cryptography]>=3.3.0",
 ]
