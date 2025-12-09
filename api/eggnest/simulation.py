@@ -5,6 +5,7 @@ import numpy as np
 from .models import SimulationInput, SimulationResult
 from .tax import TaxCalculator
 from .mortality import generate_alive_mask, generate_joint_alive_mask
+from .returns import generate_returns
 
 
 class MonteCarloSimulator:
@@ -51,9 +52,15 @@ class MonteCarloSimulator:
         total_taxes = np.zeros(n_sims)
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
-        # Generate market returns (real returns, already inflation-adjusted)
-        annual_returns = self._rng.normal(
-            p.expected_return, p.return_volatility, (n_sims, n_years)
+        # Generate market returns using selected model
+        # Default is bootstrap from historical S&P 500 real returns
+        annual_returns = generate_returns(
+            n_simulations=n_sims,
+            n_years=n_years,
+            method=p.return_model,
+            expected_return=p.expected_return,
+            volatility=p.return_volatility,
+            rng=self._rng,
         )
 
         # Generate mortality masks
@@ -293,9 +300,15 @@ class MonteCarloSimulator:
         total_taxes = np.zeros(n_sims)
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
-        # Generate market returns (real returns, already inflation-adjusted)
-        annual_returns = self._rng.normal(
-            p.expected_return, p.return_volatility, (n_sims, n_years)
+        # Generate market returns using selected model
+        # Default is bootstrap from historical S&P 500 real returns
+        annual_returns = generate_returns(
+            n_simulations=n_sims,
+            n_years=n_years,
+            method=p.return_model,
+            expected_return=p.expected_return,
+            volatility=p.return_volatility,
+            rng=self._rng,
         )
 
         # Generate mortality masks

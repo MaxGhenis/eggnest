@@ -67,10 +67,15 @@ class SimulationInput(BaseModel):
     # Simulation settings
     n_simulations: int = Field(default=10_000, ge=100, le=100_000, description="Number of Monte Carlo paths")
     include_mortality: bool = Field(default=True, description="Account for probability of death each year")
+    return_model: Literal["bootstrap", "block_bootstrap", "historical", "normal"] = Field(
+        default="bootstrap",
+        description="Return generation method: bootstrap (default), block_bootstrap, historical, or normal"
+    )
 
     # Market assumptions (real returns, after inflation)
-    expected_return: float = Field(default=0.05, description="Expected real annual return (0.05 = 5%)")
-    return_volatility: float = Field(default=0.16, description="Annual return volatility")
+    # Note: expected_return and return_volatility are only used when return_model="normal"
+    expected_return: float = Field(default=0.07, description="Expected real annual return (only for normal model)")
+    return_volatility: float = Field(default=0.16, description="Annual return volatility (only for normal model)")
     dividend_yield: float = Field(default=0.02, description="Annual dividend yield")
 
     def model_post_init(self, __context) -> None:
