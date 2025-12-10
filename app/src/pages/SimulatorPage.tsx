@@ -7,12 +7,14 @@ import {
   compareAnnuity,
   compareStates,
   compareSSTimings,
+  compareAllocations,
   type SimulationInput,
   type SimulationResult,
   type SpouseInput,
   type AnnuityInput,
   type StateComparisonResult,
   type SSTimingComparisonResult,
+  type AllocationComparisonResult,
 } from "../lib/api";
 import { colors, chartColors } from "../lib/design-tokens";
 import "../styles/Simulator.css";
@@ -259,6 +261,9 @@ export function SimulatorPage() {
   const [isComparingSSTiming, setIsComparingSSTiming] = useState(false);
   const [birthYear, setBirthYear] = useState<number>(1960);
   const [piaMonthly, setPiaMonthly] = useState<number>(2000);
+  const [allocationResult, setAllocationResult] =
+    useState<AllocationComparisonResult | null>(null);
+  const [isComparingAllocations, setIsComparingAllocations] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(true);
@@ -439,6 +444,31 @@ export function SimulatorPage() {
       setError(err instanceof Error ? err.message : "SS timing comparison failed");
     } finally {
       setIsComparingSSTiming(false);
+    }
+  };
+
+  const handleCompareAllocations = async () => {
+    if (!result) return;
+
+    setIsComparingAllocations(true);
+    setAllocationResult(null);
+
+    try {
+      const fullParams: SimulationInput = {
+        ...params,
+        spouse: params.has_spouse ? spouse : undefined,
+        annuity: params.has_annuity ? annuity : undefined,
+      };
+
+      const comparison = await compareAllocations(
+        fullParams,
+        [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+      );
+      setAllocationResult(comparison);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Allocation comparison failed");
+    } finally {
+      setIsComparingAllocations(false);
     }
   };
 
@@ -1540,6 +1570,114 @@ export function SimulatorPage() {
               style={{ marginTop: "1rem" }}
             >
               Change Assumptions
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Asset Allocation Comparison */}
+      <div className="summary-section allocation-comparison">
+        <h3>How Does Asset Allocation Affect Your Plan?</h3>
+        <p className="section-description">
+          Compare different stock/bond mixes to find the right balance of growth and safety for your situation.
+        </p>
+
+        {!allocationResult && (
+          <button
+            className="btn-primary"
+            onClick={handleCompareAllocations}
+            disabled={isComparingAllocations}
+          >
+            {isComparingAllocations ? "Comparing..." : "Compare Allocations"}
+          </button>
+        )}
+
+        {allocationResult && (
+          <div className="allocation-results">
+            <div className="allocation-summary">
+              <div className="allocation-optimal">
+                <span className="allocation-optimal-label">Optimal for Success</span>
+                <span className="allocation-optimal-value">
+                  {Math.round(allocationResult.optimal_for_success * 100)}% Stocks
+                </span>
+              </div>
+              {allocationResult.optimal_for_safety !== allocationResult.optimal_for_success && (
+                <div className="allocation-optimal">
+                  <span className="allocation-optimal-label">Optimal for Safety</span>
+                  <span className="allocation-optimal-value">
+                    {Math.round(allocationResult.optimal_for_safety * 100)}% Stocks
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <table className="allocation-table">
+              <thead>
+                <tr>
+                  <th>Allocation</th>
+                  <th>Success Rate</th>
+                  <th>Median Final</th>
+                  <th>Worst Case (5th)</th>
+                  <th>Best Case (95th)</th>
+                  <th>Volatility</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allocationResult.results.map((r) => (
+                  <tr
+                    key={r.stock_allocation}
+                    className={
+                      r.stock_allocation === allocationResult.optimal_for_success
+                        ? "optimal-row"
+                        : ""
+                    }
+                  >
+                    <td>
+                      {Math.round(r.stock_allocation * 100)}% / {Math.round(r.bond_allocation * 100)}%
+                      {r.stock_allocation === allocationResult.optimal_for_success && (
+                        <span className="optimal-badge">Best</span>
+                      )}
+                    </td>
+                    <td
+                      style={{
+                        color:
+                          r.success_rate >= 0.9
+                            ? "#10b981"
+                            : r.success_rate >= 0.8
+                              ? "#84cc16"
+                              : r.success_rate >= 0.7
+                                ? "#eab308"
+                                : "#ef4444",
+                      }}
+                    >
+                      {formatPercent(r.success_rate)}
+                    </td>
+                    <td>{formatCurrency(r.median_final_value)}</td>
+                    <td style={{ color: r.percentile_5_final_value <= 0 ? "#ef4444" : "inherit" }}>
+                      {formatCurrency(r.percentile_5_final_value)}
+                    </td>
+                    <td>{formatCurrency(r.percentile_95_final_value)}</td>
+                    <td>{(r.volatility * 100).toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <p className="allocation-recommendation">
+              {allocationResult.recommendation}
+            </p>
+
+            <p className="tax-note">
+              Stocks historically offer higher returns but more volatility. Bonds provide stability but lower growth.
+              A balanced allocation can reduce risk while maintaining reasonable growth potential.
+            </p>
+
+            <button
+              className="btn-secondary"
+              onClick={() => setAllocationResult(null)}
+              style={{ marginTop: "1rem" }}
+            >
+              Hide Results
             </button>
           </div>
         )}

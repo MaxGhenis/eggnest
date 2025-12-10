@@ -3,6 +3,7 @@
 Uses real S&P 500 total returns (with dividends) adjusted for inflation.
 Data sources:
 - Robert Shiller's dataset (1871-present)
+- NYU Stern Aswath Damodaran dataset (stocks, bonds, bills 1928-2024)
 - Official CPI data for inflation adjustment
 
 This provides more realistic simulations than normal distribution assumptions
@@ -135,19 +136,154 @@ HISTORICAL_REAL_RETURNS = {
 RETURNS_ARRAY = np.array(list(HISTORICAL_REAL_RETURNS.values()))
 RETURNS_YEARS = np.array(list(HISTORICAL_REAL_RETURNS.keys()))
 
+# 10-Year Treasury Bond Real Returns by Year (inflation-adjusted)
+# Source: NYU Stern Aswath Damodaran dataset (1928-2024)
+# These are REAL returns (after inflation), matching the stock return data above.
+# Data from: https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histretSP.html
+
+HISTORICAL_BOND_RETURNS = {
+    # 1928-1939 (Great Depression era - bonds did well during deflation)
+    1928: 0.0201,
+    1929: 0.0360,
+    1930: 0.1168,
+    1931: 0.0745,
+    1932: 0.2125,
+    1933: 0.0108,
+    1934: 0.0635,
+    1935: 0.0144,
+    1936: 0.0352,
+    1937: -0.0144,
+    1938: 0.0719,
+    1939: 0.0441,
+    # 1940s (WWII and post-war inflation hurt bonds)
+    1940: 0.0465,
+    1941: -0.1087,
+    1942: -0.0618,
+    1943: -0.0046,
+    1944: 0.0027,
+    1945: 0.0152,
+    1946: -0.1270,
+    1947: -0.0727,
+    1948: -0.0101,
+    1949: 0.0688,
+    # 1950s (Post-war boom, rising rates hurt bonds)
+    1950: -0.0519,
+    1951: -0.0594,
+    1952: 0.0150,
+    1953: 0.0337,
+    1954: 0.0406,
+    1955: -0.0170,
+    1956: -0.0509,
+    1957: 0.0379,
+    1958: -0.0379,
+    1959: -0.0430,
+    # 1960s
+    1960: 0.1014,
+    1961: 0.0138,
+    1962: 0.0430,
+    1963: 0.0004,
+    1964: 0.0273,
+    1965: -0.0118,
+    1966: -0.0053,
+    1967: -0.0448,
+    1968: -0.0138,
+    1969: -0.1056,
+    # 1970s (Stagflation - terrible for bonds)
+    1970: 0.1059,
+    1971: 0.0631,
+    1972: -0.0057,
+    1973: -0.0464,
+    1974: -0.0921,
+    1975: -0.0312,
+    1976: 0.1060,
+    1977: -0.0507,
+    1978: -0.0899,
+    1979: -0.1114,
+    # 1980s (High rates, then bond bull market)
+    1980: -0.1378,
+    1981: -0.0066,
+    1982: 0.2792,
+    1983: -0.0057,
+    1984: 0.0941,
+    1985: 0.2111,
+    1986: 0.2293,
+    1987: -0.0900,
+    1988: 0.0364,
+    1989: 0.1247,
+    # 1990s (Bond bull market continues)
+    1990: 0.0012,
+    1991: 0.1159,
+    1992: 0.0628,
+    1993: 0.1116,
+    1994: -0.1043,
+    1995: 0.2042,
+    1996: -0.0183,
+    1997: 0.0810,
+    1998: 0.1310,
+    1999: -0.1065,
+    # 2000s (Flight to safety, financial crisis)
+    2000: 0.1283,
+    2001: 0.0396,
+    2002: 0.1244,
+    2003: -0.0148,
+    2004: 0.0120,
+    2005: -0.0053,
+    2006: -0.0057,
+    2007: 0.0589,
+    2008: 0.1999,
+    2009: -0.1347,
+    # 2010s (Low rates, QE)
+    2010: 0.0686,
+    2011: 0.1270,
+    2012: 0.0121,
+    2013: -0.1045,
+    2014: 0.0991,
+    2015: 0.0055,
+    2016: -0.0136,
+    2017: 0.0068,
+    2018: -0.0189,
+    2019: 0.0719,
+    # 2020s (Pandemic, inflation)
+    2020: 0.0984,
+    2021: -0.1070,
+    2022: -0.2281,
+    2023: 0.0051,
+    2024: -0.0427,
+}
+
+# Convert bond returns to numpy array
+BOND_RETURNS_ARRAY = np.array(list(HISTORICAL_BOND_RETURNS.values()))
+
 
 def get_historical_stats() -> dict:
-    """Get summary statistics for historical returns."""
-    returns = RETURNS_ARRAY
+    """Get summary statistics for historical returns (stocks and bonds)."""
+    stock_returns = RETURNS_ARRAY
+    bond_returns = BOND_RETURNS_ARRAY
     return {
-        "mean": float(np.mean(returns)),
-        "median": float(np.median(returns)),
-        "std": float(np.std(returns)),
-        "min": float(np.min(returns)),
-        "max": float(np.max(returns)),
-        "min_year": int(RETURNS_YEARS[np.argmin(returns)]),
-        "max_year": int(RETURNS_YEARS[np.argmax(returns)]),
-        "n_years": len(returns),
+        # Stock stats
+        "stock_mean": float(np.mean(stock_returns)),
+        "stock_median": float(np.median(stock_returns)),
+        "stock_std": float(np.std(stock_returns)),
+        "stock_min": float(np.min(stock_returns)),
+        "stock_max": float(np.max(stock_returns)),
+        "stock_min_year": int(RETURNS_YEARS[np.argmin(stock_returns)]),
+        "stock_max_year": int(RETURNS_YEARS[np.argmax(stock_returns)]),
+        # Bond stats
+        "bond_mean": float(np.mean(bond_returns)),
+        "bond_median": float(np.median(bond_returns)),
+        "bond_std": float(np.std(bond_returns)),
+        "bond_min": float(np.min(bond_returns)),
+        "bond_max": float(np.max(bond_returns)),
+        # Legacy fields for backward compatibility
+        "mean": float(np.mean(stock_returns)),
+        "median": float(np.median(stock_returns)),
+        "std": float(np.std(stock_returns)),
+        "min": float(np.min(stock_returns)),
+        "max": float(np.max(stock_returns)),
+        "min_year": int(RETURNS_YEARS[np.argmin(stock_returns)]),
+        "max_year": int(RETURNS_YEARS[np.argmax(stock_returns)]),
+        # Common fields
+        "n_years": len(stock_returns),
         "start_year": int(RETURNS_YEARS[0]),
         "end_year": int(RETURNS_YEARS[-1]),
     }
@@ -306,3 +442,109 @@ def generate_returns(
         return generator.normal(n_simulations, n_years, expected_return, volatility)
     else:
         raise ValueError(f"Unknown method: {method}")
+
+
+def generate_blended_returns(
+    n_simulations: int,
+    n_years: int,
+    stock_allocation: float = 1.0,
+    method: Literal["bootstrap", "block_bootstrap", "historical", "normal"] = "bootstrap",
+    block_size: int = 5,
+    expected_stock_return: float = 0.07,
+    stock_volatility: float = 0.16,
+    expected_bond_return: float = 0.02,
+    bond_volatility: float = 0.08,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """
+    Generate blended stock/bond returns based on allocation.
+
+    Args:
+        n_simulations: Number of simulation paths.
+        n_years: Number of years per path.
+        stock_allocation: Fraction of portfolio in stocks (0.0 to 1.0).
+                         1.0 = 100% stocks, 0.0 = 100% bonds.
+        method: Return generation method (same as generate_returns).
+        block_size: Block size for block_bootstrap method.
+        expected_stock_return: Mean stock return for normal method.
+        stock_volatility: Stock volatility for normal method.
+        expected_bond_return: Mean bond return for normal method.
+        bond_volatility: Bond volatility for normal method.
+        rng: NumPy random generator.
+
+    Returns:
+        Array of shape (n_simulations, n_years) with blended annual returns.
+
+    Raises:
+        ValueError: If stock_allocation is not between 0 and 1.
+    """
+    if not 0 <= stock_allocation <= 1:
+        raise ValueError(f"stock_allocation must be between 0 and 1, got {stock_allocation}")
+
+    # If 100% stocks, use the standard function for efficiency
+    if stock_allocation == 1.0:
+        return generate_returns(
+            n_simulations=n_simulations,
+            n_years=n_years,
+            method=method,
+            block_size=block_size,
+            expected_return=expected_stock_return,
+            volatility=stock_volatility,
+            rng=rng,
+        )
+
+    bond_allocation = 1.0 - stock_allocation
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    n_historical = len(RETURNS_ARRAY)
+
+    if method == "bootstrap":
+        # Sample same indices for both stock and bond to maintain correlation structure
+        indices = rng.integers(0, n_historical, size=(n_simulations, n_years))
+        stock_returns = RETURNS_ARRAY[indices]
+        bond_returns = BOND_RETURNS_ARRAY[indices]
+
+    elif method == "block_bootstrap":
+        # Block bootstrap for both asset classes
+        n_blocks = (n_years + block_size - 1) // block_size
+        stock_returns = np.zeros((n_simulations, n_years))
+        bond_returns = np.zeros((n_simulations, n_years))
+
+        for sim in range(n_simulations):
+            year_idx = 0
+            for _ in range(n_blocks):
+                start = rng.integers(0, n_historical - block_size + 1)
+                end_idx = min(year_idx + block_size, n_years)
+                block_len = end_idx - year_idx
+
+                stock_returns[sim, year_idx:end_idx] = RETURNS_ARRAY[start : start + block_len]
+                bond_returns[sim, year_idx:end_idx] = BOND_RETURNS_ARRAY[start : start + block_len]
+                year_idx = end_idx
+
+    elif method == "historical":
+        # Walk through historical sequences
+        stock_returns = np.zeros((n_simulations, n_years))
+        bond_returns = np.zeros((n_simulations, n_years))
+
+        start_indices = rng.integers(0, n_historical, size=n_simulations)
+
+        for sim in range(n_simulations):
+            for year in range(n_years):
+                idx = (start_indices[sim] + year) % n_historical
+                stock_returns[sim, year] = RETURNS_ARRAY[idx]
+                bond_returns[sim, year] = BOND_RETURNS_ARRAY[idx]
+
+    elif method == "normal":
+        # Generate independent normal returns
+        stock_returns = rng.normal(expected_stock_return, stock_volatility, size=(n_simulations, n_years))
+        bond_returns = rng.normal(expected_bond_return, bond_volatility, size=(n_simulations, n_years))
+
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+    # Blend returns based on allocation
+    blended_returns = stock_allocation * stock_returns + bond_allocation * bond_returns
+
+    return blended_returns

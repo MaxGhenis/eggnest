@@ -78,6 +78,14 @@ class SimulationInput(BaseModel):
     return_volatility: float = Field(default=0.16, description="Annual return volatility (only for normal model)")
     dividend_yield: float = Field(default=0.02, description="Annual dividend yield")
 
+    # Asset allocation
+    stock_allocation: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of portfolio in stocks (0.0 to 1.0). Remainder is bonds."
+    )
+
     def model_post_init(self, __context) -> None:
         """Handle backward compatibility."""
         # Convert target_monthly_income to annual_spending if provided
@@ -228,4 +236,50 @@ class SSTimingComparisonResult(BaseModel):
     )
     optimal_for_longevity: int = Field(
         ..., description="Claiming age optimal if living to max_age"
+    )
+
+
+class AllocationInput(BaseModel):
+    """Input for asset allocation comparison."""
+
+    base_input: SimulationInput
+    allocations: list[float] = Field(
+        default=[0.2, 0.4, 0.6, 0.8, 1.0],
+        min_length=1,
+        max_length=10,
+        description="Stock allocations to compare (0.0 to 1.0)"
+    )
+
+    def model_post_init(self, __context) -> None:
+        """Validate allocations are between 0 and 1."""
+        for alloc in self.allocations:
+            if not 0.0 <= alloc <= 1.0:
+                raise ValueError(f"Allocation {alloc} must be between 0.0 and 1.0")
+
+
+class AllocationResult(BaseModel):
+    """Result for a single asset allocation."""
+
+    stock_allocation: float = Field(..., description="Fraction in stocks (0.0 to 1.0)")
+    bond_allocation: float = Field(..., description="Fraction in bonds (0.0 to 1.0)")
+    success_rate: float
+    median_final_value: float
+    percentile_5_final_value: float = Field(..., description="5th percentile final value (worst case)")
+    percentile_95_final_value: float = Field(..., description="95th percentile final value (best case)")
+    volatility: float = Field(..., description="Standard deviation of annual returns")
+    expected_return: float = Field(..., description="Mean annual return")
+
+
+class AllocationComparisonResult(BaseModel):
+    """Results comparing asset allocation strategies."""
+
+    results: list[AllocationResult]
+    optimal_for_success: float = Field(
+        ..., description="Stock allocation with highest success rate"
+    )
+    optimal_for_safety: float = Field(
+        ..., description="Stock allocation with lowest volatility among high-success options"
+    )
+    recommendation: str = Field(
+        ..., description="Plain language recommendation based on results"
     )

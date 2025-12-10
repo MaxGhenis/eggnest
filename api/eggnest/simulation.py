@@ -5,7 +5,7 @@ import numpy as np
 from .models import SimulationInput, SimulationResult
 from .tax import TaxCalculator
 from .mortality import generate_alive_mask, generate_joint_alive_mask
-from .returns import generate_returns
+from .returns import generate_blended_returns
 
 
 class MonteCarloSimulator:
@@ -52,14 +52,15 @@ class MonteCarloSimulator:
         total_taxes = np.zeros(n_sims)
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
-        # Generate market returns using selected model
-        # Default is bootstrap from historical S&P 500 real returns
-        annual_returns = generate_returns(
+        # Generate market returns using selected model and allocation
+        # Default is bootstrap from historical returns with 100% stocks
+        annual_returns = generate_blended_returns(
             n_simulations=n_sims,
             n_years=n_years,
+            stock_allocation=p.stock_allocation,
             method=p.return_model,
-            expected_return=p.expected_return,
-            volatility=p.return_volatility,
+            expected_stock_return=p.expected_return,
+            stock_volatility=p.return_volatility,
             rng=self._rng,
         )
 
@@ -300,14 +301,15 @@ class MonteCarloSimulator:
         total_taxes = np.zeros(n_sims)
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
-        # Generate market returns using selected model
-        # Default is bootstrap from historical S&P 500 real returns
-        annual_returns = generate_returns(
+        # Generate market returns using selected model and allocation
+        # Default is bootstrap from historical returns with 100% stocks
+        annual_returns = generate_blended_returns(
             n_simulations=n_sims,
             n_years=n_years,
+            stock_allocation=p.stock_allocation,
             method=p.return_model,
-            expected_return=p.expected_return,
-            volatility=p.return_volatility,
+            expected_stock_return=p.expected_return,
+            stock_volatility=p.return_volatility,
             rng=self._rng,
         )
 

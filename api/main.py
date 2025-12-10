@@ -7,6 +7,9 @@ from fastapi.responses import StreamingResponse
 
 from eggnest.config import get_settings
 from eggnest.models import (
+    AllocationInput,
+    AllocationResult,
+    AllocationComparisonResult,
     AnnuityComparison,
     AnnuityComparisonResult,
     MortalityRates,
@@ -26,6 +29,7 @@ from eggnest.ss_timing import (
 )
 from eggnest.simulation import MonteCarloSimulator, compare_to_annuity
 from eggnest.mortality import get_mortality_rates, calculate_survival_curve
+from eggnest.returns import get_historical_stats
 from eggnest.supabase_client import (
     delete_simulation,
     get_user_simulations,
@@ -307,6 +311,83 @@ async def compare_ss_timing_endpoint(timing_input: SSTimingInput):
         results=results,
         optimal_claiming_age=optimal_success.claiming_age,
         optimal_for_longevity=optimal_longevity.claiming_age,
+    )
+
+
+@app.post("/compare-allocations", response_model=AllocationComparisonResult)
+async def compare_allocations_endpoint(allocation_input: AllocationInput):
+    """
+    Compare simulation outcomes across different asset allocations.
+
+    Runs the same simulation for each stock/bond allocation and compares
+    success rates, volatility, and final values. Helps users decide on
+    optimal portfolio allocation for their risk tolerance.
+    """
+    results: list[AllocationResult] = []
+    historical_stats = get_historical_stats()
+
+    for stock_alloc in sorted(allocation_input.allocations):
+        bond_alloc = 1.0 - stock_alloc
+
+        # Create a copy of input with this allocation
+        alloc_input = allocation_input.base_input.model_copy(
+            update={"stock_allocation": stock_alloc}
+        )
+        simulator = MonteCarloSimulator(alloc_input)
+        sim_result = simulator.run()
+
+        # Calculate blended expected return and volatility
+        expected_return = (
+            stock_alloc * historical_stats["stock_mean"] +
+            bond_alloc * historical_stats["bond_mean"]
+        )
+        # Simplified volatility calculation (doesn't account for correlation)
+        # A more accurate calculation would use covariance, but this gives a reasonable estimate
+        volatility = (
+            stock_alloc * historical_stats["stock_std"] +
+            bond_alloc * historical_stats["bond_std"]
+        )
+
+        result = AllocationResult(
+            stock_allocation=stock_alloc,
+            bond_allocation=bond_alloc,
+            success_rate=sim_result.success_rate,
+            median_final_value=sim_result.median_final_value,
+            percentile_5_final_value=sim_result.percentiles["p5"],
+            percentile_95_final_value=sim_result.percentiles["p95"],
+            volatility=round(volatility, 4),
+            expected_return=round(expected_return, 4),
+        )
+        results.append(result)
+
+    # Find optimal allocations
+    # Highest success rate
+    optimal_success = max(results, key=lambda r: r.success_rate)
+
+    # Optimal for safety: lowest volatility among allocations with success rate >= 80%
+    high_success_results = [r for r in results if r.success_rate >= 0.8]
+    if high_success_results:
+        optimal_safety = min(high_success_results, key=lambda r: r.volatility)
+    else:
+        # If no allocation reaches 80%, pick lowest volatility overall
+        optimal_safety = min(results, key=lambda r: r.volatility)
+
+    # Generate recommendation
+    if optimal_success.success_rate >= 0.9:
+        if optimal_success.stock_allocation == optimal_safety.stock_allocation:
+            recommendation = f"A {int(optimal_success.stock_allocation * 100)}% stock allocation provides both the highest success rate ({optimal_success.success_rate:.0%}) and acceptable risk."
+        else:
+            recommendation = f"For maximum success ({optimal_success.success_rate:.0%}), consider {int(optimal_success.stock_allocation * 100)}% stocks. For lower volatility with good success ({optimal_safety.success_rate:.0%}), consider {int(optimal_safety.stock_allocation * 100)}% stocks."
+    elif optimal_success.success_rate >= 0.8:
+        recommendation = f"A {int(optimal_success.stock_allocation * 100)}% stock allocation achieves {optimal_success.success_rate:.0%} success. Consider increasing savings or reducing spending to improve odds."
+    else:
+        recommendation = f"Success rates are below target across all allocations. Consider increasing savings, reducing spending, or delaying retirement to improve outcomes."
+
+    return AllocationComparisonResult(
+        results=results,
+        optimal_for_success=optimal_success.stock_allocation,
+        optimal_for_safety=optimal_safety.stock_allocation,
+        recommendation=recommendation,
     )
 
 

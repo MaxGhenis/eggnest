@@ -1242,3 +1242,90 @@
     gap: 1rem;
   }
 }
+
+/* Asset Allocation Comparison */
+.allocation-comparison {
+  margin-top: 2rem;
+}
+
+.allocation-results {
+  margin-top: 1rem;
+}
+
+.allocation-summary {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.allocation-optimal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.allocation-optimal-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.allocation-optimal-value {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #10b981;
+}
+
+.allocation-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.allocation-table th {
+  text-align: left;
+  padding: 0.75rem;
+  border-bottom: 2px solid #e5e7eb;
+  font-weight: 600;
+  color: #374151;
+}
+
+.allocation-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.allocation-table tr.optimal-row {
+  background-color: #ecfdf5;
+}
+
+.allocation-table tr:hover {
+  background-color: #f3f4f6;
+}
+
+.allocation-recommendation {
+  background-color: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+  color: #166534;
+}
+
+@media (max-width: 768px) {
+  .allocation-table {
+    font-size: 0.8rem;
+  }
+
+  .allocation-table th,
+  .allocation-table td {
+    padding: 0.5rem;
+  }
+
+  .allocation-summary {
+    flex-direction: column;
+    gap: 1rem;
+  }
+}

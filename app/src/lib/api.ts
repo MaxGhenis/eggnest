@@ -309,3 +309,44 @@ export async function compareSSTimings(
 
   return response.json();
 }
+
+// Asset Allocation Types
+export interface AllocationResult {
+  stock_allocation: number;
+  bond_allocation: number;
+  success_rate: number;
+  median_final_value: number;
+  percentile_5_final_value: number;
+  percentile_95_final_value: number;
+  volatility: number;
+  expected_return: number;
+}
+
+export interface AllocationComparisonResult {
+  results: AllocationResult[];
+  optimal_for_success: number;
+  optimal_for_safety: number;
+  recommendation: string;
+}
+
+export async function compareAllocations(
+  baseInput: SimulationInput,
+  allocations?: number[]
+): Promise<AllocationComparisonResult> {
+  const response = await fetch(`${API_URL}/compare-allocations`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      base_input: baseInput,
+      ...(allocations && { allocations }),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Allocation comparison failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
