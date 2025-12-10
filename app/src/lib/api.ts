@@ -261,3 +261,51 @@ export async function compareStates(
 
   return response.json();
 }
+
+// Social Security Timing Types
+export interface SSTimingResult {
+  claiming_age: number;
+  monthly_benefit: number;
+  annual_benefit: number;
+  adjustment_factor: number;
+  success_rate: number;
+  median_final_value: number;
+  total_ss_income_median: number;
+  total_taxes_median: number;
+  breakeven_vs_62: number | null;
+}
+
+export interface SSTimingComparisonResult {
+  birth_year: number;
+  full_retirement_age: number;
+  pia_monthly: number;
+  results: SSTimingResult[];
+  optimal_claiming_age: number;
+  optimal_for_longevity: number;
+}
+
+export async function compareSSTimings(
+  baseInput: SimulationInput,
+  birthYear: number,
+  piaMonthly: number,
+  claimingAges?: number[]
+): Promise<SSTimingComparisonResult> {
+  const response = await fetch(`${API_URL}/compare-ss-timing`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      base_input: baseInput,
+      birth_year: birthYear,
+      pia_monthly: piaMonthly,
+      ...(claimingAges && { claiming_ages: claimingAges }),
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`SS timing comparison failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}

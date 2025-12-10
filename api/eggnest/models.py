@@ -180,3 +180,52 @@ class StateComparisonResult(BaseModel):
     tax_savings_vs_base: dict[str, float] = Field(
         ..., description="Tax savings relative to base state (positive = saves money)"
     )
+
+
+class SSTimingInput(BaseModel):
+    """Input for Social Security timing comparison."""
+
+    base_input: SimulationInput
+    birth_year: int = Field(
+        ..., ge=1900, le=2010, description="Birth year (determines Full Retirement Age)"
+    )
+    pia_monthly: float = Field(
+        ..., gt=0, le=10000, description="Primary Insurance Amount (monthly benefit at FRA)"
+    )
+    claiming_ages: list[int] = Field(
+        default=[62, 63, 64, 65, 66, 67, 68, 69, 70],
+        min_length=1,
+        max_length=9,
+        description="Claiming ages to compare (62-70)"
+    )
+
+
+class SSTimingResult(BaseModel):
+    """Result for a single claiming age."""
+
+    claiming_age: int
+    monthly_benefit: float = Field(..., description="Adjusted monthly benefit at this claiming age")
+    annual_benefit: float = Field(..., description="Annual benefit (monthly * 12)")
+    adjustment_factor: float = Field(..., description="Factor applied to PIA (e.g., 0.7 = 30% reduction)")
+    success_rate: float
+    median_final_value: float
+    total_ss_income_median: float = Field(..., description="Total SS income over lifetime (median)")
+    total_taxes_median: float
+    breakeven_vs_62: int | None = Field(
+        None, description="Age at which cumulative benefits exceed claiming at 62"
+    )
+
+
+class SSTimingComparisonResult(BaseModel):
+    """Results comparing Social Security claiming strategies."""
+
+    birth_year: int
+    full_retirement_age: float
+    pia_monthly: float
+    results: list[SSTimingResult]
+    optimal_claiming_age: int = Field(
+        ..., description="Claiming age with highest success rate"
+    )
+    optimal_for_longevity: int = Field(
+        ..., description="Claiming age optimal if living to max_age"
+    )

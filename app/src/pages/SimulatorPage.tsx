@@ -6,11 +6,13 @@ import {
   runSimulationWithProgress,
   compareAnnuity,
   compareStates,
+  compareSSTimings,
   type SimulationInput,
   type SimulationResult,
   type SpouseInput,
   type AnnuityInput,
   type StateComparisonResult,
+  type SSTimingComparisonResult,
 } from "../lib/api";
 import { colors, chartColors } from "../lib/design-tokens";
 import "../styles/Simulator.css";
@@ -252,6 +254,11 @@ export function SimulatorPage() {
     useState<StateComparisonResult | null>(null);
   const [isComparingStates, setIsComparingStates] = useState(false);
   const [selectedCompareStates, setSelectedCompareStates] = useState<string[]>([]);
+  const [ssTimingResult, setSSTimingResult] =
+    useState<SSTimingComparisonResult | null>(null);
+  const [isComparingSSTiming, setIsComparingSSTiming] = useState(false);
+  const [birthYear, setBirthYear] = useState<number>(1960);
+  const [piaMonthly, setPiaMonthly] = useState<number>(2000);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(true);
@@ -407,6 +414,32 @@ export function SimulatorPage() {
         ? prev.filter(s => s !== state)
         : prev.length < 5 ? [...prev, state] : prev
     );
+  };
+
+  const handleCompareSSTimings = async () => {
+    if (!result) return;
+
+    setIsComparingSSTiming(true);
+    setSSTimingResult(null);
+
+    try {
+      const fullParams: SimulationInput = {
+        ...params,
+        spouse: params.has_spouse ? spouse : undefined,
+        annuity: params.has_annuity ? annuity : undefined,
+      };
+
+      const comparison = await compareSSTimings(
+        fullParams,
+        birthYear,
+        piaMonthly
+      );
+      setSSTimingResult(comparison);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "SS timing comparison failed");
+    } finally {
+      setIsComparingSSTiming(false);
+    }
   };
 
   const successColor =
@@ -1343,6 +1376,170 @@ export function SimulatorPage() {
               style={{ marginTop: '1rem' }}
             >
               Compare Different States
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Social Security Timing Comparison */}
+      <div className="summary-section ss-timing">
+        <h3>When Should You Claim Social Security?</h3>
+        <p className="section-desc">
+          Compare how different claiming ages affect your lifetime benefits and portfolio.
+        </p>
+
+        {!ssTimingResult && !isComparingSSTiming && (
+          <div className="ss-timing-inputs">
+            <div className="ss-timing-row">
+              <div className="wizard-field">
+                <label>Your Birth Year</label>
+                <input
+                  type="number"
+                  value={birthYear}
+                  onChange={(e) => setBirthYear(Number(e.target.value))}
+                  min={1930}
+                  max={2000}
+                />
+                <div className="wizard-field-hint">
+                  Used to determine your Full Retirement Age
+                </div>
+              </div>
+              <div className="wizard-field">
+                <label>Estimated Benefit at FRA (PIA)</label>
+                <div className="wizard-field-prefix">
+                  <span>$</span>
+                  <input
+                    type="number"
+                    value={piaMonthly}
+                    onChange={(e) => setPiaMonthly(Number(e.target.value))}
+                    min={0}
+                    max={10000}
+                    step={100}
+                  />
+                </div>
+                <div className="wizard-field-hint">
+                  Your benefit if you claim at full retirement age (check ssa.gov/myaccount)
+                </div>
+              </div>
+            </div>
+            <button
+              className="btn-primary"
+              onClick={handleCompareSSTimings}
+              disabled={isComparingSSTiming || piaMonthly <= 0}
+            >
+              Compare Claiming Ages
+            </button>
+          </div>
+        )}
+
+        {isComparingSSTiming && (
+          <div className="loading-indicator">
+            <div className="spinner"></div>
+            Comparing claiming ages (this takes a few minutes)...
+          </div>
+        )}
+
+        {ssTimingResult && (
+          <div className="ss-timing-results">
+            <div className="ss-timing-summary">
+              <div className="ss-timing-fra">
+                <span className="label">Your Full Retirement Age:</span>
+                <span className="value">
+                  {Math.floor(ssTimingResult.full_retirement_age)} years
+                  {ssTimingResult.full_retirement_age % 1 > 0 &&
+                    ` ${Math.round((ssTimingResult.full_retirement_age % 1) * 12)} months`}
+                </span>
+              </div>
+              <div className="ss-timing-optimal">
+                <span className="label">Optimal for success rate:</span>
+                <span className="value highlight">
+                  Claim at age {ssTimingResult.optimal_claiming_age}
+                </span>
+              </div>
+              {ssTimingResult.optimal_for_longevity !== ssTimingResult.optimal_claiming_age && (
+                <div className="ss-timing-optimal">
+                  <span className="label">Optimal if you live long:</span>
+                  <span className="value">
+                    Claim at age {ssTimingResult.optimal_for_longevity}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <table className="ss-timing-table">
+              <thead>
+                <tr>
+                  <th>Claiming Age</th>
+                  <th>Monthly Benefit</th>
+                  <th>Adjustment</th>
+                  <th>Success Rate</th>
+                  <th>Lifetime SS Income</th>
+                  <th>Breakeven vs 62</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ssTimingResult.results.map((r) => (
+                  <tr
+                    key={r.claiming_age}
+                    className={
+                      r.claiming_age === ssTimingResult.optimal_claiming_age
+                        ? "optimal"
+                        : r.claiming_age === Math.round(ssTimingResult.full_retirement_age)
+                          ? "fra"
+                          : ""
+                    }
+                  >
+                    <td>
+                      {r.claiming_age}
+                      {r.claiming_age === Math.round(ssTimingResult.full_retirement_age) && (
+                        <span className="fra-badge">FRA</span>
+                      )}
+                      {r.claiming_age === ssTimingResult.optimal_claiming_age && (
+                        <span className="optimal-badge">Best</span>
+                      )}
+                    </td>
+                    <td>${r.monthly_benefit.toLocaleString()}/mo</td>
+                    <td
+                      style={{
+                        color:
+                          r.adjustment_factor < 1
+                            ? "#ef4444"
+                            : r.adjustment_factor > 1
+                              ? "#10b981"
+                              : "inherit",
+                      }}
+                    >
+                      {r.adjustment_factor < 1
+                        ? `-${((1 - r.adjustment_factor) * 100).toFixed(0)}%`
+                        : r.adjustment_factor > 1
+                          ? `+${((r.adjustment_factor - 1) * 100).toFixed(0)}%`
+                          : "—"}
+                    </td>
+                    <td>{formatPercent(r.success_rate)}</td>
+                    <td>{formatCurrency(r.total_ss_income_median)}</td>
+                    <td>
+                      {r.breakeven_vs_62
+                        ? `Age ${r.breakeven_vs_62}`
+                        : r.claiming_age === 62
+                          ? "—"
+                          : "N/A"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <p className="tax-note">
+              Early claiming (before FRA) permanently reduces your benefit. Delayed claiming (after FRA, up to 70)
+              permanently increases it by 8% per year. Breakeven shows when total cumulative benefits from waiting exceed claiming at 62.
+            </p>
+
+            <button
+              className="btn-secondary"
+              onClick={() => setSSTimingResult(null)}
+              style={{ marginTop: "1rem" }}
+            >
+              Change Assumptions
             </button>
           </div>
         )}

@@ -1113,3 +1113,132 @@
     text-align: center;
   }
 }
+
+/* ============================================
+   Social Security Timing Comparison
+   ============================================ */
+
+.ss-timing {
+  margin-top: 2rem;
+}
+
+.ss-timing-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.ss-timing-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.ss-timing-results {
+  margin-top: 1rem;
+}
+
+.ss-timing-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--color-bg-alt);
+  border-radius: var(--radius-md, 8px);
+}
+
+.ss-timing-fra,
+.ss-timing-optimal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ss-timing-fra .label,
+.ss-timing-optimal .label {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.ss-timing-fra .value,
+.ss-timing-optimal .value {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.ss-timing-optimal .value.highlight {
+  color: var(--color-primary);
+}
+
+.ss-timing-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.ss-timing-table th {
+  background: var(--color-bg-alt);
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid var(--color-border);
+}
+
+.ss-timing-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.ss-timing-table tr.optimal {
+  background: rgba(217, 119, 6, 0.08);
+}
+
+.ss-timing-table tr.fra {
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.fra-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.375rem;
+  background: #3b82f6;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.optimal-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.125rem 0.375rem;
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+@media (max-width: 768px) {
+  .ss-timing-row {
+    grid-template-columns: 1fr;
+  }
+
+  .ss-timing-table {
+    font-size: 0.8rem;
+  }
+
+  .ss-timing-table th,
+  .ss-timing-table td {
+    padding: 0.5rem;
+  }
+
+  .ss-timing-summary {
+    flex-direction: column;
+    gap: 1rem;
+  }
+}
