@@ -251,6 +251,7 @@ export function SimulatorPage() {
   const [stateComparisonResult, setStateComparisonResult] =
     useState<StateComparisonResult | null>(null);
   const [isComparingStates, setIsComparingStates] = useState(false);
+  const [selectedCompareStates, setSelectedCompareStates] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(true);
@@ -373,7 +374,7 @@ export function SimulatorPage() {
   // No-income-tax states for quick comparison
   const NO_TAX_STATES = ["FL", "TX", "NV", "WA", "WY", "SD", "AK", "TN", "NH"];
 
-  const handleCompareStates = async () => {
+  const handleCompareStates = async (statesToCompare?: string[]) => {
     if (!result) return;
 
     setIsComparingStates(true);
@@ -386,16 +387,26 @@ export function SimulatorPage() {
         annuity: params.has_annuity ? annuity : undefined,
       };
 
-      // Compare against no-income-tax states (excluding current state if it's one of them)
-      const statesToCompare = NO_TAX_STATES.filter(s => s !== params.state).slice(0, 5);
+      // Use provided states, selected states, or default to no-tax states
+      const states = statesToCompare ||
+        (selectedCompareStates.length > 0 ? selectedCompareStates :
+          NO_TAX_STATES.filter(s => s !== params.state).slice(0, 5));
 
-      const comparison = await compareStates(fullParams, statesToCompare);
+      const comparison = await compareStates(fullParams, states);
       setStateComparisonResult(comparison);
     } catch (err) {
       setError(err instanceof Error ? err.message : "State comparison failed");
     } finally {
       setIsComparingStates(false);
     }
+  };
+
+  const toggleCompareState = (state: string) => {
+    setSelectedCompareStates(prev =>
+      prev.includes(state)
+        ? prev.filter(s => s !== state)
+        : prev.length < 5 ? [...prev, state] : prev
+    );
   };
 
   const successColor =
@@ -1232,17 +1243,47 @@ export function SimulatorPage() {
         </p>
 
         {!stateComparisonResult && !isComparingStates && (
-          <button
-            className="btn-secondary"
-            onClick={handleCompareStates}
-            disabled={isComparingStates}
-          >
-            Compare to No-Income-Tax States
-          </button>
+          <div className="state-picker">
+            <div className="state-picker-row">
+              <button
+                className="btn-secondary"
+                onClick={() => handleCompareStates()}
+                disabled={isComparingStates}
+              >
+                Compare to No-Income-Tax States
+              </button>
+            </div>
+
+            <div className="state-picker-divider">or select specific states</div>
+
+            <div className="state-chips">
+              {US_STATES.filter(s => s !== params.state).map(state => (
+                <button
+                  key={state}
+                  className={`state-chip ${selectedCompareStates.includes(state) ? 'selected' : ''} ${NO_TAX_STATES.includes(state) ? 'no-tax' : ''}`}
+                  onClick={() => toggleCompareState(state)}
+                  disabled={!selectedCompareStates.includes(state) && selectedCompareStates.length >= 5}
+                >
+                  {state}
+                </button>
+              ))}
+            </div>
+
+            {selectedCompareStates.length > 0 && (
+              <button
+                className="btn-primary"
+                onClick={() => handleCompareStates(selectedCompareStates)}
+                disabled={isComparingStates}
+              >
+                Compare {selectedCompareStates.length} State{selectedCompareStates.length > 1 ? 's' : ''}
+              </button>
+            )}
+          </div>
         )}
 
         {isComparingStates && (
           <div className="loading-indicator">
+            <div className="spinner"></div>
             Comparing states...
           </div>
         )}
@@ -1259,7 +1300,12 @@ export function SimulatorPage() {
                 </tr>
               </thead>
               <tbody>
-                {stateComparisonResult.results.map((r) => (
+                {stateComparisonResult.results
+                  .sort((a, b) =>
+                    stateComparisonResult.tax_savings_vs_base[b.state] -
+                    stateComparisonResult.tax_savings_vs_base[a.state]
+                  )
+                  .map((r) => (
                   <tr key={r.state} className={r.state === params.state ? "current-state" : ""}>
                     <td>
                       {r.state}
@@ -1288,6 +1334,16 @@ export function SimulatorPage() {
               Tax savings show lifetime difference compared to {params.state}.
               Positive values mean you save money by relocating.
             </p>
+            <button
+              className="btn-secondary"
+              onClick={() => {
+                setStateComparisonResult(null);
+                setSelectedCompareStates([]);
+              }}
+              style={{ marginTop: '1rem' }}
+            >
+              Compare Different States
+            </button>
           </div>
         )}
       </div>
@@ -1365,6 +1421,64 @@ export function SimulatorPage() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Next Steps CTA */}
+      <div className="summary-section next-steps">
+        <h3>Take the Next Step</h3>
+        <div className="cta-grid">
+          <a
+            href="https://www.nerdwallet.com/best/investing/financial-advisors-for-retirement"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="cta-card"
+          >
+            <div className="cta-icon">👤</div>
+            <div className="cta-content">
+              <div className="cta-title">Talk to a Fiduciary Advisor</div>
+              <div className="cta-desc">
+                Get personalized advice from a fee-only advisor who works in your interest.
+              </div>
+            </div>
+            <span className="cta-arrow">→</span>
+          </a>
+          <a
+            href="https://investor.vanguard.com/investment-products/index-funds"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="cta-card"
+          >
+            <div className="cta-icon">📈</div>
+            <div className="cta-content">
+              <div className="cta-title">Low-Cost Index Funds</div>
+              <div className="cta-desc">
+                Simple, diversified investing with minimal fees.
+              </div>
+            </div>
+            <span className="cta-arrow">→</span>
+          </a>
+          {params.has_annuity && (
+            <a
+              href="https://www.immediateannuities.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="cta-card"
+            >
+              <div className="cta-icon">🛡️</div>
+              <div className="cta-content">
+                <div className="cta-title">Compare Annuity Quotes</div>
+                <div className="cta-desc">
+                  Get quotes from multiple insurers for guaranteed income.
+                </div>
+              </div>
+              <span className="cta-arrow">→</span>
+            </a>
+          )}
+        </div>
+        <p className="cta-disclaimer">
+          These are educational resources, not endorsements. We may receive referral fees
+          from some links, which helps keep EggNest free.
+        </p>
       </div>
     </div>
   );

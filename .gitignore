@@ -46,3 +46,4 @@ htmlcov/
 # Misc
 *.h5
 *.tmp
+.vercel
