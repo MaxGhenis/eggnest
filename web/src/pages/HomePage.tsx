@@ -29,7 +29,7 @@ export function HomePage() {
           </h1>
           <p className="hero-subtitle">
             Monte Carlo simulation meets real tax law. See thousands of possible
-            futures for your retirement—not just the rosy average.
+            futures for your finances—the full range of possibilities.
           </p>
           <div className="hero-cta">
             <a href={APP_URL} className="btn-primary">
@@ -53,7 +53,7 @@ export function HomePage() {
               <text x="15" y="110" fontSize="11" fill="#6b7280" transform="rotate(-90, 15, 110)">Portfolio Value</text>
 
               {/* X-axis label */}
-              <text x="225" y="230" fontSize="11" fill="#6b7280" textAnchor="middle">Years in Retirement</text>
+              <text x="225" y="230" fontSize="11" fill="#6b7280" textAnchor="middle">Years</text>
 
               {/* X-axis ticks */}
               <text x="50" y="215" fontSize="10" fill="#9ca3af" textAnchor="middle">0</text>
@@ -106,12 +106,12 @@ export function HomePage() {
 
       {/* Problem */}
       <section className="problem" id="why">
-        <h2>Averages hide the risk.</h2>
+        <h2>Go beyond the average.</h2>
         <p>
-          Most retirement calculators show one number: your "expected" outcome.
+          Most financial calculators show one number: your "expected" outcome.
           But markets don't move in averages—they crash, they boom, they surprise.
-          A single projection hides the range of outcomes that could make or break
-          your retirement.
+          A single projection hides the range of outcomes that could shape
+          your financial future.
         </p>
         <div className="problem-stats">
           <div className="stat">
@@ -168,10 +168,10 @@ export function HomePage() {
                 <path d="M12 6v6l4 2" />
               </svg>
             </div>
-            <h3>Mortality-Adjusted</h3>
+            <h3>Longevity-Aware</h3>
             <p>
-              Accounts for the probability you'll actually need the money.
-              Earlier years matter more than year 40.
+              Accounts for time horizons and life expectancy.
+              Near-term outcomes weighted appropriately.
             </p>
           </div>
 
@@ -183,10 +183,10 @@ export function HomePage() {
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
             </div>
-            <h3>Couples Planning</h3>
+            <h3>Household Planning</h3>
             <p>
-              Retiring with a partner? Model both of you—different ages, incomes,
-              and Social Security benefits.
+              Planning with a partner? Model both of you—different ages, incomes,
+              and benefits.
             </p>
           </div>
 
@@ -199,8 +199,8 @@ export function HomePage() {
             </div>
             <h3>Multiple Income Sources</h3>
             <p>
-              Social Security with COLA. Pensions. Employment income until
-              retirement. See how they all interact.
+              Employment income, Social Security, pensions, and more.
+              See how they all interact with taxes.
             </p>
           </div>
 
@@ -236,8 +236,8 @@ export function HomePage() {
             <div className="step-number">2</div>
             <h3>We simulate 10,000 futures</h3>
             <p>
-              Using historical market data and actual tax law to model each
-              year of your retirement.
+              Using historical market data and actual tax law to model
+              your financial trajectory.
             </p>
           </div>
           <div className="step">
@@ -253,7 +253,7 @@ export function HomePage() {
 
       {/* CTA */}
       <section className="cta">
-        <h2>See your odds. Make better decisions.</h2>
+        <h2>See the full picture. Make better decisions.</h2>
         <p>Free to use. No account required. Results in 30 seconds.</p>
         <a href={APP_URL} className="btn-primary btn-large">
           Run Your Simulation

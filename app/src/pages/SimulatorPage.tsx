@@ -5,10 +5,12 @@ import { SimulationProgress } from "../components/SimulationProgress";
 import {
   runSimulationWithProgress,
   compareAnnuity,
+  compareStates,
   type SimulationInput,
   type SimulationResult,
   type SpouseInput,
   type AnnuityInput,
+  type StateComparisonResult,
 } from "../lib/api";
 import { colors, chartColors } from "../lib/design-tokens";
 import "../styles/Simulator.css";
@@ -213,9 +215,9 @@ function getWithdrawalRateContext(rate: number): { warning: boolean; message: st
   } else if (rate <= 5) {
     return { warning: true, message: "Slightly aggressive - monitor carefully" };
   } else if (rate <= 6) {
-    return { warning: true, message: "Aggressive - higher risk of depletion" };
+    return { warning: true, message: "Aggressive - may require flexibility" };
   } else {
-    return { warning: true, message: "Very high - significant depletion risk" };
+    return { warning: true, message: "Very high - requires careful monitoring" };
   }
 }
 
@@ -246,6 +248,9 @@ export function SimulatorPage() {
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [annuityResult, setAnnuityResult] =
     useState<AnnuityComparisonResult | null>(null);
+  const [stateComparisonResult, setStateComparisonResult] =
+    useState<StateComparisonResult | null>(null);
+  const [isComparingStates, setIsComparingStates] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(true);
@@ -362,6 +367,34 @@ export function SimulatorPage() {
       setResult(null);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // No-income-tax states for quick comparison
+  const NO_TAX_STATES = ["FL", "TX", "NV", "WA", "WY", "SD", "AK", "TN", "NH"];
+
+  const handleCompareStates = async () => {
+    if (!result) return;
+
+    setIsComparingStates(true);
+    setStateComparisonResult(null);
+
+    try {
+      const fullParams: SimulationInput = {
+        ...params,
+        spouse: params.has_spouse ? spouse : undefined,
+        annuity: params.has_annuity ? annuity : undefined,
+      };
+
+      // Compare against no-income-tax states (excluding current state if it's one of them)
+      const statesToCompare = NO_TAX_STATES.filter(s => s !== params.state).slice(0, 5);
+
+      const comparison = await compareStates(fullParams, statesToCompare);
+      setStateComparisonResult(comparison);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "State comparison failed");
+    } finally {
+      setIsComparingStates(false);
     }
   };
 
@@ -485,7 +518,7 @@ export function SimulatorPage() {
                 />
               </div>
               <div className="wizard-field-hint">
-                Total savings and investments you plan to use for retirement
+                Total savings and investments
               </div>
             </div>
             <div className="wizard-field">
@@ -522,7 +555,7 @@ export function SimulatorPage() {
     {
       id: "income",
       title: "Income Sources",
-      subtitle: "What income will you have in retirement?",
+      subtitle: "What income sources do you have?",
       content: (
         <div>
           <div className="wizard-field">
@@ -639,7 +672,7 @@ export function SimulatorPage() {
             <div className="wizard-checkbox-content">
               <div className="wizard-checkbox-label">Include Spouse</div>
               <div className="wizard-checkbox-hint">
-                Model retirement for both of you together
+                Model finances for both of you together
               </div>
             </div>
           </label>
@@ -980,7 +1013,7 @@ export function SimulatorPage() {
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-label">10-Year Failure Risk</div>
+          <div className="metric-label">10-Year Depletion Risk</div>
           <div className="metric-value">
             {formatPercent(result!.prob_10_year_failure)}
           </div>
@@ -1086,9 +1119,9 @@ export function SimulatorPage() {
           </thead>
           <tbody>
             <tr>
-              <td>5th (worst case)</td>
+              <td>5th (conservative)</td>
               <td>{formatCurrency(result!.percentiles.p5)}</td>
-              <td>Only 5% of outcomes are worse than this</td>
+              <td>95% of outcomes exceed this</td>
             </tr>
             <tr>
               <td>25th</td>
@@ -1106,9 +1139,9 @@ export function SimulatorPage() {
               <td>25% of outcomes are better</td>
             </tr>
             <tr>
-              <td>95th (best case)</td>
+              <td>95th (optimistic)</td>
               <td>{formatCurrency(result!.percentiles.p95)}</td>
-              <td>Only 5% of outcomes are better</td>
+              <td>Only 5% of outcomes exceed this</td>
             </tr>
           </tbody>
         </table>
@@ -1190,6 +1223,74 @@ export function SimulatorPage() {
           </div>
         </div>
       )}
+
+      {/* State Comparison */}
+      <div className="summary-section state-comparison">
+        <h3>Compare States</h3>
+        <p className="section-desc">
+          See how relocating could affect your taxes and outcomes.
+        </p>
+
+        {!stateComparisonResult && !isComparingStates && (
+          <button
+            className="btn-secondary"
+            onClick={handleCompareStates}
+            disabled={isComparingStates}
+          >
+            Compare to No-Income-Tax States
+          </button>
+        )}
+
+        {isComparingStates && (
+          <div className="loading-indicator">
+            Comparing states...
+          </div>
+        )}
+
+        {stateComparisonResult && (
+          <div className="state-comparison-results">
+            <table className="state-table">
+              <thead>
+                <tr>
+                  <th>State</th>
+                  <th>Total Taxes</th>
+                  <th>Tax Savings</th>
+                  <th>Success Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stateComparisonResult.results.map((r) => (
+                  <tr key={r.state} className={r.state === params.state ? "current-state" : ""}>
+                    <td>
+                      {r.state}
+                      {r.state === params.state && " (current)"}
+                    </td>
+                    <td>{formatCurrency(r.total_taxes_median)}</td>
+                    <td
+                      style={{
+                        color: stateComparisonResult.tax_savings_vs_base[r.state] > 0
+                          ? "#10b981"
+                          : stateComparisonResult.tax_savings_vs_base[r.state] < 0
+                            ? "#ef4444"
+                            : "inherit",
+                        fontWeight: stateComparisonResult.tax_savings_vs_base[r.state] !== 0 ? 600 : 400,
+                      }}
+                    >
+                      {stateComparisonResult.tax_savings_vs_base[r.state] > 0 && "+"}
+                      {formatCurrency(stateComparisonResult.tax_savings_vs_base[r.state])}
+                    </td>
+                    <td>{formatPercent(r.success_rate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="tax-note">
+              Tax savings show lifetime difference compared to {params.state}.
+              Positive values mean you save money by relocating.
+            </p>
+          </div>
+        )}
+      </div>
 
       {result!.median_depletion_age && (
         <div className="warning-banner">
@@ -1273,7 +1374,7 @@ export function SimulatorPage() {
   const renderPersonaPicker = () => (
     <div className="persona-picker">
       <div className="persona-header">
-        <h2>See your retirement outlook in seconds</h2>
+        <h2>See your financial outlook in seconds</h2>
         <p>Choose a profile similar to yours, or start from scratch</p>
       </div>
 
@@ -1337,7 +1438,7 @@ export function SimulatorPage() {
         <a href={HOME_URL} className="sim-logo">
           <img src="/logo.svg" alt="EggNest" height="28" />
         </a>
-        <span className="sim-title">Retirement Simulator</span>
+        <span className="sim-title">Financial Simulator</span>
       </header>
 
       <div className="sim-content">

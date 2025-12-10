@@ -150,3 +150,33 @@ class MortalityRates(BaseModel):
     ages: list[int]
     rates: list[float]
     survival_curve: list[float]
+
+
+class StateComparisonInput(BaseModel):
+    """Input for comparing outcomes across states."""
+
+    base_input: SimulationInput
+    compare_states: list[str] = Field(
+        ..., min_length=1, max_length=10, description="List of state codes to compare"
+    )
+
+
+class StateResult(BaseModel):
+    """Summary result for a single state."""
+
+    state: str
+    success_rate: float
+    median_final_value: float
+    total_taxes_median: float
+    total_withdrawn_median: float
+    net_after_tax_median: float
+
+
+class StateComparisonResult(BaseModel):
+    """Results comparing outcomes across states."""
+
+    base_state: str
+    results: list[StateResult]
+    tax_savings_vs_base: dict[str, float] = Field(
+        ..., description="Tax savings relative to base state (positive = saves money)"
+    )

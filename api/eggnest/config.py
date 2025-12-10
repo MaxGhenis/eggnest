@@ -23,7 +23,20 @@ class Settings(BaseSettings):
     max_n_simulations: int = 100_000
 
     # CORS
-    cors_origins: list[str] = ["http://localhost:5173", "https://finsim.app"]
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:5176",
+        "http://localhost:5177",
+        "http://localhost:5178",
+        "http://localhost:5179",
+        "http://localhost:5180",
+        "http://localhost:5181",
+        "http://localhost:5182",
+        "https://app.eggnest.co",
+        "https://eggnest.co",
+    ]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

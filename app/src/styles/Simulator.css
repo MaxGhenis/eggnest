@@ -414,6 +414,71 @@
   font-weight: 600;
 }
 
+/* State Comparison */
+.state-comparison {
+  border-color: var(--color-sage);
+  border-width: 2px;
+}
+
+.state-comparison .btn-secondary {
+  background: var(--color-bg-card);
+  color: var(--color-text);
+  border: 1.5px solid var(--color-border);
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.state-comparison .btn-secondary:hover {
+  background: var(--color-bg-alt);
+  border-color: var(--color-gold);
+}
+
+.section-desc {
+  color: var(--color-text-muted);
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.state-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.state-table th,
+.state-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.state-table th {
+  font-weight: 600;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.state-table tbody tr:hover {
+  background: var(--color-bg-alt);
+}
+
+.state-table .current-state {
+  background: var(--color-bg-alt);
+  font-weight: 500;
+}
+
+.loading-indicator {
+  color: var(--color-text-muted);
+  font-style: italic;
+  padding: 1rem 0;
+}
+
 /* Loading state */
 .loading-state {
   display: flex;

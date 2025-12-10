@@ -1,7 +1,9 @@
 """EggNest API - Main FastAPI application."""
 
+import json
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from eggnest.config import get_settings
 from eggnest.models import (
@@ -11,6 +13,9 @@ from eggnest.models import (
     SavedSimulation,
     SimulationInput,
     SimulationResult,
+    StateComparisonInput,
+    StateComparisonResult,
+    StateResult,
 )
 from eggnest.simulation import MonteCarloSimulator, compare_to_annuity
 from eggnest.mortality import get_mortality_rates, calculate_survival_curve
@@ -80,6 +85,34 @@ async def run_simulation(params: SimulationInput):
     return simulator.run()
 
 
+@app.post("/simulate/stream")
+async def run_simulation_stream(params: SimulationInput):
+    """
+    Run a Monte Carlo simulation with progress streaming via SSE.
+
+    Sends progress events as JSON, then final result.
+    """
+    if params.n_simulations > settings.max_n_simulations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"n_simulations cannot exceed {settings.max_n_simulations}",
+        )
+
+    def generate():
+        simulator = MonteCarloSimulator(params)
+        for event in simulator.run_with_progress():
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @app.get("/mortality/{gender}", response_model=MortalityRates)
 async def get_mortality(gender: str, start_age: int = 65, end_age: int = 100):
     """
@@ -126,6 +159,51 @@ async def compare_annuity_endpoint(comparison: AnnuityComparison):
             "simulation_median_total_income"
         ],
         recommendation=annuity_comparison["recommendation"],
+    )
+
+
+@app.post("/compare-states", response_model=StateComparisonResult)
+async def compare_states_endpoint(comparison: StateComparisonInput):
+    """
+    Compare simulation outcomes across different states.
+
+    Runs the same simulation for each state and compares tax impact.
+    Useful for evaluating relocation decisions.
+    """
+    base_state = comparison.base_input.state
+    all_states = [base_state] + [s for s in comparison.compare_states if s != base_state]
+
+    results: list[StateResult] = []
+    base_taxes = 0.0
+
+    for state in all_states:
+        # Create a copy of input with the new state
+        state_input = comparison.base_input.model_copy(update={"state": state})
+        simulator = MonteCarloSimulator(state_input)
+        sim_result = simulator.run()
+
+        net_after_tax = sim_result.total_withdrawn_median - sim_result.total_taxes_median
+
+        result = StateResult(
+            state=state,
+            success_rate=sim_result.success_rate,
+            median_final_value=sim_result.median_final_value,
+            total_taxes_median=sim_result.total_taxes_median,
+            total_withdrawn_median=sim_result.total_withdrawn_median,
+            net_after_tax_median=net_after_tax,
+        )
+        results.append(result)
+
+        if state == base_state:
+            base_taxes = sim_result.total_taxes_median
+
+    # Calculate tax savings vs base state
+    tax_savings = {r.state: base_taxes - r.total_taxes_median for r in results}
+
+    return StateComparisonResult(
+        base_state=base_state,
+        results=results,
+        tax_savings_vs_base=tax_savings,
     )
 
 

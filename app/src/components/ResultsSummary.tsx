@@ -67,7 +67,7 @@ export function ResultsSummary({ result }: ResultsSummaryProps) {
       <div className="percentile-breakdown">
         <h4>Portfolio Value Distribution</h4>
         <div className="percentile-row">
-          <span className="percentile-label">5th percentile (worst case)</span>
+          <span className="percentile-label">5th percentile (conservative)</span>
           <span className="percentile-value">
             {formatCurrency(result.percentiles.p5)}
           </span>
@@ -91,7 +91,7 @@ export function ResultsSummary({ result }: ResultsSummaryProps) {
           </span>
         </div>
         <div className="percentile-row">
-          <span className="percentile-label">95th percentile (best case)</span>
+          <span className="percentile-label">95th percentile (optimistic)</span>
           <span className="percentile-value">
             {formatCurrency(result.percentiles.p95)}
           </span>

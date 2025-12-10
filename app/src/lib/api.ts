@@ -224,3 +224,40 @@ export async function compareAnnuity(
 
   return response.json();
 }
+
+export interface StateResult {
+  state: string;
+  success_rate: number;
+  median_final_value: number;
+  total_taxes_median: number;
+  total_withdrawn_median: number;
+  net_after_tax_median: number;
+}
+
+export interface StateComparisonResult {
+  base_state: string;
+  results: StateResult[];
+  tax_savings_vs_base: Record<string, number>;
+}
+
+export async function compareStates(
+  baseInput: SimulationInput,
+  compareStates: string[]
+): Promise<StateComparisonResult> {
+  const response = await fetch(`${API_URL}/compare-states`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      base_input: baseInput,
+      compare_states: compareStates,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`State comparison failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
