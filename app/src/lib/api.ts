@@ -350,3 +350,90 @@ export async function compareAllocations(
 
   return response.json();
 }
+
+// === Life Event Tax Calculator Types ===
+
+export interface PersonInput {
+  age: number;
+  employment_income?: number;
+  self_employment_income?: number;
+  social_security?: number;
+  pension_income?: number;
+  investment_income?: number;
+  capital_gains?: number;
+  is_tax_unit_head?: boolean;
+  is_tax_unit_spouse?: boolean;
+  is_tax_unit_dependent?: boolean;
+}
+
+export interface HouseholdInput {
+  state: string;
+  year?: number;
+  filing_status?: "single" | "married_filing_jointly" | "married_filing_separately" | "head_of_household";
+  people: PersonInput[];
+}
+
+export interface HouseholdResult {
+  federal_income_tax: number;
+  state_income_tax: number;
+  payroll_tax: number;
+  total_taxes: number;
+  benefits: Record<string, number>;
+  total_benefits: number;
+  total_income: number;
+  net_income: number;
+  tax_breakdown: Record<string, number>;
+  marginal_tax_rate: number;
+  effective_tax_rate: number;
+}
+
+export interface LifeEventComparison {
+  event_name: string;
+  before_result: HouseholdResult;
+  after_result: HouseholdResult;
+  tax_change: number;
+  benefit_change: number;
+  net_income_change: number;
+}
+
+export async function calculateHousehold(
+  household: HouseholdInput
+): Promise<HouseholdResult> {
+  const response = await fetch(`${API_URL}/calculate-household`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(household),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Household calculation failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function compareLifeEvent(
+  before: HouseholdInput,
+  after: HouseholdInput,
+  eventName: string = "Life Event"
+): Promise<LifeEventComparison> {
+  const response = await fetch(`${API_URL}/compare-life-event`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      before,
+      after,
+      event_name: eventName,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Life event comparison failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}

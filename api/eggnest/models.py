@@ -283,3 +283,94 @@ class AllocationComparisonResult(BaseModel):
     recommendation: str = Field(
         ..., description="Plain language recommendation based on results"
     )
+
+
+# === Household Tax Calculator Models ===
+
+
+class PersonInput(BaseModel):
+    """Input for a single person in a household."""
+
+    age: int = Field(..., ge=0, le=120, description="Person's age")
+    employment_income: float = Field(default=0, ge=0, description="Annual employment income")
+    self_employment_income: float = Field(default=0, ge=0, description="Annual self-employment income")
+    social_security: float = Field(default=0, ge=0, description="Annual Social Security benefits")
+    pension_income: float = Field(default=0, ge=0, description="Annual pension income")
+    investment_income: float = Field(default=0, ge=0, description="Annual investment income (dividends, interest)")
+    capital_gains: float = Field(default=0, ge=0, description="Annual capital gains")
+
+    # Tax unit roles
+    is_tax_unit_head: bool = Field(default=False, description="Is this person the tax unit head?")
+    is_tax_unit_spouse: bool = Field(default=False, description="Is this person the spouse?")
+    is_tax_unit_dependent: bool = Field(default=False, description="Is this person a dependent?")
+
+    def model_post_init(self, __context) -> None:
+        """Auto-set dependent status for children under 19."""
+        if self.age < 19 and not self.is_tax_unit_head and not self.is_tax_unit_spouse:
+            object.__setattr__(self, "is_tax_unit_dependent", True)
+
+
+class HouseholdInput(BaseModel):
+    """Input for a household tax calculation."""
+
+    state: str = Field(..., description="Two-letter state code")
+    year: int = Field(default=2025, ge=2020, le=2035, description="Tax year")
+    filing_status: Literal["single", "married_filing_jointly", "married_filing_separately", "head_of_household"] = Field(
+        default="single", description="Tax filing status"
+    )
+    people: list[PersonInput] = Field(..., min_length=1, description="People in the household")
+
+    def model_post_init(self, __context) -> None:
+        """Auto-infer filing status from household composition."""
+        heads = sum(1 for p in self.people if p.is_tax_unit_head)
+        spouses = sum(1 for p in self.people if p.is_tax_unit_spouse)
+        dependents = sum(1 for p in self.people if p.is_tax_unit_dependent)
+
+        # Auto-set filing status if not explicitly set (still "single")
+        if self.filing_status == "single":
+            if spouses > 0:
+                object.__setattr__(self, "filing_status", "married_filing_jointly")
+            elif dependents > 0:
+                object.__setattr__(self, "filing_status", "head_of_household")
+
+
+class HouseholdResult(BaseModel):
+    """Results from a household tax calculation."""
+
+    # Taxes
+    federal_income_tax: float = Field(..., description="Federal income tax liability")
+    state_income_tax: float = Field(..., description="State income tax liability")
+    payroll_tax: float = Field(default=0, description="FICA/payroll taxes")
+    total_taxes: float = Field(..., description="Total tax liability")
+
+    # Benefits
+    benefits: dict[str, float] = Field(default_factory=dict, description="Benefits by program")
+    total_benefits: float = Field(default=0, description="Total benefits received")
+
+    # Income summary
+    total_income: float = Field(..., description="Total gross income")
+    net_income: float = Field(..., description="Net income after taxes and benefits")
+
+    # Tax details
+    tax_breakdown: dict[str, float] = Field(default_factory=dict, description="Detailed tax breakdown")
+    marginal_tax_rate: float = Field(default=0, description="Marginal tax rate")
+    effective_tax_rate: float = Field(default=0, description="Effective tax rate")
+
+
+class LifeEventComparisonInput(BaseModel):
+    """Input for comparing life events."""
+
+    before: HouseholdInput
+    after: HouseholdInput
+    event_name: str = Field(default="Life Event", description="Name of the life event")
+
+
+class LifeEventComparison(BaseModel):
+    """Results comparing before/after a life event."""
+
+    event_name: str
+    before_result: HouseholdResult
+    after_result: HouseholdResult
+    tax_change: float = Field(..., description="Change in total taxes (positive = more taxes)")
+    benefit_change: float = Field(..., description="Change in total benefits (positive = more benefits)")
+    net_income_change: float = Field(..., description="Change in net income (positive = better off)")

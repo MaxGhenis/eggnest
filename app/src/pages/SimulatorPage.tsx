@@ -1888,6 +1888,7 @@ export function SimulatorPage() {
           <img src="/logo.svg" alt="EggNest" height="28" />
         </a>
         <span className="sim-title">Financial Simulator</span>
+        <a href="#/life-event" className="sim-nav-link">Life Event Calculator</a>
       </header>
 
       <div className="sim-content">

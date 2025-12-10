@@ -12,6 +12,10 @@ from eggnest.models import (
     AllocationComparisonResult,
     AnnuityComparison,
     AnnuityComparisonResult,
+    HouseholdInput,
+    HouseholdResult,
+    LifeEventComparison,
+    LifeEventComparisonInput,
     MortalityRates,
     SavedSimulation,
     SimulationInput,
@@ -30,6 +34,7 @@ from eggnest.ss_timing import (
 from eggnest.simulation import MonteCarloSimulator, compare_to_annuity
 from eggnest.mortality import get_mortality_rates, calculate_survival_curve
 from eggnest.returns import get_historical_stats
+from eggnest.household import HouseholdCalculator
 from eggnest.supabase_client import (
     delete_simulation,
     get_user_simulations,
@@ -389,6 +394,33 @@ async def compare_allocations_endpoint(allocation_input: AllocationInput):
         optimal_for_safety=optimal_safety.stock_allocation,
         recommendation=recommendation,
     )
+
+
+# === Household Tax Calculator Endpoints ===
+
+
+@app.post("/calculate-household", response_model=HouseholdResult)
+async def calculate_household_endpoint(household: HouseholdInput):
+    """
+    Calculate taxes and benefits for a household.
+
+    Supports any household composition: singles, married couples, families with children.
+    Returns federal/state taxes, payroll taxes, and benefit amounts (CTC, EITC, etc.).
+    """
+    calc = HouseholdCalculator()
+    return calc.calculate(household)
+
+
+@app.post("/compare-life-event", response_model=LifeEventComparison)
+async def compare_life_event_endpoint(comparison: LifeEventComparisonInput):
+    """
+    Compare tax and benefit outcomes before and after a life event.
+
+    Useful for understanding how life changes (having a child, getting married,
+    changing income, moving states) affect your taxes and benefits.
+    """
+    calc = HouseholdCalculator()
+    return calc.compare(comparison.before, comparison.after, comparison.event_name)
 
 
 # === Authenticated endpoints for saved simulations ===
