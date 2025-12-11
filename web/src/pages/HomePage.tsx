@@ -15,6 +15,7 @@ export function HomePage() {
           <div className="nav-links">
             <a href="#features">Features</a>
             <a href="#how-it-works">How It Works</a>
+            <a href="/thesis">Thesis</a>
             <a href={APP_URL} className="nav-cta">
               Launch App
             </a>
@@ -29,7 +30,7 @@ export function HomePage() {
           </h1>
           <p className="hero-subtitle">
             Monte Carlo simulation meets real tax law. See thousands of possible
-            futures for your finances—the full range of possibilities.
+            futures for your retirement—not just the rosy average.
           </p>
           <div className="hero-cta">
             <a href={APP_URL} className="btn-primary">
@@ -53,7 +54,7 @@ export function HomePage() {
               <text x="15" y="110" fontSize="11" fill="#6b7280" transform="rotate(-90, 15, 110)">Portfolio Value</text>
 
               {/* X-axis label */}
-              <text x="225" y="230" fontSize="11" fill="#6b7280" textAnchor="middle">Years</text>
+              <text x="225" y="230" fontSize="11" fill="#6b7280" textAnchor="middle">Years in Retirement</text>
 
               {/* X-axis ticks */}
               <text x="50" y="215" fontSize="10" fill="#9ca3af" textAnchor="middle">0</text>
@@ -106,12 +107,12 @@ export function HomePage() {
 
       {/* Problem */}
       <section className="problem" id="why">
-        <h2>Go beyond the average.</h2>
+        <h2>Averages hide the risk.</h2>
         <p>
-          Most financial calculators show one number: your "expected" outcome.
+          Most retirement calculators show one number: your "expected" outcome.
           But markets don't move in averages—they crash, they boom, they surprise.
-          A single projection hides the range of outcomes that could shape
-          your financial future.
+          A single projection hides the range of outcomes that could make or break
+          your retirement.
         </p>
         <div className="problem-stats">
           <div className="stat">
@@ -168,10 +169,10 @@ export function HomePage() {
                 <path d="M12 6v6l4 2" />
               </svg>
             </div>
-            <h3>Longevity-Aware</h3>
+            <h3>Mortality-Adjusted</h3>
             <p>
-              Accounts for time horizons and life expectancy.
-              Near-term outcomes weighted appropriately.
+              Accounts for the probability you'll actually need the money.
+              Earlier years matter more than year 40.
             </p>
           </div>
 
@@ -183,10 +184,10 @@ export function HomePage() {
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
               </svg>
             </div>
-            <h3>Household Planning</h3>
+            <h3>Couples Planning</h3>
             <p>
-              Planning with a partner? Model both of you—different ages, incomes,
-              and benefits.
+              Retiring with a partner? Model both of you—different ages, incomes,
+              and Social Security benefits.
             </p>
           </div>
 
@@ -199,8 +200,8 @@ export function HomePage() {
             </div>
             <h3>Multiple Income Sources</h3>
             <p>
-              Employment income, Social Security, pensions, and more.
-              See how they all interact with taxes.
+              Social Security with COLA. Pensions. Employment income until
+              retirement. See how they all interact.
             </p>
           </div>
 
@@ -236,8 +237,8 @@ export function HomePage() {
             <div className="step-number">2</div>
             <h3>We simulate 10,000 futures</h3>
             <p>
-              Using historical market data and actual tax law to model
-              your financial trajectory.
+              Using historical market data and actual tax law to model each
+              year of your retirement.
             </p>
           </div>
           <div className="step">
@@ -253,7 +254,7 @@ export function HomePage() {
 
       {/* CTA */}
       <section className="cta">
-        <h2>See the full picture. Make better decisions.</h2>
+        <h2>See your odds. Make better decisions.</h2>
         <p>Free to use. No account required. Results in 30 seconds.</p>
         <a href={APP_URL} className="btn-primary btn-large">
           Run Your Simulation
@@ -276,6 +277,7 @@ export function HomePage() {
             </div>
             <div className="footer-col">
               <h4>Company</h4>
+              <a href="/thesis">Thesis</a>
               <a href="mailto:hello@eggnest.co">Contact</a>
             </div>
           </div>

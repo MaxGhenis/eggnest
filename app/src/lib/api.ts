@@ -59,6 +59,26 @@ export interface SimulationInput {
   inflation_rate?: number;
 }
 
+export interface YearBreakdown {
+  age: number;
+  year_index: number;
+  portfolio_start: number;
+  portfolio_end: number;
+  portfolio_return: number;
+  employment_income: number;
+  social_security: number;
+  pension: number;
+  dividends: number;
+  annuity: number;
+  total_income: number;
+  withdrawal: number;
+  federal_tax: number;
+  state_tax: number;
+  total_tax: number;
+  effective_tax_rate: number;
+  net_income: number;
+}
+
 export interface SimulationResult {
   success_rate: number;
   median_final_value: number;
@@ -69,6 +89,7 @@ export interface SimulationResult {
   total_withdrawn_median: number;
   total_taxes_median: number;
   percentile_paths: Record<string, number[]>;
+  year_breakdown: YearBreakdown[];
   initial_withdrawal_rate: number;
   prob_10_year_failure: number;
 }

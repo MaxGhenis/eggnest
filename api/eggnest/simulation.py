@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .models import SimulationInput, SimulationResult
+from .models import SimulationInput, SimulationResult, YearBreakdown
 from .tax import TaxCalculator
 from .mortality import generate_alive_mask, generate_joint_alive_mask
 from .returns import generate_blended_returns
@@ -102,6 +102,17 @@ class MonteCarloSimulator:
 
         # Yield initial progress
         yield {"type": "progress", "year": 0, "total_years": n_years}
+
+        # Track year-by-year data for detailed breakdown
+        yearly_employment = np.zeros((n_sims, n_years))
+        yearly_ss = np.zeros((n_sims, n_years))
+        yearly_pension = np.zeros((n_sims, n_years))
+        yearly_dividends = np.zeros((n_sims, n_years))
+        yearly_annuity = np.zeros((n_sims, n_years))
+        yearly_withdrawal = np.zeros((n_sims, n_years))
+        yearly_federal_tax = np.zeros((n_sims, n_years))
+        yearly_state_tax = np.zeros((n_sims, n_years))
+        yearly_total_tax = np.zeros((n_sims, n_years))
 
         # Process year by year
         for year in range(n_years):
@@ -226,6 +237,17 @@ class MonteCarloSimulator:
             total_withdrawn[active] += gross_withdrawal[active]
             total_taxes[active] += estimated_taxes[active]
 
+            # Store yearly breakdown data
+            yearly_employment[:, year] = np.broadcast_to(employment_total, n_sims) if isinstance(employment_total, np.ndarray) else employment_total
+            yearly_ss[:, year] = np.broadcast_to(ss_income, n_sims) if isinstance(ss_income, np.ndarray) else ss_income
+            yearly_pension[:, year] = pension + (spouse_pension if isinstance(spouse_pension, (int, float)) else np.median(spouse_pension))
+            yearly_dividends[:, year] = dividends
+            yearly_annuity[:, year] = np.broadcast_to(annuity_income, n_sims) if isinstance(annuity_income, np.ndarray) else annuity_income
+            yearly_withdrawal[:, year] = gross_withdrawal
+            yearly_federal_tax[:, year] = np.asarray(tax_results["federal_income_tax"]).flatten()
+            yearly_state_tax[:, year] = np.asarray(tax_results["state_income_tax"]).flatten()
+            yearly_total_tax[:, year] = estimated_taxes
+
             # Yield progress after each year
             yield {"type": "progress", "year": year + 1, "total_years": n_years}
 
@@ -258,6 +280,49 @@ class MonteCarloSimulator:
         # 10-year failure probability
         prob_10_year_failure = float(np.mean(failure_year <= 10))
 
+        # Build year-by-year breakdown for median scenario
+        year_breakdown = []
+        for year in range(n_years):
+            current_age = p.current_age + year
+            portfolio_start = float(np.median(paths[:, year]))
+            portfolio_end = float(np.median(paths[:, year + 1]))
+
+            # Get median values for this year
+            employment = float(np.median(yearly_employment[:, year]))
+            ss = float(np.median(yearly_ss[:, year]))
+            pension_val = float(np.median(yearly_pension[:, year]))
+            divs = float(np.median(yearly_dividends[:, year]))
+            annuity_val = float(np.median(yearly_annuity[:, year]))
+            withdrawal = float(np.median(yearly_withdrawal[:, year]))
+            fed_tax = float(np.median(yearly_federal_tax[:, year]))
+            state_tax = float(np.median(yearly_state_tax[:, year]))
+            total_tax = float(np.median(yearly_total_tax[:, year]))
+
+            total_income = employment + ss + pension_val + divs + annuity_val
+            net_income = total_income + withdrawal - total_tax
+            effective_rate = total_tax / total_income if total_income > 0 else 0
+            portfolio_return = (portfolio_end - portfolio_start + withdrawal) / portfolio_start if portfolio_start > 0 else 0
+
+            year_breakdown.append(YearBreakdown(
+                age=current_age,
+                year_index=year,
+                portfolio_start=portfolio_start,
+                portfolio_end=portfolio_end,
+                portfolio_return=portfolio_return,
+                employment_income=employment,
+                social_security=ss,
+                pension=pension_val,
+                dividends=divs,
+                annuity=annuity_val,
+                total_income=total_income,
+                withdrawal=withdrawal,
+                federal_tax=fed_tax,
+                state_tax=state_tax,
+                total_tax=total_tax,
+                effective_tax_rate=effective_rate,
+                net_income=net_income,
+            ))
+
         result = SimulationResult(
             success_rate=success_rate,
             median_final_value=float(np.median(final_values)),
@@ -274,6 +339,7 @@ class MonteCarloSimulator:
             total_withdrawn_median=float(np.median(total_withdrawn)),
             total_taxes_median=float(np.median(total_taxes)),
             percentile_paths=percentile_paths,
+            year_breakdown=year_breakdown,
             initial_withdrawal_rate=initial_withdrawal_rate,
             prob_10_year_failure=prob_10_year_failure,
         )
@@ -348,6 +414,17 @@ class MonteCarloSimulator:
 
         initial_net_need = max(0, annual_spending - guaranteed_income)
         initial_withdrawal_rate = (initial_net_need / p.initial_capital * 100) if p.initial_capital > 0 else 0
+
+        # Track year-by-year data for detailed breakdown
+        yearly_employment = np.zeros((n_sims, n_years))
+        yearly_ss = np.zeros((n_sims, n_years))
+        yearly_pension = np.zeros((n_sims, n_years))
+        yearly_dividends = np.zeros((n_sims, n_years))
+        yearly_annuity = np.zeros((n_sims, n_years))
+        yearly_withdrawal = np.zeros((n_sims, n_years))
+        yearly_federal_tax = np.zeros((n_sims, n_years))
+        yearly_state_tax = np.zeros((n_sims, n_years))
+        yearly_total_tax = np.zeros((n_sims, n_years))
 
         # Process year by year
         for year in range(n_years):
@@ -471,6 +548,17 @@ class MonteCarloSimulator:
             total_withdrawn[active] += gross_withdrawal[active]
             total_taxes[active] += estimated_taxes[active]
 
+            # Store yearly breakdown data
+            yearly_employment[:, year] = np.broadcast_to(employment_total, n_sims) if isinstance(employment_total, np.ndarray) else employment_total
+            yearly_ss[:, year] = np.broadcast_to(ss_income, n_sims) if isinstance(ss_income, np.ndarray) else ss_income
+            yearly_pension[:, year] = pension + (spouse_pension if isinstance(spouse_pension, (int, float)) else np.median(spouse_pension))
+            yearly_dividends[:, year] = dividends
+            yearly_annuity[:, year] = np.broadcast_to(annuity_income, n_sims) if isinstance(annuity_income, np.ndarray) else annuity_income
+            yearly_withdrawal[:, year] = gross_withdrawal
+            yearly_federal_tax[:, year] = np.asarray(tax_results["federal_income_tax"]).flatten()
+            yearly_state_tax[:, year] = np.asarray(tax_results["state_income_tax"]).flatten()
+            yearly_total_tax[:, year] = estimated_taxes
+
         # Calculate results
         final_values = paths[:, -1]
 
@@ -481,6 +569,49 @@ class MonteCarloSimulator:
             success_mask = failure_year > n_years
 
         success_rate = float(np.mean(success_mask))
+
+        # Build year-by-year breakdown for median scenario
+        year_breakdown = []
+        for year in range(n_years):
+            current_age = p.current_age + year
+            portfolio_start = float(np.median(paths[:, year]))
+            portfolio_end = float(np.median(paths[:, year + 1]))
+
+            # Get median values for this year
+            employment = float(np.median(yearly_employment[:, year]))
+            ss = float(np.median(yearly_ss[:, year]))
+            pension_val = float(np.median(yearly_pension[:, year]))
+            divs = float(np.median(yearly_dividends[:, year]))
+            annuity_val = float(np.median(yearly_annuity[:, year]))
+            withdrawal = float(np.median(yearly_withdrawal[:, year]))
+            fed_tax = float(np.median(yearly_federal_tax[:, year]))
+            state_tax = float(np.median(yearly_state_tax[:, year]))
+            total_tax = float(np.median(yearly_total_tax[:, year]))
+
+            total_income = employment + ss + pension_val + divs + annuity_val
+            net_income = total_income + withdrawal - total_tax
+            effective_rate = total_tax / total_income if total_income > 0 else 0
+            portfolio_return = (portfolio_end - portfolio_start + withdrawal) / portfolio_start if portfolio_start > 0 else 0
+
+            year_breakdown.append(YearBreakdown(
+                age=current_age,
+                year_index=year,
+                portfolio_start=portfolio_start,
+                portfolio_end=portfolio_end,
+                portfolio_return=portfolio_return,
+                employment_income=employment,
+                social_security=ss,
+                pension=pension_val,
+                dividends=divs,
+                annuity=annuity_val,
+                total_income=total_income,
+                withdrawal=withdrawal,
+                federal_tax=fed_tax,
+                state_tax=state_tax,
+                total_tax=total_tax,
+                effective_tax_rate=effective_rate,
+                net_income=net_income,
+            ))
 
         # Percentile paths for charting (sampled at yearly intervals)
         percentile_paths = {
@@ -516,6 +647,7 @@ class MonteCarloSimulator:
             total_withdrawn_median=float(np.median(total_withdrawn)),
             total_taxes_median=float(np.median(total_taxes)),
             percentile_paths=percentile_paths,
+            year_breakdown=year_breakdown,
             initial_withdrawal_rate=initial_withdrawal_rate,
             prob_10_year_failure=prob_10_year_failure,
         )

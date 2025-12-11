@@ -269,6 +269,7 @@ export function SimulatorPage() {
   const [showWizard, setShowWizard] = useState(true);
   const [showPersonaPicker, setShowPersonaPicker] = useState(true);
   const [progress, setProgress] = useState({ currentYear: 0, totalYears: 0 });
+  const [selectedYearIndex, setSelectedYearIndex] = useState<number | null>(null);
 
   // Spouse state
   const [spouse, setSpouse] = useState<SpouseInput>({
@@ -1100,6 +1101,7 @@ export function SimulatorPage() {
       {/* Portfolio chart */}
       <div className="chart-container">
         <h3>Portfolio Value Over Time</h3>
+        <p className="chart-hint">Click on the chart to see year details</p>
         <Plot
           data={[
             {
@@ -1109,7 +1111,7 @@ export function SimulatorPage() {
               mode: "lines",
               line: { color: "rgba(217, 119, 6, 0.2)", width: 0 },
               showlegend: false,
-              hoverinfo: "skip",
+              hovertemplate: "%{y:$,.0f}<extra>95th percentile</extra>",
             },
             {
               x: ages,
@@ -1120,6 +1122,7 @@ export function SimulatorPage() {
               fillcolor: "rgba(217, 119, 6, 0.1)",
               line: { color: "rgba(217, 119, 6, 0.2)", width: 0 },
               name: "5th-95th percentile",
+              hovertemplate: "%{y:$,.0f}<extra>5th percentile</extra>",
             },
             {
               x: ages,
@@ -1128,7 +1131,7 @@ export function SimulatorPage() {
               mode: "lines",
               line: { color: "rgba(217, 119, 6, 0.3)", width: 1 },
               showlegend: false,
-              hoverinfo: "skip",
+              hovertemplate: "%{y:$,.0f}<extra>75th percentile</extra>",
             },
             {
               x: ages,
@@ -1139,6 +1142,7 @@ export function SimulatorPage() {
               fillcolor: "rgba(217, 119, 6, 0.15)",
               line: { color: "rgba(217, 119, 6, 0.3)", width: 1 },
               name: "25th-75th percentile",
+              hovertemplate: "%{y:$,.0f}<extra>25th percentile</extra>",
             },
             {
               x: ages,
@@ -1147,6 +1151,7 @@ export function SimulatorPage() {
               mode: "lines",
               line: { color: chartColors.primary, width: 3 },
               name: "Median",
+              hovertemplate: "%{y:$,.0f}<extra>Median</extra>",
             },
           ]}
           layout={{
@@ -1160,9 +1165,8 @@ export function SimulatorPage() {
               tickfont: { family: "Inter, system-ui, sans-serif" },
             },
             yaxis: {
-              title: { text: "Portfolio Value", font: { family: "Inter, system-ui, sans-serif" } },
               gridcolor: colors.gray200,
-              tickformat: "$,.0f",
+              tickformat: "$~s",
               tickfont: { family: "Inter, system-ui, sans-serif" },
             },
             legend: {
@@ -1177,8 +1181,128 @@ export function SimulatorPage() {
           }}
           config={{ responsive: true, displayModeBar: false }}
           style={{ width: "100%" }}
+          onClick={(event) => {
+            if (event.points && event.points.length > 0) {
+              const pointIndex = event.points[0].pointIndex;
+              if (typeof pointIndex === 'number' && pointIndex < result!.year_breakdown.length) {
+                setSelectedYearIndex(pointIndex);
+              }
+            }
+          }}
         />
       </div>
+
+      {/* Year detail panel */}
+      {selectedYearIndex !== null && result!.year_breakdown[selectedYearIndex] && (() => {
+        const year = result!.year_breakdown[selectedYearIndex];
+        return (
+          <div className="year-detail-panel">
+            <div className="year-detail-header">
+              <h3>Age {year.age} Details</h3>
+              <button
+                className="close-btn"
+                onClick={() => setSelectedYearIndex(null)}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="year-detail-grid">
+              <div className="year-detail-section">
+                <h4>Portfolio</h4>
+                <div className="detail-row">
+                  <span>Start of Year</span>
+                  <span>{formatCurrency(year.portfolio_start)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>End of Year</span>
+                  <span>{formatCurrency(year.portfolio_end)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Return</span>
+                  <span style={{ color: year.portfolio_return >= 0 ? '#10b981' : '#ef4444' }}>
+                    {(year.portfolio_return * 100).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+              <div className="year-detail-section">
+                <h4>Income</h4>
+                {year.employment_income > 0 && (
+                  <div className="detail-row">
+                    <span>Employment</span>
+                    <span>{formatCurrency(year.employment_income)}</span>
+                  </div>
+                )}
+                {year.social_security > 0 && (
+                  <div className="detail-row">
+                    <span>Social Security</span>
+                    <span>{formatCurrency(year.social_security)}</span>
+                  </div>
+                )}
+                {year.pension > 0 && (
+                  <div className="detail-row">
+                    <span>Pension</span>
+                    <span>{formatCurrency(year.pension)}</span>
+                  </div>
+                )}
+                {year.dividends > 0 && (
+                  <div className="detail-row">
+                    <span>Dividends</span>
+                    <span>{formatCurrency(year.dividends)}</span>
+                  </div>
+                )}
+                {year.annuity > 0 && (
+                  <div className="detail-row">
+                    <span>Annuity</span>
+                    <span>{formatCurrency(year.annuity)}</span>
+                  </div>
+                )}
+                <div className="detail-row total">
+                  <span>Total Income</span>
+                  <span>{formatCurrency(year.total_income)}</span>
+                </div>
+              </div>
+              <div className="year-detail-section">
+                <h4>Withdrawals & Taxes</h4>
+                <div className="detail-row">
+                  <span>Withdrawal</span>
+                  <span>{formatCurrency(year.withdrawal)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Federal Tax</span>
+                  <span>{formatCurrency(year.federal_tax)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>State Tax</span>
+                  <span>{formatCurrency(year.state_tax)}</span>
+                </div>
+                <div className="detail-row total">
+                  <span>Total Tax</span>
+                  <span>{formatCurrency(year.total_tax)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Effective Rate</span>
+                  <span>{(year.effective_tax_rate * 100).toFixed(1)}%</span>
+                </div>
+              </div>
+            </div>
+            <div className="year-nav">
+              <button
+                disabled={selectedYearIndex === 0}
+                onClick={() => setSelectedYearIndex(prev => prev !== null ? Math.max(0, prev - 1) : null)}
+              >
+                ← Previous Year
+              </button>
+              <button
+                disabled={selectedYearIndex === result!.year_breakdown.length - 1}
+                onClick={() => setSelectedYearIndex(prev => prev !== null ? Math.min(result!.year_breakdown.length - 1, prev + 1) : null)}
+              >
+                Next Year →
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Summary table */}
       <div className="summary-section">
@@ -1200,7 +1324,7 @@ export function SimulatorPage() {
             <tr>
               <td>25th</td>
               <td>{formatCurrency(result!.percentiles.p25)}</td>
-              <td>25% of outcomes are worse</td>
+              <td>75% of outcomes are better</td>
             </tr>
             <tr className="highlight">
               <td>50th (median)</td>
@@ -1247,6 +1371,57 @@ export function SimulatorPage() {
           {params.state} state taxes.
         </p>
       </div>
+
+      {/* Year-by-Year Breakdown */}
+      {result!.year_breakdown && result!.year_breakdown.length > 0 && (
+        <div className="summary-section year-breakdown">
+          <details>
+            <summary>
+              <h3 style={{ display: "inline" }}>Year-by-Year Breakdown (Median)</h3>
+              <span className="expand-hint">Click to expand</span>
+            </summary>
+            <div className="breakdown-table-wrapper">
+              <table className="breakdown-table">
+                <thead>
+                  <tr>
+                    <th>Age</th>
+                    <th>Portfolio Start</th>
+                    <th>Income</th>
+                    <th>Withdrawal</th>
+                    <th>Taxes</th>
+                    <th>Tax Rate</th>
+                    <th>Portfolio End</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result!.year_breakdown.map((year) => (
+                    <tr key={year.year_index}>
+                      <td>{year.age}</td>
+                      <td>{formatCurrency(year.portfolio_start)}</td>
+                      <td title={`Employment: ${formatCurrency(year.employment_income)}, SS: ${formatCurrency(year.social_security)}, Pension: ${formatCurrency(year.pension)}, Dividends: ${formatCurrency(year.dividends)}`}>
+                        {formatCurrency(year.total_income)}
+                      </td>
+                      <td>{formatCurrency(year.withdrawal)}</td>
+                      <td title={`Federal: ${formatCurrency(year.federal_tax)}, State: ${formatCurrency(year.state_tax)}`}>
+                        {formatCurrency(year.total_tax)}
+                      </td>
+                      <td>{(year.effective_tax_rate * 100).toFixed(1)}%</td>
+                      <td
+                        style={{
+                          color: year.portfolio_end <= 0 ? "#ef4444" : "inherit",
+                          fontWeight: year.portfolio_end <= 0 ? 600 : 400,
+                        }}
+                      >
+                        {formatCurrency(year.portfolio_end)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      )}
 
       {/* Annuity Comparison Results */}
       {annuityResult && (
@@ -1888,7 +2063,7 @@ export function SimulatorPage() {
           <img src="/logo.svg" alt="EggNest" height="28" />
         </a>
         <span className="sim-title">Financial Simulator</span>
-        <a href="#/life-event" className="sim-nav-link">Life Event Calculator</a>
+        <a href="#/life-event" className="sim-nav-link">Tax & Benefits Calculator</a>
       </header>
 
       <div className="sim-content">

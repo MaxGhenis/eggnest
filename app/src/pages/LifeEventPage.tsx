@@ -509,7 +509,7 @@ export function LifeEventPage() {
         <a href={HOME_URL} className="logo">
           <img src="/logo.svg" alt="EggNest" height="28" />
         </a>
-        <span className="page-title">Life Event Tax Calculator</span>
+        <span className="page-title">Tax & Benefits Calculator</span>
         <a href="#/" className="nav-link">Retirement Simulator</a>
       </header>
 

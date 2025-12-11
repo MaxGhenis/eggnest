@@ -93,6 +93,36 @@ class SimulationInput(BaseModel):
             object.__setattr__(self, 'annual_spending', self.target_monthly_income * 12)
 
 
+class YearBreakdown(BaseModel):
+    """Detailed breakdown for a single year in the simulation (median path)."""
+
+    age: int = Field(..., description="Age during this year")
+    year_index: int = Field(..., description="Year index (0 = first year)")
+
+    # Portfolio
+    portfolio_start: float = Field(..., description="Portfolio value at start of year")
+    portfolio_end: float = Field(..., description="Portfolio value at end of year")
+    portfolio_return: float = Field(..., description="Investment return for this year")
+
+    # Income sources
+    employment_income: float = Field(default=0, description="Employment income")
+    social_security: float = Field(default=0, description="Social Security benefits")
+    pension: float = Field(default=0, description="Pension income")
+    dividends: float = Field(default=0, description="Dividend income from portfolio")
+    annuity: float = Field(default=0, description="Annuity payments")
+    total_income: float = Field(..., description="Total income for the year")
+
+    # Withdrawals and taxes
+    withdrawal: float = Field(..., description="Amount withdrawn from portfolio")
+    federal_tax: float = Field(default=0, description="Federal income tax")
+    state_tax: float = Field(default=0, description="State income tax")
+    total_tax: float = Field(..., description="Total taxes paid")
+    effective_tax_rate: float = Field(default=0, description="Effective tax rate")
+
+    # Net
+    net_income: float = Field(..., description="Net income after taxes")
+
+
 class SimulationResult(BaseModel):
     """Results from a retirement simulation."""
 
@@ -109,6 +139,11 @@ class SimulationResult(BaseModel):
     # For charting
     percentile_paths: dict[str, list[float]] = Field(
         ..., description="Time series of percentile values (by age)"
+    )
+
+    # Year-by-year breakdown (median path)
+    year_breakdown: list[YearBreakdown] = Field(
+        default_factory=list, description="Detailed year-by-year breakdown for median scenario"
     )
 
     # Withdrawal rate info
