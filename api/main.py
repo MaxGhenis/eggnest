@@ -44,8 +44,34 @@ from eggnest.supabase_client import (
 
 app = FastAPI(
     title="EggNest API",
-    description="Monte Carlo financial planning simulation API",
+    description="""
+Monte Carlo financial planning simulation API with real tax calculations.
+
+## Features
+- **Retirement Simulation**: Run 10,000+ Monte Carlo simulations with mortality-adjusted outcomes
+- **Real Tax Calculations**: Federal and state taxes via PolicyEngine-US
+- **Social Security Timing**: Compare claiming strategies from age 62-70
+- **Asset Allocation**: Optimize stock/bond mix for your risk tolerance
+- **State Comparison**: Compare tax impact across different states
+- **Life Event Analysis**: See how major life changes affect your taxes
+
+## Quick Start
+```python
+import httpx
+
+response = httpx.post("https://api.eggnest.co/simulate", json={
+    "initial_capital": 500000,
+    "annual_spending": 40000,
+    "current_age": 65,
+    "state": "CA"
+})
+result = response.json()
+print(f"Success rate: {result['success_rate']:.1%}")
+```
+""",
     version="0.1.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 settings = get_settings()
@@ -80,7 +106,13 @@ async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
 @app.get("/")
 async def root():
     """Health check endpoint."""
-    return {"status": "ok", "service": "finsim-api", "version": "0.1.0"}
+    return {
+        "status": "ok",
+        "service": "eggnest-api",
+        "version": "0.1.0",
+        "docs": "/docs",
+        "redoc": "/redoc",
+    }
 
 
 @app.post("/simulate", response_model=SimulationResult)
