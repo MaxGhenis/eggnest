@@ -1250,6 +1250,7 @@ export function SimulatorPage() {
               gridcolor: colors.gray200,
               tickformat: "$~s",
               tickfont: { family: "Inter, system-ui, sans-serif" },
+              rangemode: "tozero",
             },
             legend: {
               x: 0,
