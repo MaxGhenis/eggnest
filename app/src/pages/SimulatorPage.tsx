@@ -271,6 +271,10 @@ export function SimulatorPage() {
   const [progress, setProgress] = useState({ currentYear: 0, totalYears: 0 });
   const [selectedYearIndex, setSelectedYearIndex] = useState<number | null>(null);
 
+  // SS receiving status (for users already receiving benefits)
+  const [isReceivingSS, setIsReceivingSS] = useState(false);
+  const [isSpouseReceivingSS, setIsSpouseReceivingSS] = useState(false);
+
   // Spouse state
   const [spouse, setSpouse] = useState<SpouseInput>({
     age: 63,
@@ -648,12 +652,33 @@ export function SimulatorPage() {
               />
             </div>
             <div className="wizard-field-hint">
-              Your estimated monthly benefit (check ssa.gov/myaccount)
+              {isReceivingSS
+                ? "Your current monthly benefit amount"
+                : "Your estimated PIA at full retirement age (check ssa.gov/myaccount)"}
             </div>
           </div>
-          {params.social_security_monthly > 0 && (
+          {params.social_security_monthly > 0 && params.current_age >= 62 && (
             <div className="wizard-field">
-              <label>Social Security Start Age</label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={isReceivingSS}
+                  onChange={(e) => {
+                    setIsReceivingSS(e.target.checked);
+                    if (e.target.checked) {
+                      // Auto-set start age to current age so simulation includes SS from start
+                      updateParam("social_security_start_age", params.current_age);
+                    }
+                  }}
+                  style={{ marginRight: "8px" }}
+                />
+                Already receiving Social Security
+              </label>
+            </div>
+          )}
+          {params.social_security_monthly > 0 && !isReceivingSS && (
+            <div className="wizard-field">
+              <label>Planned Start Age</label>
               <select
                 value={params.social_security_start_age}
                 onChange={(e) =>
@@ -801,9 +826,30 @@ export function SimulatorPage() {
                   />
                 </div>
               </div>
-              {spouse.social_security_monthly > 0 && (
+              {spouse.social_security_monthly > 0 && spouse.age >= 62 && (
                 <div className="wizard-field">
-                  <label>Spouse SS Start Age</label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={isSpouseReceivingSS}
+                      onChange={(e) => {
+                        setIsSpouseReceivingSS(e.target.checked);
+                        if (e.target.checked) {
+                          setSpouse({
+                            ...spouse,
+                            social_security_start_age: spouse.age,
+                          });
+                        }
+                      }}
+                      style={{ marginRight: "8px" }}
+                    />
+                    Already receiving Social Security
+                  </label>
+                </div>
+              )}
+              {spouse.social_security_monthly > 0 && !isSpouseReceivingSS && (
+                <div className="wizard-field">
+                  <label>Planned Start Age</label>
                   <select
                     value={spouse.social_security_start_age}
                     onChange={(e) =>
@@ -813,15 +859,15 @@ export function SimulatorPage() {
                       })
                     }
                   >
-                    <option value={62}>62</option>
-                    <option value={63}>63</option>
-                    <option value={64}>64</option>
-                    <option value={65}>65</option>
-                    <option value={66}>66</option>
-                    <option value={67}>67 (FRA)</option>
-                    <option value={68}>68</option>
-                    <option value={69}>69</option>
-                    <option value={70}>70</option>
+                    <option value={62}>62 (reduced ~30%)</option>
+                    <option value={63}>63 (reduced ~25%)</option>
+                    <option value={64}>64 (reduced ~20%)</option>
+                    <option value={65}>65 (reduced ~13%)</option>
+                    <option value={66}>66 (reduced ~7%)</option>
+                    <option value={67}>67 (full retirement age)</option>
+                    <option value={68}>68 (8% bonus)</option>
+                    <option value={69}>69 (16% bonus)</option>
+                    <option value={70}>70 (24% bonus)</option>
                   </select>
                 </div>
               )}
