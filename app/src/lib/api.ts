@@ -20,6 +20,7 @@ export interface AnnuityInput {
 export interface SimulationInput {
   initial_capital: number;
   annual_spending: number;
+  home_value: number;
   current_age: number;
   max_age: number;
   gender: "male" | "female";
@@ -52,6 +53,7 @@ export interface SimulationInput {
   expected_return: number;
   return_volatility: number;
   dividend_yield: number;
+  stock_allocation: number;
 
   // Legacy fields for backward compatibility
   target_monthly_income?: number;

@@ -36,6 +36,7 @@ const US_STATES = [
 const DEFAULT_PARAMS: SimulationInput = {
   initial_capital: 500000,
   annual_spending: 60000,
+  home_value: 0,
   current_age: 65,
   max_age: 95,
   gender: "male",
@@ -51,9 +52,10 @@ const DEFAULT_PARAMS: SimulationInput = {
   has_annuity: false,
   n_simulations: 10000,
   include_mortality: true,
-  expected_return: 0.05,
+  expected_return: 0.07,
   return_volatility: 0.16,
   dividend_yield: 0.02,
+  stock_allocation: 0.8,
 };
 
 // Example personas for quick-start
@@ -601,6 +603,24 @@ export function SimulatorPage() {
               </div>
             </div>
             <div className="wizard-field">
+              <label>Home Equity</label>
+              <div className="wizard-field-prefix">
+                <span>$</span>
+                <input
+                  type="number"
+                  value={params.home_value}
+                  onChange={(e) =>
+                    updateParam("home_value", Number(e.target.value))
+                  }
+                  min={0}
+                  step={10000}
+                />
+              </div>
+              <div className="wizard-field-hint">
+                Home value minus mortgage (not used in simulation, shown in net worth)
+              </div>
+            </div>
+            <div className="wizard-field">
               <label>Annual Spending Need</label>
               <div className="wizard-field-prefix">
                 <span>$</span>
@@ -616,6 +636,22 @@ export function SimulatorPage() {
               </div>
               <div className="wizard-field-hint">
                 That's ${(params.annual_spending / 12).toLocaleString()} per month
+              </div>
+            </div>
+            <div className="wizard-field">
+              <label>Investment Mix: {Math.round(params.stock_allocation * 100)}% Stocks / {Math.round((1 - params.stock_allocation) * 100)}% Bonds</label>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={params.stock_allocation * 100}
+                onChange={(e) =>
+                  updateParam("stock_allocation", Number(e.target.value) / 100)
+                }
+                style={{ width: "100%" }}
+              />
+              <div className="wizard-field-hint">
+                More stocks = higher growth potential but more volatility
               </div>
             </div>
 

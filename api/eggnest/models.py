@@ -33,6 +33,7 @@ class SimulationInput(BaseModel):
     # Core parameters
     initial_capital: float = Field(..., gt=0, description="Starting investment amount")
     annual_spending: float = Field(..., gt=0, description="Desired annual spending need (in today's dollars)")
+    home_value: float = Field(default=0, ge=0, description="Home equity value (not included in portfolio, for net worth display)")
     current_age: int = Field(..., ge=18, le=100, description="Current age")
     max_age: int = Field(default=95, ge=50, le=120, description="Planning horizon (max age)")
     gender: Literal["male", "female"] = Field(default="male", description="Gender for mortality tables")
