@@ -4,6 +4,27 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 
+# Account types for tax treatment
+AccountType = Literal[
+    "traditional_401k",
+    "traditional_ira",
+    "roth_401k",
+    "roth_ira",
+    "taxable",
+]
+
+# Supported funds/indexes
+FundType = Literal["vt", "sp500", "bnd", "treasury"]
+
+
+class Holding(BaseModel):
+    """A single holding in the portfolio."""
+
+    account_type: AccountType = Field(..., description="Type of account (determines tax treatment)")
+    fund: FundType = Field(..., description="Fund/index this holding is invested in")
+    balance: float = Field(..., ge=0, description="Current balance in this holding")
+
+
 class SpouseInput(BaseModel):
     """Spouse details for joint simulation."""
 
@@ -30,8 +51,18 @@ class AnnuityInput(BaseModel):
 class SimulationInput(BaseModel):
     """Input parameters for a retirement simulation."""
 
-    # Core parameters
-    initial_capital: float = Field(..., gt=0, description="Starting investment amount")
+    # Holdings-based portfolio (preferred)
+    holdings: list[Holding] | None = Field(
+        default=None,
+        description="List of holdings with account types and funds. If provided, overrides initial_capital and stock_allocation."
+    )
+    withdrawal_strategy: Literal["traditional_first", "roth_first", "taxable_first", "pro_rata"] = Field(
+        default="taxable_first",
+        description="Order to withdraw from accounts: taxable_first (most common), traditional_first, roth_first, or pro_rata"
+    )
+
+    # Legacy: simple portfolio (for backward compatibility)
+    initial_capital: float | None = Field(default=None, gt=0, description="Starting investment amount (legacy, use holdings instead)")
     annual_spending: float = Field(..., gt=0, description="Desired annual spending need (in today's dollars)")
     home_value: float = Field(default=0, ge=0, description="Home equity value (not included in portfolio, for net worth display)")
     current_age: int = Field(..., ge=18, le=100, description="Current age")
@@ -102,6 +133,37 @@ class SimulationInput(BaseModel):
         # Convert target_monthly_income to annual_spending if provided
         if self.target_monthly_income is not None and self.annual_spending is None:
             object.__setattr__(self, 'annual_spending', self.target_monthly_income * 12)
+
+    @property
+    def total_capital(self) -> float:
+        """Get total portfolio value from holdings or initial_capital."""
+        if self.holdings:
+            return sum(h.balance for h in self.holdings)
+        return self.initial_capital or 0
+
+    @property
+    def has_traditional_accounts(self) -> bool:
+        """Check if portfolio has any traditional (tax-deferred) accounts."""
+        if not self.holdings:
+            return False
+        return any(h.account_type in ("traditional_401k", "traditional_ira") for h in self.holdings)
+
+    @property
+    def has_roth_accounts(self) -> bool:
+        """Check if portfolio has any Roth (tax-free) accounts."""
+        if not self.holdings:
+            return False
+        return any(h.account_type in ("roth_401k", "roth_ira") for h in self.holdings)
+
+    def get_holdings_by_account_type(self, account_type: str) -> list["Holding"]:
+        """Get all holdings for a specific account type."""
+        if not self.holdings:
+            return []
+        return [h for h in self.holdings if h.account_type == account_type]
+
+    def get_balance_by_account_type(self, account_type: str) -> float:
+        """Get total balance for a specific account type."""
+        return sum(h.balance for h in self.get_holdings_by_account_type(account_type))
 
 
 class YearBreakdown(BaseModel):
