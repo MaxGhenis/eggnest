@@ -2,6 +2,7 @@ import { useState } from "react";
 import Plot from "react-plotly.js";
 import { Wizard, type WizardStep } from "../components/Wizard";
 import { SimulationProgress } from "../components/SimulationProgress";
+import { HoldingsEditor } from "../components/HoldingsEditor";
 import {
   runSimulationWithProgress,
   compareAnnuity,
@@ -15,6 +16,7 @@ import {
   type StateComparisonResult,
   type SSTimingComparisonResult,
   type AllocationComparisonResult,
+  type Holding,
 } from "../lib/api";
 import { colors, chartColors } from "../lib/design-tokens";
 import "../styles/Simulator.css";
@@ -277,6 +279,10 @@ export function SimulatorPage() {
   const [isReceivingSS, setIsReceivingSS] = useState(false);
   const [isSpouseReceivingSS, setIsSpouseReceivingSS] = useState(false);
 
+  // Portfolio mode: "simple" uses initial_capital, "detailed" uses holdings
+  const [portfolioMode, setPortfolioMode] = useState<"simple" | "detailed">("simple");
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+
   // Spouse state
   const [spouse, setSpouse] = useState<SpouseInput>({
     age: 63,
@@ -330,6 +336,9 @@ export function SimulatorPage() {
         ...simParams,
         spouse: simParams.has_spouse ? simSpouse : undefined,
         annuity: simParams.has_annuity ? annuity : undefined,
+        // Include holdings if in detailed mode
+        holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
+        initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : simParams.initial_capital,
       };
 
       // Use streaming API with progress updates
@@ -360,6 +369,10 @@ export function SimulatorPage() {
         ...params,
         spouse: params.has_spouse ? spouse : undefined,
         annuity: params.has_annuity ? annuity : undefined,
+        // Include holdings if in detailed mode
+        holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
+        // Clear initial_capital if using holdings (backend uses holdings.total)
+        initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : params.initial_capital,
       };
 
       if (params.has_annuity && annuity.monthly_payment > 0) {
@@ -404,6 +417,8 @@ export function SimulatorPage() {
         ...params,
         spouse: params.has_spouse ? spouse : undefined,
         annuity: params.has_annuity ? annuity : undefined,
+        holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
+        initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : params.initial_capital,
       };
 
       // Use provided states, selected states, or default to no-tax states
@@ -439,6 +454,8 @@ export function SimulatorPage() {
         ...params,
         spouse: params.has_spouse ? spouse : undefined,
         annuity: params.has_annuity ? annuity : undefined,
+        holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
+        initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : params.initial_capital,
       };
 
       const comparison = await compareSSTimings(
@@ -465,6 +482,8 @@ export function SimulatorPage() {
         ...params,
         spouse: params.has_spouse ? spouse : undefined,
         annuity: params.has_annuity ? annuity : undefined,
+        holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
+        initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : params.initial_capital,
       };
 
       const comparison = await compareAllocations(
@@ -577,31 +596,90 @@ export function SimulatorPage() {
       title: "Your Money",
       subtitle: "How much have you saved, and how much do you need?",
       content: (() => {
-        const withdrawalRate = params.initial_capital > 0
-          ? (params.annual_spending / params.initial_capital) * 100
+        const totalPortfolio = portfolioMode === "detailed" && holdings.length > 0
+          ? holdings.reduce((sum, h) => sum + h.balance, 0)
+          : (params.initial_capital ?? 0);
+        const withdrawalRate = totalPortfolio > 0
+          ? (params.annual_spending / totalPortfolio) * 100
           : 0;
         const rateContext = getWithdrawalRateContext(withdrawalRate);
 
         return (
           <div>
+            {/* Portfolio Mode Toggle */}
             <div className="wizard-field">
-              <label>Current Portfolio Value</label>
-              <div className="wizard-field-prefix">
-                <span>$</span>
-                <input
-                  type="number"
-                  value={params.initial_capital}
-                  onChange={(e) =>
-                    updateParam("initial_capital", Number(e.target.value))
-                  }
-                  min={0}
-                  step={10000}
-                />
+              <label>Portfolio Entry Mode</label>
+              <div className="portfolio-mode-toggle">
+                <button
+                  type="button"
+                  className={`mode-btn ${portfolioMode === "simple" ? "active" : ""}`}
+                  onClick={() => setPortfolioMode("simple")}
+                >
+                  Simple
+                </button>
+                <button
+                  type="button"
+                  className={`mode-btn ${portfolioMode === "detailed" ? "active" : ""}`}
+                  onClick={() => setPortfolioMode("detailed")}
+                >
+                  By Account Type
+                </button>
               </div>
               <div className="wizard-field-hint">
-                Total savings and investments
+                {portfolioMode === "simple"
+                  ? "Enter a single total value"
+                  : "Enter each account separately for tax-optimized withdrawals"}
               </div>
             </div>
+
+            {portfolioMode === "simple" ? (
+              <>
+                <div className="wizard-field">
+                  <label>Current Portfolio Value</label>
+                  <div className="wizard-field-prefix">
+                    <span>$</span>
+                    <input
+                      type="number"
+                      value={params.initial_capital}
+                      onChange={(e) =>
+                        updateParam("initial_capital", Number(e.target.value))
+                      }
+                      min={0}
+                      step={10000}
+                    />
+                  </div>
+                  <div className="wizard-field-hint">
+                    Total savings and investments
+                  </div>
+                </div>
+                <div className="wizard-field">
+                  <label>Investment Mix: {Math.round(params.stock_allocation * 100)}% Stocks / {Math.round((1 - params.stock_allocation) * 100)}% Bonds</label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={params.stock_allocation * 100}
+                    onChange={(e) =>
+                      updateParam("stock_allocation", Number(e.target.value) / 100)
+                    }
+                    style={{ width: "100%" }}
+                  />
+                  <div className="wizard-field-hint">
+                    More stocks = higher growth potential but more volatility
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="wizard-field">
+                <label>Your Holdings</label>
+                <HoldingsEditor holdings={holdings} onChange={setHoldings} />
+                <div className="wizard-field-hint">
+                  Traditional accounts: taxed as ordinary income on withdrawal.
+                  Roth: tax-free. Taxable: capital gains tax.
+                </div>
+              </div>
+            )}
+
             <div className="wizard-field">
               <label>Home Equity</label>
               <div className="wizard-field-prefix">
@@ -638,24 +716,8 @@ export function SimulatorPage() {
                 That's ${(params.annual_spending / 12).toLocaleString()} per month
               </div>
             </div>
-            <div className="wizard-field">
-              <label>Investment Mix: {Math.round(params.stock_allocation * 100)}% Stocks / {Math.round((1 - params.stock_allocation) * 100)}% Bonds</label>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={params.stock_allocation * 100}
-                onChange={(e) =>
-                  updateParam("stock_allocation", Number(e.target.value) / 100)
-                }
-                style={{ width: "100%" }}
-              />
-              <div className="wizard-field-hint">
-                More stocks = higher growth potential but more volatility
-              </div>
-            </div>
 
-            {params.initial_capital > 0 && params.annual_spending > 0 && (
+            {totalPortfolio > 0 && params.annual_spending > 0 && (
               <div className={`validation-context ${rateContext.warning ? 'warning' : 'success'}`}>
                 <div className="validation-rate">
                   <strong>{withdrawalRate.toFixed(1)}%</strong> withdrawal rate
@@ -1040,12 +1102,27 @@ export function SimulatorPage() {
 
             <div className="wizard-review-section">
               <div className="wizard-review-title">Finances</div>
-              <div className="wizard-review-row">
-                <span className="wizard-review-label">Portfolio</span>
-                <span className="wizard-review-value">
-                  {formatCurrency(params.initial_capital)}
-                </span>
-              </div>
+              {portfolioMode === "detailed" && holdings.length > 0 ? (
+                <>
+                  <div className="wizard-review-row">
+                    <span className="wizard-review-label">Portfolio</span>
+                    <span className="wizard-review-value">
+                      {formatCurrency(holdings.reduce((sum, h) => sum + h.balance, 0))}
+                    </span>
+                  </div>
+                  <div className="wizard-review-row" style={{ fontSize: "0.875rem", color: "#6b7280" }}>
+                    <span className="wizard-review-label">&nbsp;&nbsp;Holdings</span>
+                    <span className="wizard-review-value">{holdings.length} accounts</span>
+                  </div>
+                </>
+              ) : (
+                <div className="wizard-review-row">
+                  <span className="wizard-review-label">Portfolio</span>
+                  <span className="wizard-review-value">
+                    {formatCurrency(params.initial_capital ?? 0)}
+                  </span>
+                </div>
+              )}
               <div className="wizard-review-row">
                 <span className="wizard-review-label">Annual Spending</span>
                 <span className="wizard-review-value">
@@ -1989,14 +2066,14 @@ export function SimulatorPage() {
             className="what-if-btn"
             onClick={() =>
               runWhatIfScenario({
-                initial_capital: Math.round(params.initial_capital * 1.1),
+                initial_capital: Math.round((params.initial_capital ?? 0) * 1.1),
               })
             }
           >
             <span className="what-if-icon">💰</span>
             <span className="what-if-label">10% more savings</span>
             <span className="what-if-value">
-              {formatCurrency(Math.round(params.initial_capital * 1.1))}
+              {formatCurrency(Math.round((params.initial_capital ?? 0) * 1.1))}
             </span>
           </button>
           {params.social_security_start_age < 70 && (
@@ -2093,7 +2170,7 @@ export function SimulatorPage() {
               <h3>{persona.name}</h3>
               <p>{persona.description}</p>
               <div className="persona-stats">
-                <span>{formatCurrency(persona.params.initial_capital)} saved</span>
+                <span>{formatCurrency(persona.params.initial_capital ?? 0)} saved</span>
                 <span>{formatCurrency(persona.params.annual_spending)}/yr spending</span>
               </div>
             </div>

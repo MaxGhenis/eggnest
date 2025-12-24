@@ -696,3 +696,37 @@
     height: 40px;
   }
 }
+
+/* Portfolio Mode Toggle */
+.portfolio-mode-toggle {
+  display: flex;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-border, #e5e7eb);
+}
+
+.portfolio-mode-toggle .mode-btn {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: white;
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.portfolio-mode-toggle .mode-btn:first-child {
+  border-right: 1px solid var(--color-border, #e5e7eb);
+}
+
+.portfolio-mode-toggle .mode-btn:hover:not(.active) {
+  background: var(--color-gray-50, #f9fafb);
+}
+
+.portfolio-mode-toggle .mode-btn.active {
+  background: var(--color-primary, #319795);
+  color: white;
+}

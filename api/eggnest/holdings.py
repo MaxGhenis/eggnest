@@ -269,7 +269,13 @@ class HoldingsTracker:
 
         # Withdraw pro-rata from each holding
         for h in cat_holdings:
-            proportion = np.where(cat_total > 0, h.balance / cat_total, 0)
+            # Avoid division by zero - use np.divide with where parameter
+            proportion = np.divide(
+                h.balance,
+                cat_total,
+                out=np.zeros_like(h.balance),
+                where=cat_total > 0
+            )
             withdrawal = amount * proportion
             h.balance = np.maximum(0, h.balance - withdrawal)
 
