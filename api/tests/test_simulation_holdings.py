@@ -9,6 +9,30 @@ from eggnest.simulation import MonteCarloSimulator
 class TestSimulationWithHoldings:
     """Test simulation runs with holdings input."""
 
+    def test_simulation_uses_holdings_tracker(self):
+        """Simulation should create and use HoldingsTracker when holdings provided."""
+        params = SimulationInput(
+            holdings=[
+                Holding(account_type="traditional_401k", fund="vt", balance=300_000),
+                Holding(account_type="roth_ira", fund="vt", balance=100_000),
+                Holding(account_type="taxable", fund="bnd", balance=50_000),
+            ],
+            annual_spending=40_000,
+            current_age=60,
+            max_age=90,
+            n_simulations=100,
+        )
+        sim = MonteCarloSimulator(params)
+
+        # Should have tracker attribute after initialization
+        assert hasattr(sim, 'tracker')
+        # Tracker should be None until run is called, or created during run
+        result = sim.run()
+
+        # Should complete without error
+        assert result.success_rate >= 0
+        assert result.success_rate <= 1
+
     def test_simulation_accepts_holdings(self):
         """Simulation should accept holdings instead of initial_capital."""
         params = SimulationInput(
@@ -114,6 +138,74 @@ class TestSimulationWithHoldings:
         # Can't guarantee which is higher without knowing exact tax brackets
         assert result_taxable.total_taxes_median >= 0
         assert result_traditional.total_taxes_median >= 0
+
+    def test_traditional_withdrawals_treated_as_ordinary_income(self):
+        """Traditional account withdrawals should be taxed as ordinary income."""
+        # Same dollar amount, but different account types = different tax treatment
+        traditional_params = SimulationInput(
+            holdings=[
+                Holding(account_type="traditional_401k", fund="vt", balance=500_000),
+            ],
+            annual_spending=50_000,
+            current_age=60,
+            max_age=70,
+            n_simulations=100,
+            state="CA",
+            filing_status="single",
+        )
+
+        taxable_params = SimulationInput(
+            holdings=[
+                Holding(account_type="taxable", fund="vt", balance=500_000),
+            ],
+            annual_spending=50_000,
+            current_age=60,
+            max_age=70,
+            n_simulations=100,
+            state="CA",
+            filing_status="single",
+        )
+
+        trad_result = MonteCarloSimulator(traditional_params).run()
+        taxable_result = MonteCarloSimulator(taxable_params).run()
+
+        # Traditional withdrawals should have higher taxes (ordinary income vs capital gains)
+        # This will fail until HoldingsTracker is integrated with proper tax treatment
+        assert trad_result.total_taxes_median > taxable_result.total_taxes_median
+
+    def test_roth_withdrawals_are_tax_free(self):
+        """Roth account withdrawals should not incur taxes."""
+        roth_params = SimulationInput(
+            holdings=[
+                Holding(account_type="roth_ira", fund="vt", balance=500_000),
+            ],
+            annual_spending=50_000,
+            current_age=60,
+            max_age=70,
+            n_simulations=100,
+            state="CA",
+            filing_status="single",
+        )
+
+        taxable_params = SimulationInput(
+            holdings=[
+                Holding(account_type="taxable", fund="vt", balance=500_000),
+            ],
+            annual_spending=50_000,
+            current_age=60,
+            max_age=70,
+            n_simulations=100,
+            state="CA",
+            filing_status="single",
+        )
+
+        roth_result = MonteCarloSimulator(roth_params).run()
+        taxable_result = MonteCarloSimulator(taxable_params).run()
+
+        # Roth should have near-zero taxes, taxable should have capital gains tax
+        assert roth_result.total_taxes_median < taxable_result.total_taxes_median
+        # Roth taxes should be very low (may have some from dividends within account)
+        assert roth_result.total_taxes_median < 1000  # Minimal taxes
 
     def test_backward_compat_initial_capital_still_works(self):
         """Legacy initial_capital input should still work."""

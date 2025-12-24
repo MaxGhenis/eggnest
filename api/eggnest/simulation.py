@@ -6,6 +6,7 @@ from .models import SimulationInput, SimulationResult, YearBreakdown
 from .tax import TaxCalculator
 from .mortality import generate_alive_mask, generate_joint_alive_mask
 from .returns import generate_blended_returns
+from .holdings import create_holdings_tracker
 
 
 class MonteCarloSimulator:
@@ -26,6 +27,15 @@ class MonteCarloSimulator:
         self._rng = np.random.default_rng()
         self.tax_calc = TaxCalculator(state=params.state)
 
+        # Create holdings tracker if holdings are provided
+        n_years = params.max_age - params.current_age
+        self.tracker = create_holdings_tracker(
+            params=params,
+            n_simulations=params.n_simulations,
+            n_years=n_years,
+            rng=self._rng,
+        )
+
     def run_with_progress(self):
         """
         Run the Monte Carlo simulation with progress updates.
@@ -45,7 +55,12 @@ class MonteCarloSimulator:
 
         # Initialize paths
         paths = np.zeros((n_sims, n_years + 1))
-        paths[:, 0] = p.total_capital
+        if self.tracker:
+            # Use tracker for holdings-based portfolio
+            paths[:, 0] = self.tracker.total_balance
+        else:
+            # Legacy mode: single total_capital
+            paths[:, 0] = p.total_capital
 
         # Track withdrawals and taxes
         total_withdrawn = np.zeros(n_sims)
@@ -53,18 +68,23 @@ class MonteCarloSimulator:
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
         # Generate market returns using selected model and allocation
-        # Returns (price_growth, dividend_yields) - separate for tax calculation
-        price_growth, div_yields = generate_blended_returns(
-            n_simulations=n_sims,
-            n_years=n_years,
-            stock_allocation=p.stock_allocation,
-            method=p.return_model,
-            expected_stock_return=p.expected_return,
-            stock_volatility=p.return_volatility,
-            stock_index=p.stock_index,
-            bond_index=p.bond_index,
-            rng=self._rng,
-        )
+        # Only needed if NOT using tracker (tracker has its own returns)
+        if not self.tracker:
+            price_growth, div_yields = generate_blended_returns(
+                n_simulations=n_sims,
+                n_years=n_years,
+                stock_allocation=p.stock_allocation,
+                method=p.return_model,
+                expected_stock_return=p.expected_return,
+                stock_volatility=p.return_volatility,
+                stock_index=p.stock_index,
+                bond_index=p.bond_index,
+                rng=self._rng,
+            )
+        else:
+            # Placeholder for legacy code paths
+            price_growth = None
+            div_yields = None
 
         # Generate mortality masks
         if p.include_mortality:
@@ -175,8 +195,18 @@ class MonteCarloSimulator:
                 else:  # life_only
                     annuity_income = np.where(primary_alive[:, year], p.annuity.monthly_payment * 12, 0)
 
-            # Portfolio dividend income (from historical yields)
-            dividends = current_value * div_yields[:, year]
+            # Portfolio dividend income
+            if self.tracker:
+                # Get dividends by account type from tracker
+                div_by_account = self.tracker.get_dividends(year)
+                # Dividends from taxable and traditional accounts are taxable
+                # Roth dividends grow tax-free (not included in taxable income)
+                dividends = div_by_account["taxable"] + div_by_account["traditional"]
+                roth_dividends = div_by_account["roth"]
+            else:
+                # Legacy mode: use blended returns
+                dividends = current_value * div_yields[:, year]
+                roth_dividends = np.zeros(n_sims)
 
             # Total guaranteed income (not including dividends)
             total_guaranteed = (
@@ -190,47 +220,88 @@ class MonteCarloSimulator:
                 total_guaranteed = np.full(n_sims, total_guaranteed)
 
             # Total income including dividends reduces withdrawal needs
-            total_income_for_spending = total_guaranteed + dividends
+            # Roth dividends also reduce withdrawal needs (tax-free)
+            total_income_for_spending = total_guaranteed + dividends + roth_dividends
 
             # Net withdrawal needed from portfolio (after all income including dividends)
             net_need = annual_spending - total_income_for_spending
             net_need = np.maximum(0, net_need)
 
-            # Calculate taxes using PolicyEngine
-            # Withdrawal from portfolio is treated as capital gains (simplified)
-            ss_income = np.full(n_sims, social_security)
-            if isinstance(spouse_ss, np.ndarray):
-                ss_income = ss_income + spouse_ss
-            elif isinstance(spouse_ss, (int, float)) and spouse_ss > 0:
-                ss_income = ss_income + spouse_ss
+            # Handle withdrawals and taxes
+            if self.tracker:
+                # Use tracker to withdraw with proper tax treatment
+                withdrawal_result = self.tracker.withdraw(net_need, current_age)
 
-            employment_total = np.full(n_sims, employment)
-            if isinstance(spouse_employment, np.ndarray):
-                employment_total = employment_total + spouse_employment
-            elif isinstance(spouse_employment, (int, float)) and spouse_employment > 0:
-                employment_total = employment_total + spouse_employment
+                # Calculate taxes based on account types
+                # Traditional withdrawals (including RMD) = ordinary income
+                # Taxable withdrawals = capital gains
+                # Roth withdrawals = tax-free (not included)
+                ss_income = np.full(n_sims, social_security)
+                if isinstance(spouse_ss, np.ndarray):
+                    ss_income = ss_income + spouse_ss
+                elif isinstance(spouse_ss, (int, float)) and spouse_ss > 0:
+                    ss_income = ss_income + spouse_ss
 
-            tax_results = self.tax_calc.calculate_batch_taxes(
-                capital_gains_array=np.asarray(net_need).flatten(),
-                social_security_array=np.asarray(ss_income).flatten(),
-                ages=np.full(n_sims, current_age),
-                filing_status=p.filing_status,
-                dividend_income_array=np.asarray(dividends).flatten(),
-                employment_income_array=np.asarray(employment_total).flatten(),
-            )
-            # Convert to numpy array and ensure proper shape
-            estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
-            # Ensure non-negative taxes
-            estimated_taxes = np.maximum(0, estimated_taxes)
+                employment_total = np.full(n_sims, employment)
+                if isinstance(spouse_employment, np.ndarray):
+                    employment_total = employment_total + spouse_employment
+                elif isinstance(spouse_employment, (int, float)) and spouse_employment > 0:
+                    employment_total = employment_total + spouse_employment
 
-            # Ensure all arrays are numpy for addition
-            net_need = np.asarray(net_need).flatten()
-            dividends = np.asarray(dividends).flatten()
-            gross_withdrawal = net_need + estimated_taxes
+                # Traditional withdrawals are ordinary income (add to employment income)
+                trad_withdrawals = withdrawal_result["traditional"] + withdrawal_result["traditional_rmd"]
+                ordinary_income = employment_total + trad_withdrawals
 
-            # Portfolio dynamics - price returns only, dividends are income not growth
-            growth = current_value * price_growth[:, year]
-            new_value = current_value + growth - gross_withdrawal
+                tax_results = self.tax_calc.calculate_batch_taxes(
+                    capital_gains_array=np.asarray(withdrawal_result["taxable"]).flatten(),
+                    social_security_array=np.asarray(ss_income).flatten(),
+                    ages=np.full(n_sims, current_age),
+                    filing_status=p.filing_status,
+                    dividend_income_array=np.asarray(dividends).flatten(),
+                    employment_income_array=np.asarray(ordinary_income).flatten(),
+                )
+
+                estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
+                estimated_taxes = np.maximum(0, estimated_taxes)
+
+                gross_withdrawal = withdrawal_result["total"] + estimated_taxes
+
+                # Apply growth and update portfolio value
+                self.tracker.apply_growth(year)
+                new_value = self.tracker.total_balance
+
+            else:
+                # Legacy mode: simplified tax treatment (all withdrawals as capital gains)
+                ss_income = np.full(n_sims, social_security)
+                if isinstance(spouse_ss, np.ndarray):
+                    ss_income = ss_income + spouse_ss
+                elif isinstance(spouse_ss, (int, float)) and spouse_ss > 0:
+                    ss_income = ss_income + spouse_ss
+
+                employment_total = np.full(n_sims, employment)
+                if isinstance(spouse_employment, np.ndarray):
+                    employment_total = employment_total + spouse_employment
+                elif isinstance(spouse_employment, (int, float)) and spouse_employment > 0:
+                    employment_total = employment_total + spouse_employment
+
+                tax_results = self.tax_calc.calculate_batch_taxes(
+                    capital_gains_array=np.asarray(net_need).flatten(),
+                    social_security_array=np.asarray(ss_income).flatten(),
+                    ages=np.full(n_sims, current_age),
+                    filing_status=p.filing_status,
+                    dividend_income_array=np.asarray(dividends).flatten(),
+                    employment_income_array=np.asarray(employment_total).flatten(),
+                )
+                estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
+                estimated_taxes = np.maximum(0, estimated_taxes)
+
+                net_need = np.asarray(net_need).flatten()
+                dividends = np.asarray(dividends).flatten()
+                gross_withdrawal = net_need + estimated_taxes
+
+                # Portfolio dynamics - price returns only, dividends are income not growth
+                growth = current_value * price_growth[:, year]
+                new_value = current_value + growth - gross_withdrawal
 
             # Track depletion
             depleted = (current_value > 0) & (new_value <= 0)
@@ -365,7 +436,12 @@ class MonteCarloSimulator:
 
         # Initialize paths
         paths = np.zeros((n_sims, n_years + 1))
-        paths[:, 0] = p.total_capital
+        if self.tracker:
+            # Use tracker for holdings-based portfolio
+            paths[:, 0] = self.tracker.total_balance
+        else:
+            # Legacy mode: single total_capital
+            paths[:, 0] = p.total_capital
 
         # Track withdrawals and taxes
         total_withdrawn = np.zeros(n_sims)
@@ -373,18 +449,23 @@ class MonteCarloSimulator:
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
         # Generate market returns using selected model and allocation
-        # Returns (price_growth, dividend_yields) - separate for tax calculation
-        price_growth, div_yields = generate_blended_returns(
-            n_simulations=n_sims,
-            n_years=n_years,
-            stock_allocation=p.stock_allocation,
-            method=p.return_model,
-            expected_stock_return=p.expected_return,
-            stock_volatility=p.return_volatility,
-            stock_index=p.stock_index,
-            bond_index=p.bond_index,
-            rng=self._rng,
-        )
+        # Only needed if NOT using tracker (tracker has its own returns)
+        if not self.tracker:
+            price_growth, div_yields = generate_blended_returns(
+                n_simulations=n_sims,
+                n_years=n_years,
+                stock_allocation=p.stock_allocation,
+                method=p.return_model,
+                expected_stock_return=p.expected_return,
+                stock_volatility=p.return_volatility,
+                stock_index=p.stock_index,
+                bond_index=p.bond_index,
+                rng=self._rng,
+            )
+        else:
+            # Placeholder for legacy code paths
+            price_growth = None
+            div_yields = None
 
         # Generate mortality masks
         if p.include_mortality:
@@ -491,8 +572,18 @@ class MonteCarloSimulator:
                 else:  # life_only
                     annuity_income = np.where(primary_alive[:, year], p.annuity.monthly_payment * 12, 0)
 
-            # Portfolio dividend income (from historical yields)
-            dividends = current_value * div_yields[:, year]
+            # Portfolio dividend income
+            if self.tracker:
+                # Get dividends by account type from tracker
+                div_by_account = self.tracker.get_dividends(year)
+                # Dividends from taxable and traditional accounts are taxable
+                # Roth dividends grow tax-free (not included in taxable income)
+                dividends = div_by_account["taxable"] + div_by_account["traditional"]
+                roth_dividends = div_by_account["roth"]
+            else:
+                # Legacy mode: use blended returns
+                dividends = current_value * div_yields[:, year]
+                roth_dividends = np.zeros(n_sims)
 
             # Total guaranteed income (not including dividends)
             total_guaranteed = (
@@ -506,47 +597,88 @@ class MonteCarloSimulator:
                 total_guaranteed = np.full(n_sims, total_guaranteed)
 
             # Total income including dividends reduces withdrawal needs
-            total_income_for_spending = total_guaranteed + dividends
+            # Roth dividends also reduce withdrawal needs (tax-free)
+            total_income_for_spending = total_guaranteed + dividends + roth_dividends
 
             # Net withdrawal needed from portfolio (after all income including dividends)
             net_need = annual_spending - total_income_for_spending
             net_need = np.maximum(0, net_need)
 
-            # Calculate taxes using PolicyEngine
-            # Withdrawal from portfolio is treated as capital gains (simplified)
-            ss_income = np.full(n_sims, social_security)
-            if isinstance(spouse_ss, np.ndarray):
-                ss_income = ss_income + spouse_ss
-            elif isinstance(spouse_ss, (int, float)) and spouse_ss > 0:
-                ss_income = ss_income + spouse_ss
+            # Handle withdrawals and taxes
+            if self.tracker:
+                # Use tracker to withdraw with proper tax treatment
+                withdrawal_result = self.tracker.withdraw(net_need, current_age)
 
-            employment_total = np.full(n_sims, employment)
-            if isinstance(spouse_employment, np.ndarray):
-                employment_total = employment_total + spouse_employment
-            elif isinstance(spouse_employment, (int, float)) and spouse_employment > 0:
-                employment_total = employment_total + spouse_employment
+                # Calculate taxes based on account types
+                # Traditional withdrawals (including RMD) = ordinary income
+                # Taxable withdrawals = capital gains
+                # Roth withdrawals = tax-free (not included)
+                ss_income = np.full(n_sims, social_security)
+                if isinstance(spouse_ss, np.ndarray):
+                    ss_income = ss_income + spouse_ss
+                elif isinstance(spouse_ss, (int, float)) and spouse_ss > 0:
+                    ss_income = ss_income + spouse_ss
 
-            tax_results = self.tax_calc.calculate_batch_taxes(
-                capital_gains_array=np.asarray(net_need).flatten(),
-                social_security_array=np.asarray(ss_income).flatten(),
-                ages=np.full(n_sims, current_age),
-                filing_status=p.filing_status,
-                dividend_income_array=np.asarray(dividends).flatten(),
-                employment_income_array=np.asarray(employment_total).flatten(),
-            )
-            # Convert to numpy array and ensure proper shape
-            estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
-            # Ensure non-negative taxes
-            estimated_taxes = np.maximum(0, estimated_taxes)
+                employment_total = np.full(n_sims, employment)
+                if isinstance(spouse_employment, np.ndarray):
+                    employment_total = employment_total + spouse_employment
+                elif isinstance(spouse_employment, (int, float)) and spouse_employment > 0:
+                    employment_total = employment_total + spouse_employment
 
-            # Ensure all arrays are numpy for addition
-            net_need = np.asarray(net_need).flatten()
-            dividends = np.asarray(dividends).flatten()
-            gross_withdrawal = net_need + estimated_taxes
+                # Traditional withdrawals are ordinary income (add to employment income)
+                trad_withdrawals = withdrawal_result["traditional"] + withdrawal_result["traditional_rmd"]
+                ordinary_income = employment_total + trad_withdrawals
 
-            # Portfolio dynamics - price returns only, dividends are income not growth
-            growth = current_value * price_growth[:, year]
-            new_value = current_value + growth - gross_withdrawal
+                tax_results = self.tax_calc.calculate_batch_taxes(
+                    capital_gains_array=np.asarray(withdrawal_result["taxable"]).flatten(),
+                    social_security_array=np.asarray(ss_income).flatten(),
+                    ages=np.full(n_sims, current_age),
+                    filing_status=p.filing_status,
+                    dividend_income_array=np.asarray(dividends).flatten(),
+                    employment_income_array=np.asarray(ordinary_income).flatten(),
+                )
+
+                estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
+                estimated_taxes = np.maximum(0, estimated_taxes)
+
+                gross_withdrawal = withdrawal_result["total"] + estimated_taxes
+
+                # Apply growth and update portfolio value
+                self.tracker.apply_growth(year)
+                new_value = self.tracker.total_balance
+
+            else:
+                # Legacy mode: simplified tax treatment (all withdrawals as capital gains)
+                ss_income = np.full(n_sims, social_security)
+                if isinstance(spouse_ss, np.ndarray):
+                    ss_income = ss_income + spouse_ss
+                elif isinstance(spouse_ss, (int, float)) and spouse_ss > 0:
+                    ss_income = ss_income + spouse_ss
+
+                employment_total = np.full(n_sims, employment)
+                if isinstance(spouse_employment, np.ndarray):
+                    employment_total = employment_total + spouse_employment
+                elif isinstance(spouse_employment, (int, float)) and spouse_employment > 0:
+                    employment_total = employment_total + spouse_employment
+
+                tax_results = self.tax_calc.calculate_batch_taxes(
+                    capital_gains_array=np.asarray(net_need).flatten(),
+                    social_security_array=np.asarray(ss_income).flatten(),
+                    ages=np.full(n_sims, current_age),
+                    filing_status=p.filing_status,
+                    dividend_income_array=np.asarray(dividends).flatten(),
+                    employment_income_array=np.asarray(employment_total).flatten(),
+                )
+                estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
+                estimated_taxes = np.maximum(0, estimated_taxes)
+
+                net_need = np.asarray(net_need).flatten()
+                dividends = np.asarray(dividends).flatten()
+                gross_withdrawal = net_need + estimated_taxes
+
+                # Portfolio dynamics - price returns only, dividends are income not growth
+                growth = current_value * price_growth[:, year]
+                new_value = current_value + growth - gross_withdrawal
 
             # Track depletion
             depleted = (current_value > 0) & (new_value <= 0)

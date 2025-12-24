@@ -101,10 +101,10 @@ class HoldingsTracker:
 
     def get_balance_by_account_category(self, category: tuple[str, ...]) -> np.ndarray:
         """Get total balance for an account category (n_simulations,)."""
-        return sum(
-            h.balance for h in self.holdings
-            if h.account_type in category
-        ) if self.holdings else np.zeros(self.n_simulations)
+        balances = [h.balance for h in self.holdings if h.account_type in category]
+        if balances:
+            return sum(balances)
+        return np.zeros(self.n_simulations)
 
     @property
     def traditional_balance(self) -> np.ndarray:

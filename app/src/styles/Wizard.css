@@ -583,3 +583,116 @@
   color: var(--color-text-muted);
   flex: 1;
 }
+
+/* Holdings Editor */
+.holdings-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.holdings-empty {
+  padding: 1.5rem;
+  background: var(--color-gray-50, #f9fafb);
+  border: 2px dashed var(--color-gray-300, #d1d5db);
+  border-radius: var(--radius-md, 12px);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.holding-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 1rem;
+  align-items: end;
+  padding: 1rem;
+  background: var(--color-gray-50, #f9fafb);
+  border-radius: var(--radius-md, 12px);
+  border: 1px solid var(--color-gray-200, #e5e7eb);
+}
+
+.holding-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.holding-field label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.holding-field select,
+.holding-field input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-gray-300, #d1d5db);
+  border-radius: var(--radius-sm, 8px);
+  font-size: 0.9375rem;
+  font-family: inherit;
+}
+
+.remove-holding-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--color-error-light, #fee2e2);
+  color: var(--color-error, #ef4444);
+  border-radius: var(--radius-sm, 8px);
+  cursor: pointer;
+  font-size: 1.5rem;
+  line-height: 1;
+  transition: all 0.2s;
+}
+
+.remove-holding-btn:hover {
+  background: var(--color-error, #ef4444);
+  color: white;
+}
+
+.add-holding-btn {
+  padding: 0.75rem 1rem;
+  background: white;
+  border: 2px dashed var(--color-primary, #319795);
+  color: var(--color-primary, #319795);
+  border-radius: var(--radius-md, 12px);
+  cursor: pointer;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.add-holding-btn:hover {
+  background: var(--color-primary-light, #e6f7f6);
+  border-style: solid;
+}
+
+.holdings-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  background: var(--color-primary-light, #e6f7f6);
+  border: 1px solid var(--color-primary, #319795);
+  border-radius: var(--radius-md, 12px);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.holdings-total .total-value {
+  font-size: 1.25rem;
+  color: var(--color-primary, #319795);
+}
+
+@media (max-width: 768px) {
+  .holding-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .remove-holding-btn {
+    width: 100%;
+    height: 40px;
+  }
+}

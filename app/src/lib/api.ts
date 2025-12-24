@@ -1,5 +1,20 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+export type AccountType =
+  | "traditional_401k"
+  | "traditional_ira"
+  | "roth_401k"
+  | "roth_ira"
+  | "taxable";
+
+export type FundType = "vt" | "sp500" | "bnd" | "treasury";
+
+export interface Holding {
+  account_type: AccountType;
+  fund: FundType;
+  balance: number;
+}
+
 export interface SpouseInput {
   age: number;
   gender: "male" | "female";
@@ -18,7 +33,12 @@ export interface AnnuityInput {
 }
 
 export interface SimulationInput {
-  initial_capital: number;
+  // Holdings-based portfolio (preferred)
+  holdings?: Holding[];
+  withdrawal_strategy?: "traditional_first" | "roth_first" | "taxable_first" | "pro_rata";
+
+  // Legacy: simple portfolio (for backward compatibility)
+  initial_capital?: number;
   annual_spending: number;
   home_value: number;
   current_age: number;
