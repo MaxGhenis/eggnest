@@ -45,7 +45,7 @@ class MonteCarloSimulator:
 
         # Initialize paths
         paths = np.zeros((n_sims, n_years + 1))
-        paths[:, 0] = p.initial_capital
+        paths[:, 0] = p.total_capital
 
         # Track withdrawals and taxes
         total_withdrawn = np.zeros(n_sims)
@@ -100,7 +100,7 @@ class MonteCarloSimulator:
             guaranteed_income += p.annuity.monthly_payment * 12
 
         initial_net_need = max(0, annual_spending - guaranteed_income)
-        initial_withdrawal_rate = (initial_net_need / p.initial_capital * 100) if p.initial_capital > 0 else 0
+        initial_withdrawal_rate = (initial_net_need / p.total_capital * 100) if p.total_capital > 0 else 0
 
         # Yield initial progress
         yield {"type": "progress", "year": 0, "total_years": n_years}
@@ -365,7 +365,7 @@ class MonteCarloSimulator:
 
         # Initialize paths
         paths = np.zeros((n_sims, n_years + 1))
-        paths[:, 0] = p.initial_capital
+        paths[:, 0] = p.total_capital
 
         # Track withdrawals and taxes
         total_withdrawn = np.zeros(n_sims)
@@ -420,7 +420,7 @@ class MonteCarloSimulator:
             guaranteed_income += p.annuity.monthly_payment * 12
 
         initial_net_need = max(0, annual_spending - guaranteed_income)
-        initial_withdrawal_rate = (initial_net_need / p.initial_capital * 100) if p.initial_capital > 0 else 0
+        initial_withdrawal_rate = (initial_net_need / p.total_capital * 100) if p.total_capital > 0 else 0
 
         # Track year-by-year data for detailed breakdown
         yearly_employment = np.zeros((n_sims, n_years))
