@@ -1,5 +1,9 @@
 """Supabase client for authentication and data persistence."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from .config import get_settings
 
 # Supabase is optional - works without it for core simulation
@@ -9,6 +13,10 @@ try:
 except ImportError:
     HAS_SUPABASE = False
     Client = None
+    create_client = None
+
+if TYPE_CHECKING:
+    from supabase import Client
 
 
 def get_supabase_client() -> Client | None:
