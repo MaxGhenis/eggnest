@@ -53,8 +53,8 @@ class MonteCarloSimulator:
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
         # Generate market returns using selected model and allocation
-        # Default is bootstrap from historical VT/BND returns
-        annual_returns = generate_blended_returns(
+        # Returns (price_returns, dividend_yields) - separate for tax calculation
+        price_returns, div_yields = generate_blended_returns(
             n_simulations=n_sims,
             n_years=n_years,
             stock_allocation=p.stock_allocation,
@@ -175,7 +175,10 @@ class MonteCarloSimulator:
                 else:  # life_only
                     annuity_income = np.where(primary_alive[:, year], p.annuity.monthly_payment * 12, 0)
 
-            # Total guaranteed income
+            # Portfolio dividend income (from historical yields)
+            dividends = current_value * div_yields[:, year]
+
+            # Total guaranteed income (not including dividends)
             total_guaranteed = (
                 employment + social_security + pension +
                 spouse_employment + spouse_ss + spouse_pension +
@@ -186,12 +189,12 @@ class MonteCarloSimulator:
             if isinstance(total_guaranteed, (int, float)):
                 total_guaranteed = np.full(n_sims, total_guaranteed)
 
-            # Net withdrawal needed from portfolio
-            net_need = annual_spending - total_guaranteed
-            net_need = np.maximum(0, net_need)
+            # Total income including dividends reduces withdrawal needs
+            total_income_for_spending = total_guaranteed + dividends
 
-            # Portfolio income
-            dividends = current_value * p.dividend_yield
+            # Net withdrawal needed from portfolio (after all income including dividends)
+            net_need = annual_spending - total_income_for_spending
+            net_need = np.maximum(0, net_need)
 
             # Calculate taxes using PolicyEngine
             # Withdrawal from portfolio is treated as capital gains (simplified)
@@ -225,9 +228,9 @@ class MonteCarloSimulator:
             dividends = np.asarray(dividends).flatten()
             gross_withdrawal = net_need + estimated_taxes
 
-            # Portfolio dynamics
-            growth = current_value * annual_returns[:, year]
-            new_value = current_value + growth + dividends - gross_withdrawal
+            # Portfolio dynamics - price returns only, dividends are income not growth
+            growth = current_value * price_returns[:, year]
+            new_value = current_value + growth - gross_withdrawal
 
             # Track depletion
             depleted = (current_value > 0) & (new_value <= 0)
@@ -370,8 +373,8 @@ class MonteCarloSimulator:
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
         # Generate market returns using selected model and allocation
-        # Default is bootstrap from historical VT/BND returns
-        annual_returns = generate_blended_returns(
+        # Returns (price_returns, dividend_yields) - separate for tax calculation
+        price_returns, div_yields = generate_blended_returns(
             n_simulations=n_sims,
             n_years=n_years,
             stock_allocation=p.stock_allocation,
@@ -488,7 +491,10 @@ class MonteCarloSimulator:
                 else:  # life_only
                     annuity_income = np.where(primary_alive[:, year], p.annuity.monthly_payment * 12, 0)
 
-            # Total guaranteed income
+            # Portfolio dividend income (from historical yields)
+            dividends = current_value * div_yields[:, year]
+
+            # Total guaranteed income (not including dividends)
             total_guaranteed = (
                 employment + social_security + pension +
                 spouse_employment + spouse_ss + spouse_pension +
@@ -499,12 +505,12 @@ class MonteCarloSimulator:
             if isinstance(total_guaranteed, (int, float)):
                 total_guaranteed = np.full(n_sims, total_guaranteed)
 
-            # Net withdrawal needed from portfolio
-            net_need = annual_spending - total_guaranteed
-            net_need = np.maximum(0, net_need)
+            # Total income including dividends reduces withdrawal needs
+            total_income_for_spending = total_guaranteed + dividends
 
-            # Portfolio income
-            dividends = current_value * p.dividend_yield
+            # Net withdrawal needed from portfolio (after all income including dividends)
+            net_need = annual_spending - total_income_for_spending
+            net_need = np.maximum(0, net_need)
 
             # Calculate taxes using PolicyEngine
             # Withdrawal from portfolio is treated as capital gains (simplified)
@@ -538,9 +544,9 @@ class MonteCarloSimulator:
             dividends = np.asarray(dividends).flatten()
             gross_withdrawal = net_need + estimated_taxes
 
-            # Portfolio dynamics
-            growth = current_value * annual_returns[:, year]
-            new_value = current_value + growth + dividends - gross_withdrawal
+            # Portfolio dynamics - price returns only, dividends are income not growth
+            growth = current_value * price_returns[:, year]
+            new_value = current_value + growth - gross_withdrawal
 
             # Track depletion
             depleted = (current_value > 0) & (new_value <= 0)
