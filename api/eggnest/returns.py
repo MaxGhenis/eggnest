@@ -200,6 +200,65 @@ RETURNS_YEARS = SP500_YEARS
 HISTORICAL_REAL_RETURNS = SP500_PRICE_RETURNS  # Legacy name
 BOND_RETURNS_ARRAY = TREASURY_PRICE_ARRAY  # Legacy name
 
+# Fund arrays lookup
+FUND_ARRAYS = {
+    "vt": (VT_PRICE_ARRAY, VT_DIVIDEND_ARRAY),
+    "sp500": (SP500_PRICE_ARRAY, SP500_DIVIDEND_ARRAY),
+    "bnd": (BND_PRICE_ARRAY, BND_DIVIDEND_ARRAY),
+    "treasury": (TREASURY_PRICE_ARRAY, TREASURY_YIELD_ARRAY),
+}
+
+
+def generate_fund_returns(
+    fund: Literal["vt", "sp500", "bnd", "treasury"],
+    n_simulations: int,
+    n_years: int,
+    method: Literal["bootstrap", "block_bootstrap"] = "bootstrap",
+    block_size: int = 5,
+    rng: np.random.Generator | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Generate returns for a specific fund using bootstrap sampling.
+
+    Args:
+        fund: Fund type (vt, sp500, bnd, treasury)
+        n_simulations: Number of Monte Carlo simulations
+        n_years: Number of years to simulate
+        method: Bootstrap method
+        block_size: Block size for block bootstrap
+        rng: Random number generator
+
+    Returns:
+        (price_growth, dividend_yields) arrays of shape (n_simulations, n_years)
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    price_array, div_array = FUND_ARRAYS[fund]
+    n_historical = len(price_array)
+
+    if method == "bootstrap":
+        indices = rng.integers(0, n_historical, size=(n_simulations, n_years))
+        return price_array[indices], div_array[indices]
+
+    elif method == "block_bootstrap":
+        price_growth = np.zeros((n_simulations, n_years))
+        div_returns = np.zeros((n_simulations, n_years))
+        n_blocks = (n_years + block_size - 1) // block_size
+
+        for sim in range(n_simulations):
+            year_idx = 0
+            for _ in range(n_blocks):
+                start = rng.integers(0, n_historical - block_size + 1)
+                end_idx = min(year_idx + block_size, n_years)
+                block_len = end_idx - year_idx
+                price_growth[sim, year_idx:end_idx] = price_array[start:start + block_len]
+                div_returns[sim, year_idx:end_idx] = div_array[start:start + block_len]
+                year_idx = end_idx
+        return price_growth, div_returns
+
+    raise ValueError(f"Unknown method: {method}")
+
 
 def get_historical_stats() -> dict:
     """Get summary statistics for historical returns."""
