@@ -251,6 +251,59 @@ HISTORICAL_BOND_RETURNS = {
     2024: -0.0427,
 }
 
+# VT (Vanguard Total World Stock ETF) Real Returns
+# Source: lazyportfolioetf.com, inflation-adjusted using CPI
+# VT launched June 2008, tracks FTSE Global All Cap Index
+# Nominal returns adjusted by annual CPI inflation
+VT_REAL_RETURNS = {
+    2008: -0.4440,  # -42.31% nominal, 3.8% inflation
+    2009: 0.3318,   # 32.65% nominal, -0.4% inflation
+    2010: 0.1130,   # 13.08% nominal, 1.6% inflation
+    2011: -0.1038,  # -7.50% nominal, 3.2% inflation
+    2012: 0.1471,   # 17.12% nominal, 2.1% inflation
+    2013: 0.2113,   # 22.95% nominal, 1.5% inflation
+    2014: 0.0204,   # 3.67% nominal, 1.6% inflation
+    2015: -0.0196,  # -1.86% nominal, 0.1% inflation
+    2016: 0.0711,   # 8.51% nominal, 1.3% inflation
+    2017: 0.2192,   # 24.49% nominal, 2.1% inflation
+    2018: -0.1186,  # -9.76% nominal, 2.4% inflation
+    2019: 0.2458,   # 26.82% nominal, 1.8% inflation
+    2020: 0.1523,   # 16.61% nominal, 1.2% inflation
+    2021: 0.1296,   # 18.27% nominal, 4.7% inflation
+    2022: -0.2408,  # -18.01% nominal, 8.0% inflation
+    2023: 0.1723,   # 22.03% nominal, 4.1% inflation
+    2024: 0.1320,   # 16.49% nominal, 2.9% inflation
+}
+
+# BND (Vanguard Total Bond Market ETF) Real Returns
+# Source: Yahoo Finance/lazyportfolioetf.com, inflation-adjusted using CPI
+# BND launched April 2007, tracks Bloomberg US Aggregate Bond Index
+# Nominal returns adjusted by annual CPI inflation
+BND_REAL_RETURNS = {
+    2007: 0.0408,   # 6.93% nominal, 2.8% inflation
+    2008: 0.0295,   # 6.86% nominal, 3.8% inflation
+    2009: 0.0405,   # 3.63% nominal, -0.4% inflation
+    2010: 0.0453,   # 6.20% nominal, 1.6% inflation
+    2011: 0.0457,   # 7.92% nominal, 3.2% inflation
+    2012: 0.0175,   # 3.89% nominal, 2.1% inflation
+    2013: -0.0355,  # -2.10% nominal, 1.5% inflation
+    2014: 0.0415,   # 5.82% nominal, 1.6% inflation
+    2015: 0.0046,   # 0.56% nominal, 0.1% inflation
+    2016: 0.0121,   # 2.53% nominal, 1.3% inflation
+    2017: 0.0143,   # 3.57% nominal, 2.1% inflation
+    2018: -0.0245,  # -0.11% nominal, 2.4% inflation
+    2019: 0.0692,   # 8.84% nominal, 1.8% inflation
+    2020: 0.0643,   # 7.71% nominal, 1.2% inflation
+    2021: -0.0626,  # -1.86% nominal, 4.7% inflation
+    2022: -0.1955,  # -13.11% nominal, 8.0% inflation
+    2023: 0.0150,   # 5.66% nominal, 4.1% inflation
+    2024: -0.0147,  # 1.38% nominal, 2.9% inflation
+}
+
+# Convert to numpy arrays
+VT_RETURNS_ARRAY = np.array(list(VT_REAL_RETURNS.values()))
+BND_RETURNS_ARRAY = np.array(list(BND_REAL_RETURNS.values()))
+
 # Convert bond returns to numpy array
 BOND_RETURNS_ARRAY = np.array(list(HISTORICAL_BOND_RETURNS.values()))
 
@@ -454,6 +507,8 @@ def generate_blended_returns(
     stock_volatility: float = 0.16,
     expected_bond_return: float = 0.02,
     bond_volatility: float = 0.08,
+    stock_index: Literal["sp500", "vt"] = "vt",
+    bond_index: Literal["treasury", "bnd"] = "bnd",
     rng: np.random.Generator | None = None,
 ) -> np.ndarray:
     """
@@ -470,6 +525,8 @@ def generate_blended_returns(
         stock_volatility: Stock volatility for normal method.
         expected_bond_return: Mean bond return for normal method.
         bond_volatility: Bond volatility for normal method.
+        stock_index: 'sp500' (S&P 500, 1928-2024) or 'vt' (Total World, 2008-2024).
+        bond_index: 'treasury' (10-Year, 1928-2024) or 'bnd' (Total Bond Market, 2007-2024).
         rng: NumPy random generator.
 
     Returns:
@@ -481,30 +538,62 @@ def generate_blended_returns(
     if not 0 <= stock_allocation <= 1:
         raise ValueError(f"stock_allocation must be between 0 and 1, got {stock_allocation}")
 
-    # If 100% stocks, use the standard function for efficiency
+    # Select the appropriate return arrays based on index choice
+    if stock_index == "vt":
+        stock_returns_array = VT_RETURNS_ARRAY
+    else:  # sp500
+        stock_returns_array = RETURNS_ARRAY
+
+    if bond_index == "bnd":
+        bond_returns_array = BND_RETURNS_ARRAY
+    else:  # treasury
+        bond_returns_array = BOND_RETURNS_ARRAY
+
+    # For VT+BND, we need to use the overlapping years (2008-2024)
+    # For now, use whichever has fewer years as the constraint
+    n_stock_years = len(stock_returns_array)
+    n_bond_years = len(bond_returns_array)
+    n_historical = min(n_stock_years, n_bond_years)
+
+    # If using mismatched indexes, trim to overlapping period
+    if stock_index == "vt" and bond_index == "bnd":
+        # Both have 2008+ data, use VT length (17 years: 2008-2024)
+        # BND has 2007-2024 (18 years), trim first year
+        bond_returns_array = bond_returns_array[1:]  # Skip 2007
+        n_historical = len(stock_returns_array)
+    elif stock_index == "vt":
+        # VT with treasury: use VT years (17), sample from last 17 treasury years
+        bond_returns_array = BOND_RETURNS_ARRAY[-n_stock_years:]
+        n_historical = n_stock_years
+    elif bond_index == "bnd":
+        # S&P500 with BND: use BND years (18), sample from last 18 S&P years
+        stock_returns_array = RETURNS_ARRAY[-n_bond_years:]
+        n_historical = n_bond_years
+
+    # If 100% stocks, use stock returns directly
     if stock_allocation == 1.0:
-        return generate_returns(
-            n_simulations=n_simulations,
-            n_years=n_years,
-            method=method,
-            block_size=block_size,
-            expected_return=expected_stock_return,
-            volatility=stock_volatility,
-            rng=rng,
-        )
+        if rng is None:
+            rng = np.random.default_rng()
+
+        if method == "bootstrap":
+            indices = rng.integers(0, n_historical, size=(n_simulations, n_years))
+            return stock_returns_array[indices]
+        elif method == "normal":
+            return rng.normal(expected_stock_return, stock_volatility, size=(n_simulations, n_years))
+        else:
+            # Fall through to general implementation
+            pass
 
     bond_allocation = 1.0 - stock_allocation
 
     if rng is None:
         rng = np.random.default_rng()
 
-    n_historical = len(RETURNS_ARRAY)
-
     if method == "bootstrap":
         # Sample same indices for both stock and bond to maintain correlation structure
         indices = rng.integers(0, n_historical, size=(n_simulations, n_years))
-        stock_returns = RETURNS_ARRAY[indices]
-        bond_returns = BOND_RETURNS_ARRAY[indices]
+        stock_returns = stock_returns_array[indices]
+        bond_returns = bond_returns_array[indices]
 
     elif method == "block_bootstrap":
         # Block bootstrap for both asset classes
@@ -519,8 +608,8 @@ def generate_blended_returns(
                 end_idx = min(year_idx + block_size, n_years)
                 block_len = end_idx - year_idx
 
-                stock_returns[sim, year_idx:end_idx] = RETURNS_ARRAY[start : start + block_len]
-                bond_returns[sim, year_idx:end_idx] = BOND_RETURNS_ARRAY[start : start + block_len]
+                stock_returns[sim, year_idx:end_idx] = stock_returns_array[start : start + block_len]
+                bond_returns[sim, year_idx:end_idx] = bond_returns_array[start : start + block_len]
                 year_idx = end_idx
 
     elif method == "historical":
@@ -533,8 +622,8 @@ def generate_blended_returns(
         for sim in range(n_simulations):
             for year in range(n_years):
                 idx = (start_indices[sim] + year) % n_historical
-                stock_returns[sim, year] = RETURNS_ARRAY[idx]
-                bond_returns[sim, year] = BOND_RETURNS_ARRAY[idx]
+                stock_returns[sim, year] = stock_returns_array[idx]
+                bond_returns[sim, year] = bond_returns_array[idx]
 
     elif method == "normal":
         # Generate independent normal returns

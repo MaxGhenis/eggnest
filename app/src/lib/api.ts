@@ -54,6 +54,8 @@ export interface SimulationInput {
   return_volatility: number;
   dividend_yield: number;
   stock_allocation: number;
+  stock_index?: "sp500" | "vt";  // vt = Vanguard Total World (default)
+  bond_index?: "treasury" | "bnd";  // bnd = Vanguard Total Bond Market (default)
 
   // Legacy fields for backward compatibility
   target_monthly_income?: number;

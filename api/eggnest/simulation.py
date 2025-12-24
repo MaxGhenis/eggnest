@@ -53,7 +53,7 @@ class MonteCarloSimulator:
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
         # Generate market returns using selected model and allocation
-        # Default is bootstrap from historical returns with 100% stocks
+        # Default is bootstrap from historical VT/BND returns
         annual_returns = generate_blended_returns(
             n_simulations=n_sims,
             n_years=n_years,
@@ -61,6 +61,8 @@ class MonteCarloSimulator:
             method=p.return_model,
             expected_stock_return=p.expected_return,
             stock_volatility=p.return_volatility,
+            stock_index=p.stock_index,
+            bond_index=p.bond_index,
             rng=self._rng,
         )
 
@@ -368,7 +370,7 @@ class MonteCarloSimulator:
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
         # Generate market returns using selected model and allocation
-        # Default is bootstrap from historical returns with 100% stocks
+        # Default is bootstrap from historical VT/BND returns
         annual_returns = generate_blended_returns(
             n_simulations=n_sims,
             n_years=n_years,
@@ -376,6 +378,8 @@ class MonteCarloSimulator:
             method=p.return_model,
             expected_stock_return=p.expected_return,
             stock_volatility=p.return_volatility,
+            stock_index=p.stock_index,
+            bond_index=p.bond_index,
             rng=self._rng,
         )
 

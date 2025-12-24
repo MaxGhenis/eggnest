@@ -87,6 +87,16 @@ class SimulationInput(BaseModel):
         description="Fraction of portfolio in stocks (0.0 to 1.0). Remainder is bonds."
     )
 
+    # Index selection
+    stock_index: Literal["sp500", "vt"] = Field(
+        default="vt",
+        description="Stock index: 'sp500' (S&P 500, 1928-2024) or 'vt' (Total World, 2008-2024)"
+    )
+    bond_index: Literal["treasury", "bnd"] = Field(
+        default="bnd",
+        description="Bond index: 'treasury' (10-Year, 1928-2024) or 'bnd' (Total Bond Market, 2007-2024)"
+    )
+
     def model_post_init(self, __context) -> None:
         """Handle backward compatibility."""
         # Convert target_monthly_income to annual_spending if provided
