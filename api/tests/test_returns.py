@@ -13,7 +13,7 @@ from eggnest.returns import (
 
 
 def test_generate_blended_returns_returns_tuple():
-    """generate_blended_returns should return (price_returns, dividend_yields)."""
+    """generate_blended_returns should return (price_growth, dividend_yields)."""
     price_ret, div_ret = generate_blended_returns(
         n_simulations=100,
         n_years=10,

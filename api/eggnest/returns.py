@@ -289,7 +289,7 @@ def generate_returns(
     Generate stock price returns and dividend yields.
 
     Returns:
-        (price_returns, dividend_yields) arrays of shape (n_simulations, n_years)
+        (price_growth, dividend_yields) arrays of shape (n_simulations, n_years)
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -304,7 +304,7 @@ def generate_returns(
 
     elif method == "block_bootstrap":
         n_blocks = (n_years + block_size - 1) // block_size
-        price_returns = np.zeros((n_simulations, n_years))
+        price_growth = np.zeros((n_simulations, n_years))
         div_returns = np.zeros((n_simulations, n_years))
 
         for sim in range(n_simulations):
@@ -313,29 +313,29 @@ def generate_returns(
                 start = rng.integers(0, n_historical - block_size + 1)
                 end_idx = min(year_idx + block_size, n_years)
                 block_len = end_idx - year_idx
-                price_returns[sim, year_idx:end_idx] = price_array[start:start + block_len]
+                price_growth[sim, year_idx:end_idx] = price_array[start:start + block_len]
                 div_returns[sim, year_idx:end_idx] = div_array[start:start + block_len]
                 year_idx = end_idx
-        return price_returns, div_returns
+        return price_growth, div_returns
 
     elif method == "historical":
-        price_returns = np.zeros((n_simulations, n_years))
+        price_growth = np.zeros((n_simulations, n_years))
         div_returns = np.zeros((n_simulations, n_years))
         start_indices = rng.integers(0, n_historical, size=n_simulations)
 
         for sim in range(n_simulations):
             for year in range(n_years):
                 idx = (start_indices[sim] + year) % n_historical
-                price_returns[sim, year] = price_array[idx]
+                price_growth[sim, year] = price_array[idx]
                 div_returns[sim, year] = div_array[idx]
-        return price_returns, div_returns
+        return price_growth, div_returns
 
     elif method == "normal":
         # For normal, use expected values
         avg_div = float(np.mean(div_array))
-        price_returns = rng.normal(expected_return - avg_div, volatility, size=(n_simulations, n_years))
+        price_growth = rng.normal(expected_return - avg_div, volatility, size=(n_simulations, n_years))
         div_returns = np.full((n_simulations, n_years), avg_div)
-        return price_returns, div_returns
+        return price_growth, div_returns
 
     else:
         raise ValueError(f"Unknown method: {method}")
@@ -359,7 +359,7 @@ def generate_blended_returns(
     Generate blended stock/bond returns with separate price and dividend components.
 
     Returns:
-        (price_returns, dividend_yields) - blended based on allocation
+        (price_growth, dividend_yields) - blended based on allocation
     """
     if not 0 <= stock_allocation <= 1:
         raise ValueError(f"stock_allocation must be between 0 and 1, got {stock_allocation}")

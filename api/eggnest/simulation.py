@@ -53,8 +53,8 @@ class MonteCarloSimulator:
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
         # Generate market returns using selected model and allocation
-        # Returns (price_returns, dividend_yields) - separate for tax calculation
-        price_returns, div_yields = generate_blended_returns(
+        # Returns (price_growth, dividend_yields) - separate for tax calculation
+        price_growth, div_yields = generate_blended_returns(
             n_simulations=n_sims,
             n_years=n_years,
             stock_allocation=p.stock_allocation,
@@ -229,7 +229,7 @@ class MonteCarloSimulator:
             gross_withdrawal = net_need + estimated_taxes
 
             # Portfolio dynamics - price returns only, dividends are income not growth
-            growth = current_value * price_returns[:, year]
+            growth = current_value * price_growth[:, year]
             new_value = current_value + growth - gross_withdrawal
 
             # Track depletion
@@ -373,8 +373,8 @@ class MonteCarloSimulator:
         failure_year = np.full(n_sims, n_years + 1, dtype=float)
 
         # Generate market returns using selected model and allocation
-        # Returns (price_returns, dividend_yields) - separate for tax calculation
-        price_returns, div_yields = generate_blended_returns(
+        # Returns (price_growth, dividend_yields) - separate for tax calculation
+        price_growth, div_yields = generate_blended_returns(
             n_simulations=n_sims,
             n_years=n_years,
             stock_allocation=p.stock_allocation,
@@ -545,7 +545,7 @@ class MonteCarloSimulator:
             gross_withdrawal = net_need + estimated_taxes
 
             # Portfolio dynamics - price returns only, dividends are income not growth
-            growth = current_value * price_returns[:, year]
+            growth = current_value * price_growth[:, year]
             new_value = current_value + growth - gross_withdrawal
 
             # Track depletion
