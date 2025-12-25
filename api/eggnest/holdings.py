@@ -214,19 +214,26 @@ class HoldingsTracker:
 
         if self.withdrawal_strategy == "pro_rata":
             # Withdraw proportionally from all account types
+            # Calculate proportions based on CURRENT balances (after RMD)
             total_bal = self.total_balance
+            # Store the amount to distribute (before any withdrawals in this step)
+            amount_to_distribute = remaining.copy()
+
             for category, key in [
                 (TAXABLE_ACCOUNTS, "taxable"),
                 (TRADITIONAL_ACCOUNTS, "traditional"),
                 (ROTH_ACCOUNTS, "roth"),
             ]:
                 cat_balance = self.get_balance_by_account_category(category)
-                # Proportion of remaining portfolio in this category
+                # Proportion of portfolio in this category
                 proportion = np.where(total_bal > 0, cat_balance / total_bal, 0)
-                withdrawal = np.minimum(remaining * proportion, cat_balance)
+                # Use original amount_to_distribute for all categories (not decremented remaining)
+                withdrawal = np.minimum(amount_to_distribute * proportion, cat_balance)
                 self._withdraw_from_category(category, withdrawal)
                 result[key] += withdrawal
-                remaining = np.maximum(0, remaining - withdrawal)
+
+            # Update remaining after all pro-rata withdrawals
+            remaining = np.maximum(0, remaining - (result["taxable"] + result["traditional"] + result["roth"]))
         else:
             # Sequential withdrawal based on strategy
             order = WITHDRAWAL_ORDER.get(self.withdrawal_strategy, WITHDRAWAL_ORDER["taxable_first"])
@@ -244,7 +251,7 @@ class HoldingsTracker:
                 result[key] += withdrawal
                 remaining = np.maximum(0, remaining - withdrawal)
 
-        result["total"] = amount - remaining  # What we actually withdrew
+        result["total"] = result["traditional_rmd"] + result["traditional"] + result["roth"] + result["taxable"]
         return result
 
     def _withdraw_from_category(
