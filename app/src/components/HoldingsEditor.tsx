@@ -14,6 +14,14 @@ const ACCOUNT_TYPE_LABELS: Record<AccountType, string> = {
   taxable: 'Taxable',
 };
 
+const ACCOUNT_TAX_TREATMENT: Record<AccountType, { label: string; className: string }> = {
+  traditional_401k: { label: 'Pre-tax', className: 'tax-badge-pretax' },
+  traditional_ira: { label: 'Pre-tax', className: 'tax-badge-pretax' },
+  roth_401k: { label: 'Tax-free', className: 'tax-badge-roth' },
+  roth_ira: { label: 'Tax-free', className: 'tax-badge-roth' },
+  taxable: { label: 'Capital gains', className: 'tax-badge-taxable' },
+};
+
 const FUND_TYPE_LABELS: Record<FundType, string> = {
   vt: 'VT (Total World)',
   sp500: 'S&P 500',
@@ -53,28 +61,39 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
     <div className="holdings-editor">
       {holdings.length === 0 && (
         <div className="holdings-empty">
-          <p>Add your portfolio holdings below. Each holding represents an account with a specific fund.</p>
+          <div className="empty-icon">📊</div>
+          <p className="empty-title">No holdings added yet</p>
+          <p className="empty-description">
+            Add each retirement account separately. Traditional accounts are withdrawn first for tax efficiency, followed by taxable, then Roth.
+          </p>
         </div>
       )}
 
-      {holdings.map((holding, index) => (
-        <div key={index} className="holding-row">
-          <div className="holding-field">
-            <label htmlFor={`account-type-${index}`}>Account Type</label>
-            <select
-              id={`account-type-${index}`}
-              value={holding.account_type}
-              onChange={(e) =>
-                updateHolding(index, 'account_type', e.target.value as AccountType)
-              }
-            >
-              {Object.entries(ACCOUNT_TYPE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
+      {holdings.map((holding, index) => {
+        const taxTreatment = ACCOUNT_TAX_TREATMENT[holding.account_type];
+        return (
+          <div key={index} className="holding-row">
+            <div className="holding-field">
+              <label htmlFor={`account-type-${index}`}>
+                Account Type
+                <span className={`tax-badge ${taxTreatment.className}`}>
+                  {taxTreatment.label}
+                </span>
+              </label>
+              <select
+                id={`account-type-${index}`}
+                value={holding.account_type}
+                onChange={(e) =>
+                  updateHolding(index, 'account_type', e.target.value as AccountType)
+                }
+              >
+                {Object.entries(ACCOUNT_TYPE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
           <div className="holding-field">
             <label htmlFor={`fund-${index}`}>Fund</label>
@@ -115,7 +134,8 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
             ×
           </button>
         </div>
-      ))}
+        );
+      })}
 
       <button type="button" className="add-holding-btn" onClick={addHolding}>
         + Add Holding

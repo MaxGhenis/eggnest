@@ -8,7 +8,8 @@ describe('HoldingsEditor', () => {
     const onChange = vi.fn();
     render(<HoldingsEditor holdings={[]} onChange={onChange} />);
 
-    expect(screen.getByText(/add your portfolio holdings/i)).toBeInTheDocument();
+    expect(screen.getByText(/no holdings added yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/add each retirement account separately/i)).toBeInTheDocument();
   });
 
   it('should render add button', () => {

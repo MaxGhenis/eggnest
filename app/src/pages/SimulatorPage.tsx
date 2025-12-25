@@ -282,6 +282,7 @@ export function SimulatorPage() {
   // Portfolio mode: "simple" uses initial_capital, "detailed" uses holdings
   const [portfolioMode, setPortfolioMode] = useState<"simple" | "detailed">("simple");
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [withdrawalStrategy, setWithdrawalStrategy] = useState<"taxable_first" | "traditional_first" | "roth_first" | "pro_rata">("taxable_first");
 
   // Spouse state
   const [spouse, setSpouse] = useState<SpouseInput>({
@@ -339,6 +340,8 @@ export function SimulatorPage() {
         // Include holdings if in detailed mode
         holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
         initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : simParams.initial_capital,
+        // Include withdrawal strategy only when in detailed mode with holdings
+        withdrawal_strategy: portfolioMode === "detailed" && holdings.length > 0 ? withdrawalStrategy : undefined,
       };
 
       // Use streaming API with progress updates
@@ -373,6 +376,8 @@ export function SimulatorPage() {
         holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
         // Clear initial_capital if using holdings (backend uses holdings.total)
         initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : params.initial_capital,
+        // Include withdrawal strategy only when in detailed mode with holdings
+        withdrawal_strategy: portfolioMode === "detailed" && holdings.length > 0 ? withdrawalStrategy : undefined,
       };
 
       if (params.has_annuity && annuity.monthly_payment > 0) {
@@ -419,6 +424,7 @@ export function SimulatorPage() {
         annuity: params.has_annuity ? annuity : undefined,
         holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
         initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : params.initial_capital,
+        withdrawal_strategy: portfolioMode === "detailed" && holdings.length > 0 ? withdrawalStrategy : undefined,
       };
 
       // Use provided states, selected states, or default to no-tax states
@@ -456,6 +462,7 @@ export function SimulatorPage() {
         annuity: params.has_annuity ? annuity : undefined,
         holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
         initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : params.initial_capital,
+        withdrawal_strategy: portfolioMode === "detailed" && holdings.length > 0 ? withdrawalStrategy : undefined,
       };
 
       const comparison = await compareSSTimings(
@@ -484,6 +491,7 @@ export function SimulatorPage() {
         annuity: params.has_annuity ? annuity : undefined,
         holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
         initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : params.initial_capital,
+        withdrawal_strategy: portfolioMode === "detailed" && holdings.length > 0 ? withdrawalStrategy : undefined,
       };
 
       const comparison = await compareAllocations(
@@ -670,14 +678,49 @@ export function SimulatorPage() {
                 </div>
               </>
             ) : (
-              <div className="wizard-field">
-                <label>Your Holdings</label>
-                <HoldingsEditor holdings={holdings} onChange={setHoldings} />
-                <div className="wizard-field-hint">
-                  Traditional accounts: taxed as ordinary income on withdrawal.
-                  Roth: tax-free. Taxable: capital gains tax.
+              <>
+                <div className="wizard-field">
+                  <label>Your Holdings</label>
+                  <div className="detailed-mode-explainer">
+                    <p className="explainer-benefit">
+                      Track each account separately for tax-optimized withdrawal ordering
+                    </p>
+                    <p className="explainer-feature">
+                      RMDs automatically calculated for traditional accounts at age 73+
+                    </p>
+                  </div>
+                  <HoldingsEditor holdings={holdings} onChange={setHoldings} />
                 </div>
-              </div>
+
+                <div className="wizard-field">
+                  <label htmlFor="withdrawal-strategy">Withdrawal Strategy</label>
+                  <select
+                    id="withdrawal-strategy"
+                    value={withdrawalStrategy}
+                    onChange={(e) =>
+                      setWithdrawalStrategy(
+                        e.target.value as "taxable_first" | "traditional_first" | "roth_first" | "pro_rata"
+                      )
+                    }
+                  >
+                    <option value="taxable_first">
+                      Taxable First - Lets tax-advantaged accounts grow longer
+                    </option>
+                    <option value="traditional_first">
+                      Traditional First - Reduces future RMDs
+                    </option>
+                    <option value="roth_first">
+                      Roth First - Preserves tax-deferred growth
+                    </option>
+                    <option value="pro_rata">
+                      Pro Rata - Withdraw proportionally from all accounts
+                    </option>
+                  </select>
+                  <div className="wizard-field-hint">
+                    Controls which accounts are withdrawn from first when you need money
+                  </div>
+                </div>
+              </>
             )}
 
             <div className="wizard-field">
