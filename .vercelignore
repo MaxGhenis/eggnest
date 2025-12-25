@@ -1,0 +1,7 @@
+# Ignore API directory - deployed on Modal, not Vercel
+api/
+
+# Ignore other non-frontend directories
+supabase/
+web/
+.beads/
