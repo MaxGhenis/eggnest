@@ -1,0 +1,34 @@
+version: 1
+project:
+  title: "EggNest: Tax-Aware Monte Carlo Retirement Simulation with Real Microsimulation"
+  description: "A retirement planning framework integrating Monte Carlo simulation with PolicyEngine tax microsimulation"
+  authors:
+    - name: Max Ghenis
+      email: max@maxghenis.com
+  github: https://github.com/MaxGhenis/eggnest
+  license: MIT
+  keywords:
+    - retirement planning
+    - Monte Carlo simulation
+    - tax microsimulation
+    - PolicyEngine
+    - withdrawal strategies
+    - required minimum distributions
+    - financial planning
+  exports:
+    - format: pdf
+      template: plain_latex
+      output: exports/eggnest.pdf
+  bibliography:
+    - references.bib
+  toc:
+    - file: index.md
+    - file: appendix.md
+
+site:
+  template: book-theme
+  title: EggNest
+  options:
+    logo_text: Max Ghenis
+    logo_url: https://github.com/maxghenis
+    hide_outline: true

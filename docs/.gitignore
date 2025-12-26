@@ -1,0 +1,5 @@
+_build/
+.venv/
+exports/
+*.pyc
+__pycache__/
