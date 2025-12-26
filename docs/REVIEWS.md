@@ -50,6 +50,7 @@ Success rates reported as point estimates (82%, 78%) without uncertainty quantif
 - ✅ Fixed LTCG abbreviation (now "long-term capital gains rate")
 - ✅ Added fixed random seed (PAPER_SEED = 42) for reproducible results
 - ✅ Access RMD divisor directly from UNIFORM_LIFETIME_TABLE
+- ✅ Integrated IRMAA using PolicyEngine's income_adjusted_part_b_premium variable (uses 2-year-prior AGI)
 
 ---
 
@@ -69,7 +70,7 @@ Success rates reported as point estimates (82%, 78%) without uncertainty quantif
 
 ### Future Work (Acknowledged by CFP Reviewer)
 - [ ] Roth conversion optimization (critical for real client work)
-- [ ] IRMAA threshold modeling
+- [x] IRMAA threshold modeling (integrated from PolicyEngine)
 - [ ] Married couple support
 - [ ] Social Security claiming optimization
 
