@@ -284,6 +284,13 @@ export interface YearBreakdown {
   net_income: number;
 }
 
+export interface OutcomePaths {
+  died_with_money: number[];
+  died_broke: number[];
+  alive_with_money: number[];
+  alive_broke: number[];
+}
+
 export interface SimulationResult {
   success_rate: number;
   median_final_value: number;
@@ -294,6 +301,7 @@ export interface SimulationResult {
   total_withdrawn_median: number;
   total_taxes_median: number;
   percentile_paths: Record<string, number[]>;
+  outcome_paths?: OutcomePaths | null;
   year_breakdown: YearBreakdown[];
   initial_withdrawal_rate: number;
   prob_10_year_failure: number;

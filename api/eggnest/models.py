@@ -197,6 +197,24 @@ class YearBreakdown(BaseModel):
     net_income: float = Field(..., description="Net income after taxes")
 
 
+class OutcomePaths(BaseModel):
+    """Outcome distribution paths for visualization (stacked area chart)."""
+
+    # Cumulative outcomes (sum to 100% at each age)
+    died_with_money: list[float] = Field(
+        ..., description="Cumulative % who died with money remaining"
+    )
+    died_broke: list[float] = Field(
+        ..., description="Cumulative % who ran out of money before death"
+    )
+    alive_with_money: list[float] = Field(
+        ..., description="% still alive with money at each age"
+    )
+    alive_broke: list[float] = Field(
+        ..., description="% still alive but depleted at each age"
+    )
+
+
 class SimulationResult(BaseModel):
     """Results from a retirement simulation."""
 
@@ -213,6 +231,11 @@ class SimulationResult(BaseModel):
     # For charting
     percentile_paths: dict[str, list[float]] = Field(
         ..., description="Time series of percentile values (by age)"
+    )
+
+    # Outcome distribution for stacked area chart
+    outcome_paths: OutcomePaths | None = Field(
+        default=None, description="Outcome distribution over time (died rich/broke, alive rich/broke)"
     )
 
     # Year-by-year breakdown (median path)

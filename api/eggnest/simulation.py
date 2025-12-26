@@ -7,7 +7,7 @@ import numpy as np
 # Base year for calendar year calculations
 START_YEAR = datetime.now().year
 
-from .models import SimulationInput, SimulationResult, YearBreakdown
+from .models import SimulationInput, SimulationResult, YearBreakdown, OutcomePaths
 from .tax import TaxCalculator
 from .mortality import generate_alive_mask, generate_joint_alive_mask
 from .returns import generate_blended_returns
@@ -397,6 +397,49 @@ class MonteCarloSimulator:
         # 10-year failure probability
         prob_10_year_failure = float(np.mean(failure_year <= 10))
 
+        # Calculate outcome paths for stacked area chart
+        outcome_paths = None
+        if p.include_mortality:
+            died_with_money = np.zeros(n_years + 1)
+            died_broke = np.zeros(n_years + 1)
+            alive_with_money = np.zeros(n_years + 1)
+            alive_broke = np.zeros(n_years + 1)
+
+            for year_idx in range(n_years + 1):
+                alive_at_year = either_alive[:, year_idx]
+                has_money = paths[:, year_idx] > 0
+
+                if year_idx == 0:
+                    cum_died_with_money = 0
+                    cum_died_broke = 0
+                else:
+                    died_this_year = either_alive[:, year_idx - 1] & ~alive_at_year
+                    had_money_when_died = paths[:, year_idx - 1] > 0
+                    died_rich_this_year = died_this_year & had_money_when_died
+                    died_broke_this_year = died_this_year & ~had_money_when_died
+
+                    if year_idx == 1:
+                        cum_died_with_money = float(np.mean(died_rich_this_year)) * 100
+                        cum_died_broke = float(np.mean(died_broke_this_year)) * 100
+                    else:
+                        cum_died_with_money = died_with_money[year_idx - 1] + float(np.mean(died_rich_this_year)) * 100
+                        cum_died_broke = died_broke[year_idx - 1] + float(np.mean(died_broke_this_year)) * 100
+
+                pct_alive_with_money = float(np.mean(alive_at_year & has_money)) * 100
+                pct_alive_broke = float(np.mean(alive_at_year & ~has_money)) * 100
+
+                died_with_money[year_idx] = cum_died_with_money if year_idx > 0 else 0
+                died_broke[year_idx] = cum_died_broke if year_idx > 0 else 0
+                alive_with_money[year_idx] = pct_alive_with_money
+                alive_broke[year_idx] = pct_alive_broke
+
+            outcome_paths = OutcomePaths(
+                died_with_money=died_with_money.tolist(),
+                died_broke=died_broke.tolist(),
+                alive_with_money=alive_with_money.tolist(),
+                alive_broke=alive_broke.tolist(),
+            )
+
         # Build year-by-year breakdown for median scenario
         year_breakdown = []
         for year in range(n_years):
@@ -456,6 +499,7 @@ class MonteCarloSimulator:
             total_withdrawn_median=float(np.median(total_withdrawn)),
             total_taxes_median=float(np.median(total_taxes)),
             percentile_paths=percentile_paths,
+            outcome_paths=outcome_paths,
             year_breakdown=year_breakdown,
             initial_withdrawal_rate=initial_withdrawal_rate,
             prob_10_year_failure=prob_10_year_failure,
@@ -847,6 +891,64 @@ class MonteCarloSimulator:
         # 10-year failure probability
         prob_10_year_failure = float(np.mean(failure_year <= 10))
 
+        # Calculate outcome paths for stacked area chart
+        # At each year, categorize each simulation into one of 4 states:
+        # - died_with_money: died while still having money
+        # - died_broke: ran out of money before death (then died)
+        # - alive_with_money: still alive with money
+        # - alive_broke: still alive but depleted
+        outcome_paths = None
+        if p.include_mortality:
+            died_with_money = np.zeros(n_years + 1)
+            died_broke = np.zeros(n_years + 1)
+            alive_with_money = np.zeros(n_years + 1)
+            alive_broke = np.zeros(n_years + 1)
+
+            for year_idx in range(n_years + 1):
+                # Who is alive at this point?
+                alive_at_year = either_alive[:, year_idx]
+
+                # Who has money at this point?
+                has_money = paths[:, year_idx] > 0
+
+                # Track cumulative deaths with money vs broke
+                if year_idx == 0:
+                    # At start, everyone alive
+                    cum_died_with_money = 0
+                    cum_died_broke = 0
+                else:
+                    # Who died in the past year (was alive, now dead)?
+                    died_this_year = either_alive[:, year_idx - 1] & ~alive_at_year
+                    # Of those who died, who had money when they died?
+                    # Check portfolio value at previous year (when they were last alive)
+                    had_money_when_died = paths[:, year_idx - 1] > 0
+                    died_rich_this_year = died_this_year & had_money_when_died
+                    died_broke_this_year = died_this_year & ~had_money_when_died
+
+                    # Cumulative from previous year
+                    if year_idx == 1:
+                        cum_died_with_money = float(np.mean(died_rich_this_year)) * 100
+                        cum_died_broke = float(np.mean(died_broke_this_year)) * 100
+                    else:
+                        cum_died_with_money = died_with_money[year_idx - 1] + float(np.mean(died_rich_this_year)) * 100
+                        cum_died_broke = died_broke[year_idx - 1] + float(np.mean(died_broke_this_year)) * 100
+
+                # Current alive states
+                pct_alive_with_money = float(np.mean(alive_at_year & has_money)) * 100
+                pct_alive_broke = float(np.mean(alive_at_year & ~has_money)) * 100
+
+                died_with_money[year_idx] = cum_died_with_money if year_idx > 0 else 0
+                died_broke[year_idx] = cum_died_broke if year_idx > 0 else 0
+                alive_with_money[year_idx] = pct_alive_with_money
+                alive_broke[year_idx] = pct_alive_broke
+
+            outcome_paths = OutcomePaths(
+                died_with_money=died_with_money.tolist(),
+                died_broke=died_broke.tolist(),
+                alive_with_money=alive_with_money.tolist(),
+                alive_broke=alive_broke.tolist(),
+            )
+
         return SimulationResult(
             success_rate=success_rate,
             median_final_value=float(np.median(final_values)),
@@ -863,6 +965,7 @@ class MonteCarloSimulator:
             total_withdrawn_median=float(np.median(total_withdrawn)),
             total_taxes_median=float(np.median(total_taxes)),
             percentile_paths=percentile_paths,
+            outcome_paths=outcome_paths,
             year_breakdown=year_breakdown,
             initial_withdrawal_rate=initial_withdrawal_rate,
             prob_10_year_failure=prob_10_year_failure,
