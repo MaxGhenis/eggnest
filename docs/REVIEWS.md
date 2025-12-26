@@ -56,10 +56,10 @@ Success rates reported as point estimates (82%, 78%) without uncertainty quantif
 ## Remaining Issues
 
 ### High Priority
-- [ ] Fix bootstrap/serial correlation claim (paper claims preservation but implementation doesn't)
-- [ ] Increase n_simulations to 10,000 (currently 1,000 for speed)
-- [ ] Add confidence intervals to success rate estimates
-- [ ] Add practical interpretation guidance
+- [x] Fix bootstrap/serial correlation claim (now notes independent sampling doesn't preserve it)
+- [x] Increase n_simulations to 10,000 (was 1,000)
+- [x] Add confidence intervals to success rate estimates (95% CI using normal approximation)
+- [x] Add practical interpretation guidance (new "Practical Interpretation" section)
 
 ### Medium Priority
 - [ ] Add runtime benchmarks
