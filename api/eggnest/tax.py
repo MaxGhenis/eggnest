@@ -144,11 +144,18 @@ class TaxCalculator:
         filing_status: str = "SINGLE",
         dividend_income_array: np.ndarray | None = None,
         employment_income_array: np.ndarray | None = None,
+        year: int | None = None,
     ) -> dict[str, np.ndarray]:
         """
         Calculate taxes for a batch of scenarios using PolicyEngine-US.
+
+        Args:
+            year: Calendar year for tax calculation. If None, uses self.year.
+                  PolicyEngine inflates tax brackets, so future years will
+                  have lower effective tax rates on the same nominal income.
         """
         n_scenarios = len(capital_gains_array)
+        calc_year = year if year is not None else self.year
 
         if dividend_income_array is None:
             dividend_income_array = np.zeros(n_scenarios)
@@ -162,7 +169,7 @@ class TaxCalculator:
             social_security_array=social_security_array,
             ages=ages,
             state=self.state,
-            year=self.year,
+            year=calc_year,
             filing_status=filing_status,
             dividend_income_array=dividend_income_array,
             employment_income_array=employment_income_array,
@@ -174,9 +181,9 @@ class TaxCalculator:
             sim = Microsimulation(dataset=dataset)
 
             results = {
-                "federal_income_tax": sim.calculate("income_tax", self.year),
-                "state_income_tax": sim.calculate("state_income_tax", self.year),
-                "taxable_income": sim.calculate("taxable_income", self.year),
+                "federal_income_tax": sim.calculate("income_tax", calc_year),
+                "state_income_tax": sim.calculate("state_income_tax", calc_year),
+                "taxable_income": sim.calculate("taxable_income", calc_year),
             }
 
             results["total_tax"] = (

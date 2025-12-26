@@ -1,6 +1,11 @@
 """Monte Carlo simulation engine for retirement planning."""
 
+from datetime import datetime
+
 import numpy as np
+
+# Base year for calendar year calculations
+START_YEAR = datetime.now().year
 
 from .models import SimulationInput, SimulationResult, YearBreakdown
 from .tax import TaxCalculator
@@ -259,6 +264,7 @@ class MonteCarloSimulator:
                     filing_status=p.filing_status,
                     dividend_income_array=np.asarray(dividends).flatten(),
                     employment_income_array=np.asarray(ordinary_income).flatten(),
+                    year=START_YEAR + year,
                 )
 
                 estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
@@ -291,6 +297,7 @@ class MonteCarloSimulator:
                     filing_status=p.filing_status,
                     dividend_income_array=np.asarray(dividends).flatten(),
                     employment_income_array=np.asarray(employment_total).flatten(),
+                    year=START_YEAR + year,
                 )
                 estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
                 estimated_taxes = np.maximum(0, estimated_taxes)
@@ -636,6 +643,7 @@ class MonteCarloSimulator:
                     filing_status=p.filing_status,
                     dividend_income_array=np.asarray(dividends).flatten(),
                     employment_income_array=np.asarray(ordinary_income).flatten(),
+                    year=START_YEAR + year,
                 )
 
                 estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
@@ -668,6 +676,7 @@ class MonteCarloSimulator:
                     filing_status=p.filing_status,
                     dividend_income_array=np.asarray(dividends).flatten(),
                     employment_income_array=np.asarray(employment_total).flatten(),
+                    year=START_YEAR + year,
                 )
                 estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
                 estimated_taxes = np.maximum(0, estimated_taxes)
