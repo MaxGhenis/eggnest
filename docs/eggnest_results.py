@@ -179,7 +179,7 @@ def compute_results() -> Results:
     try:
         from eggnest.models import SimulationInput, Holding
         from eggnest.simulation import MonteCarloSimulator
-        from eggnest.rmd import RMD_START_AGE, get_rmd_divisor
+        from eggnest.rmd import RMD_START_AGE, UNIFORM_LIFETIME_TABLE
         from policyengine_us import Simulation
 
         ref = r.reference
@@ -191,7 +191,10 @@ def compute_results() -> Results:
             Holding(account_type="taxable", fund="bnd", balance=ref.taxable),
         ]
 
-        # Run simulations for each strategy
+        # Run simulations for each strategy with fixed seed for reproducibility
+        import numpy as np
+        PAPER_SEED = 42  # Fixed seed for reproducible paper results
+
         strategies = ["taxable_first", "traditional_first", "roth_first", "pro_rata"]
         results = {}
 
@@ -212,6 +215,8 @@ def compute_results() -> Results:
             )
 
             sim = MonteCarloSimulator(params)
+            # Set fixed seed for reproducibility
+            sim._rng = np.random.default_rng(seed=PAPER_SEED)
             result = sim.run()
 
             results[strategy] = SimulationResult(
@@ -219,8 +224,8 @@ def compute_results() -> Results:
                 success_rate=result.success_rate,
                 median_final=result.median_final_value,
                 total_taxes_median=result.total_taxes_median,
-                p5_final=result.percentile_paths.p5[-1] if hasattr(result, 'percentile_paths') else 0,
-                p95_final=result.percentile_paths.p95[-1] if hasattr(result, 'percentile_paths') else 0,
+                p5_final=result.percentile_paths.get("p5", [0])[-1] if result.percentile_paths else 0,
+                p95_final=result.percentile_paths.get("p95", [0])[-1] if result.percentile_paths else 0,
             )
 
         r.strategies = StrategyComparison(
@@ -256,7 +261,7 @@ def compute_results() -> Results:
         # RMD example
         r.rmd_example.age = 75
         r.rmd_example.traditional_balance = 300_000
-        r.rmd_example.divisor = get_rmd_divisor(75)
+        r.rmd_example.divisor = UNIFORM_LIFETIME_TABLE[75]  # 24.6
         r.rmd_example.rmd_amount = r.rmd_example.traditional_balance / r.rmd_example.divisor
 
         # Mortality (hardcoded from SSA tables)

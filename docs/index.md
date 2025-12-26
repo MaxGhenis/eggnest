@@ -154,12 +154,16 @@ The simulator runs {eval}`r.n_simulations` independent paths, each representing 
 5. **Check mortality**: Apply survival probability from SSA life tables
 6. **Record outcome**: Track whether portfolio depleted before death
 
-Returns are modeled as log-normal with parameters calibrated to historical data {cite:p}`shiller2015,damodaran2024`:
+Returns are generated via **bootstrap sampling** from historical nominal returns (1928-2024 for S&P 500 and Treasury bonds, 2008-2024 for VT and BND), preserving the empirical distribution including fat tails and serial correlation patterns {cite:p}`shiller2015,damodaran2024`. Each simulation year draws a random historical year's returns with replacement, maintaining the joint distribution of price appreciation and dividend yields.
+
+Historical return characteristics:
 
 | Asset Class | Mean Return | Standard Deviation |
 |-------------|-------------|-------------------|
 | Stocks (S&P 500) | {eval}`r.stock_return_fmt` | 18% |
 | Bonds (Aggregate) | {eval}`r.bond_return_fmt` | 6% |
+
+The bootstrap approach offers advantages over parametric (e.g., log-normal) models by capturing non-normal features of return distributions, including left-tail events that matter most for retirement planning.
 
 ### Holdings-Based Portfolio Model
 
@@ -349,7 +353,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-A $50,000 withdrawal from traditional accounts might incur $11,000 in federal tax (22% bracket), while the same withdrawal from taxable accounts might incur $7,500 (15% LTCG rate), and from Roth accounts: $0.
+A $50,000 withdrawal from traditional accounts might incur $11,000 in federal tax (22% bracket), while the same withdrawal from taxable accounts might incur $7,500 (15% long-term capital gains rate), and from Roth accounts: $0.
 
 ### Sensitivity to Spending Rate
 
@@ -379,13 +383,13 @@ This aligns with the "4% rule" literature {cite:p}`bengen1994,finke2013`, though
 
 ### Limitations
 
-1. **Tax law assumptions**: The model assumes current tax law persists, though significant changes are possible (e.g., expiration of TCJA provisions in 2026).
+1. **Nominal returns with fixed spending**: Returns are modeled in nominal terms, while annual spending is held constant in nominal dollars. This simplification understates real spending needs over multi-decade horizons—$50,000 in 2025 buys less than $50,000 in 2055 after 30 years of inflation. Tax bracket inflation is modeled (brackets adjust with inflation per IRS policy), but spending should ideally also inflate. Users should interpret results conservatively or apply manual inflation adjustments to spending inputs.
 
-2. **No dynamic strategy adjustment**: The model uses fixed withdrawal strategies rather than dynamic optimization based on portfolio state.
+2. **Tax law assumptions**: The model assumes current tax law persists, though significant changes are possible (e.g., expiration of Tax Cuts and Jobs Act (TCJA) provisions in 2026). PolicyEngine models tax law as currently enacted, including the TCJA sunset.
 
-3. **Social Security uncertainty**: Future Social Security benefits may be reduced; the model assumes full scheduled benefits.
+3. **No dynamic strategy adjustment**: The model uses fixed withdrawal strategies rather than dynamic optimization based on portfolio state.
 
-4. **Inflation modeling**: Returns are modeled in nominal terms; we don't explicitly model inflation separate from bracket inflation.
+4. **Social Security uncertainty**: Future Social Security benefits may be reduced; the model assumes full scheduled benefits.
 
 5. **PolicyEngine limitations**: While comprehensive, PolicyEngine may not capture every tax provision perfectly.
 
