@@ -99,6 +99,7 @@ class SimulationInput(BaseModel):
     # Simulation settings
     n_simulations: int = Field(default=10_000, ge=100, le=100_000, description="Number of Monte Carlo paths")
     include_mortality: bool = Field(default=True, description="Account for probability of death each year")
+    include_irmaa: bool = Field(default=True, description="Include Medicare IRMAA surcharges (ages 65+)")
     return_model: Literal["bootstrap", "block_bootstrap", "historical", "normal"] = Field(
         default="bootstrap",
         description="Return generation method: bootstrap (default), block_bootstrap, historical, or normal"

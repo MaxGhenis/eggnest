@@ -397,7 +397,7 @@ This aligns with the "4% rule" literature {cite:p}`bengen1994,finke2013`, though
 
 - **Roth conversion optimization**: Model strategic Roth conversions in low-income years
 - **Dynamic withdrawal strategies**: Implement guardrails or variable percentage withdrawal
-- **Medicare/healthcare integration**: Model healthcare costs and IRMAA surcharges (available via PolicyEngine)
+- **Healthcare cost modeling**: Model pre-Medicare and post-Medicare healthcare costs beyond IRMAA
 - **State comparison**: Compare outcomes across different states given varying tax treatment
 - **Couple modeling**: Full joint filing with separate mortality
 

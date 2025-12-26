@@ -13,6 +13,9 @@ from .mortality import generate_alive_mask, generate_joint_alive_mask
 from .returns import generate_blended_returns
 from .holdings import create_holdings_tracker
 
+# Medicare eligibility age (IRMAA only applies at age 65+)
+MEDICARE_AGE = 65
+
 
 class MonteCarloSimulator:
     """
@@ -141,6 +144,9 @@ class MonteCarloSimulator:
         yearly_state_tax = np.zeros((n_sims, n_years))
         yearly_total_tax = np.zeros((n_sims, n_years))
 
+        # Track AGI history for IRMAA calculation (uses income from 2 years prior)
+        yearly_agi = np.zeros((n_sims, n_years))
+
         # Process year by year
         for year in range(n_years):
             current_age = p.current_age + year
@@ -257,6 +263,11 @@ class MonteCarloSimulator:
                 trad_withdrawals = withdrawal_result["traditional"] + withdrawal_result["traditional_rmd"]
                 ordinary_income = employment_total + trad_withdrawals
 
+                # Get prior year AGI for IRMAA (uses income from 2 years prior)
+                prior_year_agi = np.zeros(n_sims)
+                if year >= 2:
+                    prior_year_agi = yearly_agi[:, year - 2]
+
                 tax_results = self.tax_calc.calculate_batch_taxes(
                     capital_gains_array=np.asarray(withdrawal_result["taxable"]).flatten(),
                     social_security_array=np.asarray(ss_income).flatten(),
@@ -265,12 +276,21 @@ class MonteCarloSimulator:
                     dividend_income_array=np.asarray(dividends).flatten(),
                     employment_income_array=np.asarray(ordinary_income).flatten(),
                     year=START_YEAR + year,
+                    prior_year_agi=prior_year_agi,
                 )
 
                 estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
                 estimated_taxes = np.maximum(0, estimated_taxes)
 
-                gross_withdrawal = withdrawal_result["total"] + estimated_taxes
+                # Get IRMAA from PolicyEngine (already calculated based on prior year AGI)
+                irmaa_cost = np.zeros(n_sims)
+                if p.include_irmaa and current_age >= MEDICARE_AGE:
+                    irmaa_cost = np.asarray(tax_results.get("irmaa", np.zeros(n_sims))).flatten()
+
+                # Store AGI for future IRMAA calculations
+                yearly_agi[:, year] = np.asarray(tax_results.get("adjusted_gross_income", np.zeros(n_sims))).flatten()
+
+                gross_withdrawal = withdrawal_result["total"] + estimated_taxes + irmaa_cost
 
                 # Apply growth and update portfolio value
                 self.tracker.apply_growth(year)
@@ -290,6 +310,11 @@ class MonteCarloSimulator:
                 elif isinstance(spouse_employment, (int, float)) and spouse_employment > 0:
                     employment_total = employment_total + spouse_employment
 
+                # Get prior year AGI for IRMAA (uses income from 2 years prior)
+                prior_year_agi = np.zeros(n_sims)
+                if year >= 2:
+                    prior_year_agi = yearly_agi[:, year - 2]
+
                 tax_results = self.tax_calc.calculate_batch_taxes(
                     capital_gains_array=np.asarray(net_need).flatten(),
                     social_security_array=np.asarray(ss_income).flatten(),
@@ -298,13 +323,22 @@ class MonteCarloSimulator:
                     dividend_income_array=np.asarray(dividends).flatten(),
                     employment_income_array=np.asarray(employment_total).flatten(),
                     year=START_YEAR + year,
+                    prior_year_agi=prior_year_agi,
                 )
                 estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
                 estimated_taxes = np.maximum(0, estimated_taxes)
 
+                # Get IRMAA from PolicyEngine (already calculated based on prior year AGI)
+                irmaa_cost = np.zeros(n_sims)
+                if p.include_irmaa and current_age >= MEDICARE_AGE:
+                    irmaa_cost = np.asarray(tax_results.get("irmaa", np.zeros(n_sims))).flatten()
+
+                # Store AGI for future IRMAA calculations
+                yearly_agi[:, year] = np.asarray(tax_results.get("adjusted_gross_income", np.zeros(n_sims))).flatten()
+
                 net_need = np.asarray(net_need).flatten()
                 dividends = np.asarray(dividends).flatten()
-                gross_withdrawal = net_need + estimated_taxes
+                gross_withdrawal = net_need + estimated_taxes + irmaa_cost
 
                 # Portfolio dynamics - price returns only, dividends are income not growth
                 growth = current_value * price_growth[:, year]
@@ -521,6 +555,9 @@ class MonteCarloSimulator:
         yearly_state_tax = np.zeros((n_sims, n_years))
         yearly_total_tax = np.zeros((n_sims, n_years))
 
+        # Track AGI history for IRMAA calculation (uses income from 2 years prior)
+        yearly_agi = np.zeros((n_sims, n_years))
+
         # Process year by year
         for year in range(n_years):
             current_age = p.current_age + year
@@ -636,6 +673,11 @@ class MonteCarloSimulator:
                 trad_withdrawals = withdrawal_result["traditional"] + withdrawal_result["traditional_rmd"]
                 ordinary_income = employment_total + trad_withdrawals
 
+                # Get prior year AGI for IRMAA (uses income from 2 years prior)
+                prior_year_agi = np.zeros(n_sims)
+                if year >= 2:
+                    prior_year_agi = yearly_agi[:, year - 2]
+
                 tax_results = self.tax_calc.calculate_batch_taxes(
                     capital_gains_array=np.asarray(withdrawal_result["taxable"]).flatten(),
                     social_security_array=np.asarray(ss_income).flatten(),
@@ -644,12 +686,21 @@ class MonteCarloSimulator:
                     dividend_income_array=np.asarray(dividends).flatten(),
                     employment_income_array=np.asarray(ordinary_income).flatten(),
                     year=START_YEAR + year,
+                    prior_year_agi=prior_year_agi,
                 )
 
                 estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
                 estimated_taxes = np.maximum(0, estimated_taxes)
 
-                gross_withdrawal = withdrawal_result["total"] + estimated_taxes
+                # Get IRMAA from PolicyEngine (already calculated based on prior year AGI)
+                irmaa_cost = np.zeros(n_sims)
+                if p.include_irmaa and current_age >= MEDICARE_AGE:
+                    irmaa_cost = np.asarray(tax_results.get("irmaa", np.zeros(n_sims))).flatten()
+
+                # Store AGI for future IRMAA calculations
+                yearly_agi[:, year] = np.asarray(tax_results.get("adjusted_gross_income", np.zeros(n_sims))).flatten()
+
+                gross_withdrawal = withdrawal_result["total"] + estimated_taxes + irmaa_cost
 
                 # Apply growth and update portfolio value
                 self.tracker.apply_growth(year)
@@ -669,6 +720,11 @@ class MonteCarloSimulator:
                 elif isinstance(spouse_employment, (int, float)) and spouse_employment > 0:
                     employment_total = employment_total + spouse_employment
 
+                # Get prior year AGI for IRMAA (uses income from 2 years prior)
+                prior_year_agi = np.zeros(n_sims)
+                if year >= 2:
+                    prior_year_agi = yearly_agi[:, year - 2]
+
                 tax_results = self.tax_calc.calculate_batch_taxes(
                     capital_gains_array=np.asarray(net_need).flatten(),
                     social_security_array=np.asarray(ss_income).flatten(),
@@ -677,13 +733,22 @@ class MonteCarloSimulator:
                     dividend_income_array=np.asarray(dividends).flatten(),
                     employment_income_array=np.asarray(employment_total).flatten(),
                     year=START_YEAR + year,
+                    prior_year_agi=prior_year_agi,
                 )
                 estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
                 estimated_taxes = np.maximum(0, estimated_taxes)
 
+                # Get IRMAA from PolicyEngine (already calculated based on prior year AGI)
+                irmaa_cost = np.zeros(n_sims)
+                if p.include_irmaa and current_age >= MEDICARE_AGE:
+                    irmaa_cost = np.asarray(tax_results.get("irmaa", np.zeros(n_sims))).flatten()
+
+                # Store AGI for future IRMAA calculations
+                yearly_agi[:, year] = np.asarray(tax_results.get("adjusted_gross_income", np.zeros(n_sims))).flatten()
+
                 net_need = np.asarray(net_need).flatten()
                 dividends = np.asarray(dividends).flatten()
-                gross_withdrawal = net_need + estimated_taxes
+                gross_withdrawal = net_need + estimated_taxes + irmaa_cost
 
                 # Portfolio dynamics - price returns only, dividends are income not growth
                 growth = current_value * price_growth[:, year]
