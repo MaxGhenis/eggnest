@@ -154,7 +154,7 @@ The simulator runs {eval}`r.n_simulations` independent paths, each representing 
 5. **Check mortality**: Apply survival probability from SSA life tables
 6. **Record outcome**: Track whether portfolio depleted before death
 
-Returns are generated via **bootstrap sampling** from historical nominal returns (1928-2024 for S&P 500 and Treasury bonds, 2008-2024 for VT and BND), preserving the empirical distribution including fat tails and serial correlation patterns {cite:p}`shiller2015,damodaran2024`. Each simulation year draws a random historical year's returns with replacement, maintaining the joint distribution of price appreciation and dividend yields.
+Returns are generated via **bootstrap sampling** from historical nominal returns (1928-2024 for S&P 500 and Treasury bonds, 2008-2024 for VT and BND), preserving the empirical distribution including fat tails {cite:p}`shiller2015,damodaran2024`. Each simulation year draws a random historical year's returns with replacement, maintaining the joint distribution of price appreciation and dividend yields within each year. Note that independent bootstrap sampling does not preserve serial correlation across years; block bootstrap is available for scenarios where autocorrelation matters.
 
 Historical return characteristics:
 
@@ -397,9 +397,19 @@ This aligns with the "4% rule" literature {cite:p}`bengen1994,finke2013`, though
 
 - **Roth conversion optimization**: Model strategic Roth conversions in low-income years
 - **Dynamic withdrawal strategies**: Implement guardrails or variable percentage withdrawal
-- **Medicare/healthcare integration**: Model healthcare costs and IRMAA surcharges
+- **Medicare/healthcare integration**: Model healthcare costs and IRMAA surcharges (available via PolicyEngine)
 - **State comparison**: Compare outcomes across different states given varying tax treatment
 - **Couple modeling**: Full joint filing with separate mortality
+
+### Practical Interpretation
+
+**Success rate thresholds**: While there is no universal standard, practitioners commonly target 80-90% success rates. Below 75% suggests significant risk; above 95% may indicate excessive conservatism. The ~4 percentage point difference between strategies (e.g., 100% vs 99.7%) is statistically significant at n=10,000 simulations but represents a small absolute difference.
+
+**Communicating results to clients**: Focus on the qualitative insight ("which account you withdraw from first matters") rather than precise percentages, which depend on assumptions. The median final value provides intuition about typical outcomes; the P5 value shows downside scenarios.
+
+**Inflation adjustment for inputs**: Since spending is held constant in nominal dollars, users modeling 30+ year horizons should consider inflating their desired real spending by 1.5-2x to approximate inflation-adjusted needs. Alternatively, interpret success rates as conservative estimates.
+
+**Strategy selection**: "Taxable first" typically performs well because it preserves tax-advantaged growth longest while avoiding early RMD pressure. However, individual circumstances (tax bracket trajectory, state taxes, estate goals) may favor other approaches.
 
 ## Conclusion
 
