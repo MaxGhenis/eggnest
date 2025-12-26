@@ -600,34 +600,156 @@
 }
 
 /* Responsive */
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  .page-header {
+    padding: 0.875rem 1rem;
+  }
+
+  .page-header .page-title {
+    font-size: 0.9rem;
+    margin-left: 0.375rem;
+    padding-left: 0.5rem;
+  }
+
+  .page-header .nav-link {
+    font-size: 0.8rem;
+  }
+
   .page-content {
+    padding: 1.25rem 1rem;
+  }
+
+  .setup-section,
+  .benefits-section,
+  .rates-section,
+  .try-another {
+    padding: 1.25rem;
+    border-radius: 10px;
+  }
+
+  .setup-section h2 {
+    font-size: 1.125rem;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .form-field input,
+  .form-field select {
+    font-size: 16px; /* Prevents iOS zoom */
+    padding: 0.75rem;
+  }
+
+  .btn-calculate {
+    padding: 0.875rem 1.25rem;
+    font-size: 1rem;
+  }
+
+  .summary-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .summary-item {
+    padding: 0.875rem;
+  }
+
+  .scenario-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .scenario-card {
     padding: 1rem;
   }
 
-  .form-row,
-  .summary-grid {
+  .scenario-emoji {
+    font-size: 1.75rem;
+  }
+
+  .scenario-name {
+    font-size: 0.9rem;
+  }
+
+  .scenario-desc {
+    font-size: 0.7rem;
+  }
+
+  .results-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .results-emoji {
+    font-size: 2.5rem;
+  }
+
+  .impact-value {
+    font-size: 1.75rem;
+  }
+
+  .comparison-table-container {
+    padding: 1rem;
+  }
+
+  .comparison-table th,
+  .comparison-table td {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .rates-grid {
     grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .rate-comparison {
+    font-size: 1.125rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-content {
+    padding: 1rem 0.75rem;
   }
 
   .scenario-grid {
     grid-template-columns: 1fr;
   }
 
-  .rates-grid {
-    grid-template-columns: 1fr;
+  .scenario-card {
+    flex-direction: row;
+    text-align: left;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
+  }
+
+  .scenario-emoji {
+    font-size: 1.5rem;
   }
 
   .benefit-item {
     grid-template-columns: 1fr 1fr;
     row-gap: 0.25rem;
+    font-size: 0.85rem;
   }
 
   .benefit-name {
     grid-column: span 2;
+    font-size: 0.9rem;
   }
 
   .benefit-arrow {
     display: none;
+  }
+
+  .scenario-buttons {
+    flex-direction: column;
+  }
+
+  .scenario-btn {
+    width: 100%;
+    justify-content: center;
   }
 }

@@ -1,14 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Plot from "react-plotly.js";
 import { Wizard, type WizardStep } from "../components/Wizard";
 import { SimulationProgress } from "../components/SimulationProgress";
 import { HoldingsEditor } from "../components/HoldingsEditor";
+import { ResultsSkeleton } from "../components/ResultsSkeleton";
 import {
   runSimulationWithProgress,
   compareAnnuity,
   compareStates,
   compareSSTimings,
   compareAllocations,
+  NetworkError,
+  TimeoutError,
+  ValidationError,
+  SimulationError,
+  ApiError,
   type SimulationInput,
   type SimulationResult,
   type SpouseInput,
@@ -21,6 +27,21 @@ import {
 import { colors, chartColors } from "../lib/design-tokens";
 import "../styles/Simulator.css";
 import "../styles/Wizard.css";
+import "../styles/Skeleton.css";
+
+// Saved scenario interface for localStorage
+interface SavedScenario {
+  name: string;
+  savedAt: string;
+  inputs: Partial<SimulationInput>;
+  spouse?: SpouseInput;
+  annuity?: AnnuityInput;
+  portfolioMode?: "simple" | "detailed";
+  holdings?: Holding[];
+  withdrawalStrategy?: "taxable_first" | "traditional_first" | "roth_first" | "pro_rata";
+}
+
+const SCENARIOS_STORAGE_KEY = "eggnest_scenarios";
 
 // In production, this is eggnest.co
 const HOME_URL = import.meta.env.PROD
@@ -243,12 +264,259 @@ function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+
+// Error info type for structured error display
+interface ErrorInfo {
+  title: string;
+  message: string;
+  suggestion: string;
+  field?: string;
+  technical?: string;
+}
+
+// Get user-friendly error information based on error type
+function getErrorInfo(error: unknown): ErrorInfo {
+  // Handle typed API errors
+  if (error instanceof NetworkError) {
+    return {
+      title: "Connection Problem",
+      message: "Unable to reach the simulation server.",
+      suggestion: "Check your internet connection and try again. If the problem persists, the server may be temporarily unavailable.",
+      technical: error.message,
+    };
+  }
+
+  if (error instanceof TimeoutError) {
+    return {
+      title: "Request Timed Out",
+      message: "The simulation took longer than expected to complete.",
+      suggestion: "Try running the simulation again. For complex scenarios, consider reducing the number of simulations.",
+      technical: error.message,
+    };
+  }
+
+  if (error instanceof ValidationError) {
+    const fieldHint = error.field
+      ? `The issue is with "${error.field.replace(/_/g, " ")}".`
+      : "";
+    return {
+      title: "Invalid Input",
+      message: error.message,
+      suggestion: `${fieldHint} Please review your inputs and make sure all values are reasonable.`,
+      field: error.field,
+      technical: error.message,
+    };
+  }
+
+  if (error instanceof SimulationError) {
+    return {
+      title: "Simulation Error",
+      message: "Something went wrong while running your simulation.",
+      suggestion: "This is usually temporary. Please wait a moment and try again.",
+      technical: error.message,
+    };
+  }
+
+  if (error instanceof ApiError) {
+    return {
+      title: "Server Error",
+      message: error.message || "An unexpected error occurred.",
+      suggestion: "Please try again. If the problem continues, try refreshing the page.",
+      technical: error.statusCode ? `Status: ${error.statusCode}` : undefined,
+    };
+  }
+
+  // Handle string errors (legacy)
+  if (typeof error === "string") {
+    const lowerError = error.toLowerCase();
+
+    if (lowerError.includes("network") || lowerError.includes("fetch") || lowerError.includes("failed to fetch")) {
+      return {
+        title: "Connection Problem",
+        message: "We couldn't reach the simulation server.",
+        suggestion: "Check your internet connection and try again.",
+        technical: error,
+      };
+    }
+
+    if (lowerError.includes("timeout") || lowerError.includes("timed out")) {
+      return {
+        title: "Request Timed Out",
+        message: "The simulation took longer than expected.",
+        suggestion: "Try running the simulation again.",
+        technical: error,
+      };
+    }
+
+    return {
+      title: "Something Went Wrong",
+      message: error,
+      suggestion: "Please try again. If the problem continues, try refreshing the page.",
+      technical: error,
+    };
+  }
+
+  // Handle Error objects
+  if (error instanceof Error) {
+    return {
+      title: "Something Went Wrong",
+      message: error.message || "An unexpected error occurred.",
+      suggestion: "Please try again. If the problem continues, try refreshing the page or adjusting your inputs.",
+      technical: error.message,
+    };
+  }
+
+  // Default fallback
+  return {
+    title: "Something Went Wrong",
+    message: "We encountered an unexpected error while running your simulation.",
+    suggestion: "Please try again. If the problem continues, try refreshing the page or adjusting your inputs.",
+  };
+}
 interface AnnuityComparisonResult {
   simulation_result: SimulationResult;
   annuity_total_guaranteed: number;
   probability_simulation_beats_annuity: number;
   simulation_median_total_income: number;
   recommendation: string;
+}
+
+// URL parameter mapping (short names for readability)
+const URL_PARAM_MAP = {
+  cap: "initial_capital",
+  spend: "annual_spending",
+  home: "home_value",
+  age: "current_age",
+  max: "max_age",
+  gen: "gender",
+  state: "state",
+  status: "filing_status",
+  ss: "social_security_monthly",
+  ssAge: "social_security_start_age",
+  pension: "pension_annual",
+  emp: "employment_income",
+  ret: "retirement_age",
+  stocks: "stock_allocation",
+  spouse: "has_spouse",
+  // Spouse params
+  spAge: "spouse_age",
+  spGen: "spouse_gender",
+  spSS: "spouse_ss_monthly",
+  spSSAge: "spouse_ss_start_age",
+  spPension: "spouse_pension",
+  spRet: "spouse_retirement_age",
+} as const;
+
+// Parse URL params into simulation input
+function parseUrlParams(): { params: Partial<SimulationInput>; spouse: Partial<SpouseInput> } {
+  const urlParams = new URLSearchParams(window.location.search);
+  const params: Partial<SimulationInput> = {};
+  const spouse: Partial<SpouseInput> = {};
+
+  // Number params (short keys)
+  const numParams = ["cap", "spend", "home", "age", "max", "ss", "ssAge", "pension", "emp", "ret", "stocks"];
+
+  for (const [shortKey, value] of urlParams.entries()) {
+    if (!(shortKey in URL_PARAM_MAP)) continue;
+
+    const longKey = URL_PARAM_MAP[shortKey as keyof typeof URL_PARAM_MAP];
+
+    // Handle spouse params separately
+    if (shortKey.startsWith("sp") && shortKey !== "spouse") {
+      if (shortKey === "spAge") spouse.age = Number(value);
+      else if (shortKey === "spGen") spouse.gender = value as "male" | "female";
+      else if (shortKey === "spSS") spouse.social_security_monthly = Number(value);
+      else if (shortKey === "spSSAge") spouse.social_security_start_age = Number(value);
+      else if (shortKey === "spPension") spouse.pension_annual = Number(value);
+      else if (shortKey === "spRet") spouse.retirement_age = Number(value);
+      continue;
+    }
+
+    // Handle main params
+    if (numParams.includes(shortKey)) {
+      const numValue = Number(value);
+      if (!isNaN(numValue)) {
+        if (shortKey === "stocks") {
+          // stocks is 0-100 in URL, 0-1 in params
+          (params as Record<string, number>)[longKey] = numValue / 100;
+        } else {
+          (params as Record<string, number>)[longKey] = numValue;
+        }
+      }
+    } else if (shortKey === "gen") {
+      params.gender = value as "male" | "female";
+    } else if (shortKey === "state") {
+      params.state = value;
+    } else if (shortKey === "status") {
+      params.filing_status = value as SimulationInput["filing_status"];
+    } else if (shortKey === "spouse") {
+      params.has_spouse = value === "1" || value === "true";
+    }
+  }
+
+  return { params, spouse };
+}
+
+// Build URL params from simulation input
+function buildUrlParams(params: SimulationInput, spouse?: SpouseInput): string {
+  const urlParams = new URLSearchParams();
+
+  // Only include non-default values
+  if (params.initial_capital !== undefined && params.initial_capital !== 500000) {
+    urlParams.set("cap", String(params.initial_capital));
+  }
+  if (params.annual_spending !== 60000) {
+    urlParams.set("spend", String(params.annual_spending));
+  }
+  if (params.home_value && params.home_value !== 0) {
+    urlParams.set("home", String(params.home_value));
+  }
+  if (params.current_age !== 65) {
+    urlParams.set("age", String(params.current_age));
+  }
+  if (params.max_age !== 95) {
+    urlParams.set("max", String(params.max_age));
+  }
+  if (params.gender !== "male") {
+    urlParams.set("gen", params.gender);
+  }
+  if (params.state !== "CA") {
+    urlParams.set("state", params.state);
+  }
+  if (params.filing_status !== "single") {
+    urlParams.set("status", params.filing_status);
+  }
+  if (params.social_security_monthly !== 2000) {
+    urlParams.set("ss", String(params.social_security_monthly));
+  }
+  if (params.social_security_start_age !== 67) {
+    urlParams.set("ssAge", String(params.social_security_start_age));
+  }
+  if (params.pension_annual && params.pension_annual !== 0) {
+    urlParams.set("pension", String(params.pension_annual));
+  }
+  if (params.employment_income && params.employment_income !== 0) {
+    urlParams.set("emp", String(params.employment_income));
+  }
+  if (params.retirement_age !== 65) {
+    urlParams.set("ret", String(params.retirement_age));
+  }
+  if (params.stock_allocation !== 0.8) {
+    urlParams.set("stocks", String(Math.round(params.stock_allocation * 100)));
+  }
+
+  // Spouse params
+  if (params.has_spouse && spouse) {
+    urlParams.set("spouse", "1");
+    if (spouse.age !== 63) urlParams.set("spAge", String(spouse.age));
+    if (spouse.gender !== "female") urlParams.set("spGen", spouse.gender);
+    if (spouse.social_security_monthly !== 1500) urlParams.set("spSS", String(spouse.social_security_monthly));
+    if (spouse.social_security_start_age !== 67) urlParams.set("spSSAge", String(spouse.social_security_start_age));
+    if (spouse.pension_annual && spouse.pension_annual !== 0) urlParams.set("spPension", String(spouse.pension_annual));
+    if (spouse.retirement_age !== 65) urlParams.set("spRet", String(spouse.retirement_age));
+  }
+
+  return urlParams.toString();
 }
 
 export function SimulatorPage() {
@@ -269,7 +537,7 @@ export function SimulatorPage() {
     useState<AllocationComparisonResult | null>(null);
   const [isComparingAllocations, setIsComparingAllocations] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [showWizard, setShowWizard] = useState(true);
   const [showPersonaPicker, setShowPersonaPicker] = useState(true);
   const [progress, setProgress] = useState({ currentYear: 0, totalYears: 0 });
@@ -283,6 +551,39 @@ export function SimulatorPage() {
   const [portfolioMode, setPortfolioMode] = useState<"simple" | "detailed">("simple");
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [withdrawalStrategy, setWithdrawalStrategy] = useState<"taxable_first" | "traditional_first" | "roth_first" | "pro_rata">("taxable_first");
+
+  // Saved scenarios state
+  const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>([]);
+  const [scenarioName, setScenarioName] = useState("");
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+
+  // Load saved scenarios from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SCENARIOS_STORAGE_KEY);
+      if (stored) {
+        setSavedScenarios(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error("Failed to load saved scenarios:", e);
+    }
+  }, []);
+
+  // URL state for copy link
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  // Load URL params on mount (they override defaults)
+  useEffect(() => {
+    const urlData = parseUrlParams();
+    if (Object.keys(urlData.params).length > 0) {
+      setParams((prev) => ({ ...prev, ...urlData.params }));
+      // Skip persona picker if URL has params
+      setShowPersonaPicker(false);
+    }
+    if (Object.keys(urlData.spouse).length > 0) {
+      setSpouse((prev) => ({ ...prev, ...urlData.spouse }));
+    }
+  }, []);
 
   // Spouse state
   const [spouse, setSpouse] = useState<SpouseInput>({
@@ -308,6 +609,56 @@ export function SimulatorPage() {
     value: SimulationInput[K]
   ) => {
     setParams((prev) => ({ ...prev, [key]: value }));
+  };
+
+  // Save scenario to localStorage
+  const saveScenario = (name: string) => {
+    const scenario: SavedScenario = {
+      name,
+      savedAt: new Date().toISOString(),
+      inputs: { ...params },
+      spouse: params.has_spouse ? spouse : undefined,
+      annuity: params.has_annuity ? annuity : undefined,
+      portfolioMode,
+      holdings: portfolioMode === "detailed" ? holdings : undefined,
+      withdrawalStrategy: portfolioMode === "detailed" ? withdrawalStrategy : undefined,
+    };
+
+    const updated = [...savedScenarios.filter(s => s.name !== name), scenario];
+    setSavedScenarios(updated);
+    localStorage.setItem(SCENARIOS_STORAGE_KEY, JSON.stringify(updated));
+    setScenarioName("");
+    setShowSaveDialog(false);
+  };
+
+  // Load scenario from saved
+  const loadSavedScenario = (scenario: SavedScenario) => {
+    if (scenario.inputs) {
+      setParams({ ...DEFAULT_PARAMS, ...scenario.inputs } as SimulationInput);
+    }
+    if (scenario.spouse) {
+      setSpouse(scenario.spouse);
+    }
+    if (scenario.annuity) {
+      setAnnuity(scenario.annuity);
+    }
+    if (scenario.portfolioMode) {
+      setPortfolioMode(scenario.portfolioMode);
+    }
+    if (scenario.holdings) {
+      setHoldings(scenario.holdings);
+    }
+    if (scenario.withdrawalStrategy) {
+      setWithdrawalStrategy(scenario.withdrawalStrategy);
+    }
+    setShowPersonaPicker(false);
+  };
+
+  // Delete scenario
+  const deleteScenario = (name: string) => {
+    const updated = savedScenarios.filter(s => s.name !== name);
+    setSavedScenarios(updated);
+    localStorage.setItem(SCENARIOS_STORAGE_KEY, JSON.stringify(updated));
   };
 
   // Load a persona and optionally run simulation immediately
@@ -352,9 +703,13 @@ export function SimulatorPage() {
           setResult(event.result);
         }
       }
+      // Update URL with current params for sharing
+      const urlString = buildUrlParams(simParams, simParams.has_spouse ? simSpouse : undefined);
+      const newUrl = urlString ? `${window.location.pathname}?${urlString}` : window.location.pathname;
+      window.history.replaceState(null, "", newUrl);
       setShowWizard(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Simulation failed");
+      setError(err);
       setResult(null);
     } finally {
       setIsLoading(false);
@@ -399,12 +754,27 @@ export function SimulatorPage() {
           }
         }
       }
+      // Update URL with current params for sharing
+      const urlString = buildUrlParams(params, params.has_spouse ? spouse : undefined);
+      const newUrl = urlString ? `${window.location.pathname}?${urlString}` : window.location.pathname;
+      window.history.replaceState(null, "", newUrl);
       setShowWizard(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Simulation failed");
+      setError(err);
       setResult(null);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Copy current URL to clipboard
+  const copyLinkToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy link:", err);
     }
   };
 
@@ -435,7 +805,7 @@ export function SimulatorPage() {
       const comparison = await compareStates(fullParams, states);
       setStateComparisonResult(comparison);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "State comparison failed");
+      setError(err);
     } finally {
       setIsComparingStates(false);
     }
@@ -472,7 +842,7 @@ export function SimulatorPage() {
       );
       setSSTimingResult(comparison);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "SS timing comparison failed");
+      setError(err);
     } finally {
       setIsComparingSSTiming(false);
     }
@@ -500,7 +870,7 @@ export function SimulatorPage() {
       );
       setAllocationResult(comparison);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Allocation comparison failed");
+      setError(err);
     } finally {
       setIsComparingAllocations(false);
     }
@@ -1217,11 +1587,19 @@ export function SimulatorPage() {
             )}
           </div>
 
-          {error && (
-            <div className="error-banner" style={{ marginTop: "1rem" }}>
-              <strong>Error:</strong> {error}
-            </div>
-          )}
+          {error ? (() => {
+            const errorInfo = getErrorInfo(error);
+            return (
+              <div className="error-banner" style={{ marginTop: "1rem" }}>
+                <strong>{errorInfo.title}:</strong> {errorInfo.message}
+                {errorInfo.field && (
+                  <span style={{ display: "block", marginTop: "0.5rem", fontStyle: "italic" }}>
+                    Check: {errorInfo.field.replace(/_/g, " ")}
+                  </span>
+                )}
+              </div>
+            );
+          })() : null}
         </div>
       ),
     },
@@ -1233,18 +1611,88 @@ export function SimulatorPage() {
     setShowWizard(true);
   };
 
+  // Error state view - displays user-friendly error with retry option
+  const renderErrorState = () => {
+    const errorInfo = getErrorInfo(error);
+
+    return (
+      <div className="error-state">
+        <div className="error-state-card">
+          <div className="error-state-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          </div>
+          <h2 className="error-state-title">{errorInfo.title}</h2>
+          <p className="error-state-message">{errorInfo.message}</p>
+
+          {errorInfo.technical && errorInfo.technical !== errorInfo.message && (
+            <div className="error-state-details">
+              <div className="error-state-details-label">Technical Details</div>
+              <p className="error-state-details-text">{errorInfo.technical}</p>
+            </div>
+          )}
+
+          <div className="error-state-suggestion">
+            <strong>What to do:</strong> {errorInfo.suggestion}
+          </div>
+
+          <div className="error-state-actions">
+            <button
+              className="error-state-btn-primary"
+              onClick={() => {
+                setError(null);
+                handleSimulate();
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="1 4 1 10 7 10" />
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+              </svg>
+              Try Again
+            </button>
+            <button
+              className="error-state-btn-secondary"
+              onClick={() => {
+                setError(null);
+                setShowWizard(true);
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              Edit Inputs
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Results view
   const renderResults = () => {
     const interpretation = getSuccessRateInterpretation(result!.success_rate);
 
     return (
     <div className="results-view">
-      <button className="back-to-wizard" onClick={() => setShowWizard(true)}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
-        Edit Inputs
-      </button>
+      <div className="results-actions">
+        <button className="back-to-wizard" onClick={() => setShowWizard(true)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+          Edit Inputs
+        </button>
+        <button className="copy-link-btn" onClick={copyLinkToClipboard}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+          {linkCopied ? "Link Copied!" : "Copy Link"}
+        </button>
+      </div>
 
       {/* Success interpretation banner */}
       <div className="success-interpretation" style={{ borderColor: interpretation.color }}>
@@ -1301,40 +1749,47 @@ export function SimulatorPage() {
       </div>
 
       {/* Portfolio chart */}
-      <div className="chart-container">
+      <div className="chart-container portfolio-chart">
         <h3>Portfolio Value Over Time</h3>
-        <p className="chart-hint">Click on the chart to see year details</p>
+        <p className="chart-hint">Click on the chart to see year details. Click legend items to toggle visibility.</p>
         <Plot
           data={[
+            // 95th percentile - top line of outer band
             {
               x: ages,
               y: result!.percentile_paths.p95,
               type: "scatter",
               mode: "lines",
-              line: { color: "rgba(217, 119, 6, 0.2)", width: 0 },
-              showlegend: false,
-              hovertemplate: "%{y:$,.0f}<extra>95th percentile</extra>",
+              line: { color: "rgba(217, 119, 6, 0.4)", width: 1, dash: "dot" },
+              name: "95th Percentile",
+              legendgroup: "outer",
+              hoverinfo: "skip",
             },
+            // 5th percentile - creates outer band fill
             {
               x: ages,
               y: result!.percentile_paths.p5,
               type: "scatter",
               mode: "lines",
               fill: "tonexty",
-              fillcolor: "rgba(217, 119, 6, 0.1)",
-              line: { color: "rgba(217, 119, 6, 0.2)", width: 0 },
-              name: "5th-95th percentile",
-              hovertemplate: "%{y:$,.0f}<extra>5th percentile</extra>",
+              fillcolor: "rgba(217, 119, 6, 0.08)",
+              line: { color: "rgba(217, 119, 6, 0.4)", width: 1, dash: "dot" },
+              name: "5th Percentile",
+              legendgroup: "outer",
+              hoverinfo: "skip",
             },
+            // 75th percentile - top line of inner band
             {
               x: ages,
               y: result!.percentile_paths.p75,
               type: "scatter",
               mode: "lines",
-              line: { color: "rgba(217, 119, 6, 0.3)", width: 1 },
-              showlegend: false,
-              hovertemplate: "%{y:$,.0f}<extra>75th percentile</extra>",
+              line: { color: "rgba(217, 119, 6, 0.6)", width: 1.5 },
+              name: "75th Percentile",
+              legendgroup: "inner",
+              hoverinfo: "skip",
             },
+            // 25th percentile - creates inner band fill
             {
               x: ages,
               y: result!.percentile_paths.p25,
@@ -1342,47 +1797,103 @@ export function SimulatorPage() {
               mode: "lines",
               fill: "tonexty",
               fillcolor: "rgba(217, 119, 6, 0.15)",
-              line: { color: "rgba(217, 119, 6, 0.3)", width: 1 },
-              name: "25th-75th percentile",
-              hovertemplate: "%{y:$,.0f}<extra>25th percentile</extra>",
+              line: { color: "rgba(217, 119, 6, 0.6)", width: 1.5 },
+              name: "25th Percentile",
+              legendgroup: "inner",
+              hoverinfo: "skip",
             },
+            // Median line - most prominent
             {
               x: ages,
               y: result!.percentile_paths.p50,
               type: "scatter",
               mode: "lines",
               line: { color: chartColors.primary, width: 3 },
-              name: "Median",
-              hovertemplate: "%{y:$,.0f}<extra>Median</extra>",
+              name: "Median (50th)",
+              hoverinfo: "skip",
+            },
+            // Invisible trace for unified tooltip showing all percentiles
+            {
+              x: ages,
+              y: result!.percentile_paths.p50,
+              type: "scatter",
+              mode: "markers",
+              marker: { size: 20, color: "transparent" },
+              showlegend: false,
+              hovertemplate: ages.map((age, i) => {
+                const year = i;
+                const p95 = result!.percentile_paths.p95[i];
+                const p75 = result!.percentile_paths.p75[i];
+                const p50 = result!.percentile_paths.p50[i];
+                const p25 = result!.percentile_paths.p25[i];
+                const p5 = result!.percentile_paths.p5[i];
+                return `<b>Age ${age}</b> (Year ${year + 1})<br>` +
+                  `<span style="color:#9a3412">95th:</span> ${formatCurrency(p95)}<br>` +
+                  `<span style="color:#c2410c">75th:</span> ${formatCurrency(p75)}<br>` +
+                  `<span style="color:#d97706"><b>Median:</b></span> <b>${formatCurrency(p50)}</b><br>` +
+                  `<span style="color:#c2410c">25th:</span> ${formatCurrency(p25)}<br>` +
+                  `<span style="color:#9a3412">5th:</span> ${formatCurrency(p5)}` +
+                  `<extra></extra>`;
+              }),
             },
           ]}
           layout={{
             autosize: true,
-            height: 400,
-            margin: { l: 80, r: 40, t: 20, b: 60 },
-            font: { family: "Inter, system-ui, sans-serif" },
+            height: 420,
+            margin: { l: 80, r: 40, t: 40, b: 60 },
+            font: { family: "Inter, system-ui, sans-serif", size: 12 },
             xaxis: {
-              title: { text: "Age", font: { family: "Inter, system-ui, sans-serif" } },
+              title: { text: "Age", font: { family: "Inter, system-ui, sans-serif", size: 14 } },
               gridcolor: colors.gray200,
-              tickfont: { family: "Inter, system-ui, sans-serif" },
+              tickfont: { family: "Inter, system-ui, sans-serif", size: 12 },
+              showgrid: true,
+              zeroline: false,
             },
             yaxis: {
+              title: { text: "Portfolio Value", font: { family: "Inter, system-ui, sans-serif", size: 14 } },
               gridcolor: colors.gray200,
               tickformat: "$~s",
-              tickfont: { family: "Inter, system-ui, sans-serif" },
+              tickfont: { family: "Inter, system-ui, sans-serif", size: 12 },
               rangemode: "tozero",
+              showgrid: true,
+              zeroline: true,
+              zerolinecolor: colors.gray300,
             },
             legend: {
-              x: 0,
-              y: 1.1,
+              x: 0.5,
+              y: 1.15,
+              xanchor: "center",
               orientation: "h",
-              font: { family: "Inter, system-ui, sans-serif" },
+              font: { family: "Inter, system-ui, sans-serif", size: 11 },
+              bgcolor: "rgba(255,255,255,0.9)",
+              bordercolor: colors.gray200,
+              borderwidth: 1,
+              itemclick: "toggle",
+              itemdoubleclick: "toggleothers",
             },
             paper_bgcolor: "transparent",
             plot_bgcolor: "transparent",
             hovermode: "x unified",
+            hoverlabel: {
+              bgcolor: "white",
+              bordercolor: colors.gray300,
+              font: { family: "Inter, system-ui, sans-serif", size: 13, color: colors.gray800 },
+              align: "left",
+            },
+            // Show vertical line for selected year
+            shapes: selectedYearIndex !== null ? [
+              {
+                type: "line",
+                x0: ages[selectedYearIndex],
+                x1: ages[selectedYearIndex],
+                y0: 0,
+                y1: 1,
+                yref: "paper",
+                line: { color: chartColors.primary, width: 2, dash: "dash" },
+              },
+            ] : [],
           }}
-          config={{ responsive: true, displayModeBar: false }}
+          config={{ responsive: true, displayModeBar: false, scrollZoom: false }}
           style={{ width: "100%" }}
           onClick={(event) => {
             if (event.points && event.points.length > 0) {
@@ -2273,19 +2784,128 @@ export function SimulatorPage() {
         {showPersonaPicker && showWizard && !result ? (
           renderPersonaPicker()
         ) : showWizard ? (
-          <Wizard
-            steps={wizardSteps}
-            onComplete={handleSimulate}
-            isLoading={isLoading}
-            completeButtonText="Run Simulation"
-            loadingButtonText="Running simulation..."
-            loadingContent={
-              <SimulationProgress
-                currentYear={progress.currentYear}
-                totalYears={progress.totalYears}
-              />
-            }
+          <>
+            {/* Saved Scenarios Section */}
+            <div className="saved-scenarios-section">
+              <div className="saved-scenarios-header">
+                <div className="saved-scenarios-actions">
+                  <button
+                    className="btn-save-scenario"
+                    onClick={() => setShowSaveDialog(true)}
+                    title="Save current scenario"
+                  >
+                    Save Scenario
+                  </button>
+                  {savedScenarios.length > 0 && (
+                    <select
+                      className="scenario-select"
+                      value=""
+                      onChange={(e) => {
+                        const scenario = savedScenarios.find(s => s.name === e.target.value);
+                        if (scenario) {
+                          loadSavedScenario(scenario);
+                        }
+                      }}
+                    >
+                      <option value="" disabled>Load Saved...</option>
+                      {savedScenarios.map((s) => (
+                        <option key={s.name} value={s.name}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              {/* Save Dialog */}
+              {showSaveDialog && (
+                <div className="save-dialog">
+                  <input
+                    type="text"
+                    placeholder="Scenario name..."
+                    value={scenarioName}
+                    onChange={(e) => setScenarioName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && scenarioName.trim()) {
+                        saveScenario(scenarioName.trim());
+                      } else if (e.key === "Escape") {
+                        setShowSaveDialog(false);
+                        setScenarioName("");
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <button
+                    className="btn-confirm-save"
+                    onClick={() => scenarioName.trim() && saveScenario(scenarioName.trim())}
+                    disabled={!scenarioName.trim()}
+                  >
+                    Save
+                  </button>
+                  <button
+                    className="btn-cancel-save"
+                    onClick={() => {
+                      setShowSaveDialog(false);
+                      setScenarioName("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+
+              {/* Saved Scenarios List (shown when there are saved scenarios) */}
+              {savedScenarios.length > 0 && (
+                <div className="saved-scenarios-list">
+                  {savedScenarios.map((scenario) => (
+                    <div key={scenario.name} className="saved-scenario-item">
+                      <button
+                        className="scenario-load-btn"
+                        onClick={() => loadSavedScenario(scenario)}
+                      >
+                        <span className="scenario-name">{scenario.name}</span>
+                        <span className="scenario-date">
+                          {new Date(scenario.savedAt).toLocaleDateString()}
+                        </span>
+                      </button>
+                      <button
+                        className="scenario-delete-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteScenario(scenario.name);
+                        }}
+                        title="Delete scenario"
+                      >
+                        x
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <Wizard
+              steps={wizardSteps}
+              onComplete={handleSimulate}
+              isLoading={isLoading}
+              completeButtonText="Run Simulation"
+              loadingButtonText="Running simulation..."
+              loadingContent={
+                <SimulationProgress
+                  currentYear={progress.currentYear}
+                  totalYears={progress.totalYears}
+                />
+              }
+            />
+          </>
+        ) : isLoading && !result ? (
+          <ResultsSkeleton
+            currentYear={progress.currentYear}
+            totalYears={progress.totalYears}
           />
+        ) : error && !result ? (
+          renderErrorState()
         ) : (
           result && renderResults()
         )}

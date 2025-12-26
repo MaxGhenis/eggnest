@@ -1,5 +1,186 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// ============================================
+// Custom Error Classes for Better Error Handling
+// ============================================
+
+/**
+ * Base error class for API errors with additional context
+ */
+export class ApiError extends Error {
+  readonly statusCode?: number;
+  readonly originalError?: unknown;
+
+  constructor(message: string, statusCode?: number, originalError?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.statusCode = statusCode;
+    this.originalError = originalError;
+  }
+}
+
+/**
+ * Network-related errors (offline, DNS failure, timeout, etc.)
+ */
+export class NetworkError extends ApiError {
+  constructor(message: string = "Unable to connect to the server", originalError?: unknown) {
+    super(message, undefined, originalError);
+    this.name = "NetworkError";
+  }
+}
+
+/**
+ * Request timeout errors
+ */
+export class TimeoutError extends ApiError {
+  constructor(message: string = "Request timed out", originalError?: unknown) {
+    super(message, undefined, originalError);
+    this.name = "TimeoutError";
+  }
+}
+
+/**
+ * Validation errors from the API (400-level errors with field information)
+ */
+export class ValidationError extends ApiError {
+  readonly field?: string;
+  readonly details?: Record<string, unknown>;
+
+  constructor(
+    message: string,
+    field?: string,
+    details?: Record<string, unknown>,
+    statusCode?: number
+  ) {
+    super(message, statusCode);
+    this.name = "ValidationError";
+    this.field = field;
+    this.details = details;
+  }
+}
+
+/**
+ * Server errors (500-level)
+ */
+export class SimulationError extends ApiError {
+  constructor(message: string, statusCode?: number, originalError?: unknown) {
+    super(message, statusCode, originalError);
+    this.name = "SimulationError";
+  }
+}
+
+/**
+ * Parse error response from API and extract meaningful message
+ */
+async function parseErrorResponse(response: Response): Promise<{
+  message: string;
+  field?: string;
+  details?: Record<string, unknown>;
+}> {
+  try {
+    const data = await response.json();
+
+    // FastAPI validation error format: { detail: [{ loc: [...], msg: "...", type: "..." }] }
+    if (Array.isArray(data.detail)) {
+      const firstError = data.detail[0];
+      if (firstError && typeof firstError === "object") {
+        const field = Array.isArray(firstError.loc)
+          ? firstError.loc.filter((l: unknown) => l !== "body").join(".")
+          : undefined;
+        return {
+          message: firstError.msg || "Validation error",
+          field,
+          details: { errors: data.detail },
+        };
+      }
+    }
+
+    // Simple error format: { detail: "message" }
+    if (typeof data.detail === "string") {
+      return { message: data.detail };
+    }
+
+    // Other formats
+    if (data.message) {
+      return { message: data.message };
+    }
+    if (data.error) {
+      return { message: data.error };
+    }
+
+    return { message: response.statusText || "Unknown error" };
+  } catch {
+    return { message: response.statusText || "Unknown error" };
+  }
+}
+
+/**
+ * Create appropriate error from fetch failure
+ */
+function createFetchError(error: unknown): ApiError {
+  if (error instanceof ApiError) {
+    return error;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  const lowerMessage = message.toLowerCase();
+
+  // Check for network-related errors
+  if (
+    lowerMessage.includes("failed to fetch") ||
+    lowerMessage.includes("network") ||
+    lowerMessage.includes("net::") ||
+    lowerMessage.includes("dns") ||
+    lowerMessage.includes("econnrefused") ||
+    lowerMessage.includes("enotfound")
+  ) {
+    return new NetworkError(
+      "Unable to connect. Please check your internet connection.",
+      error
+    );
+  }
+
+  // Check for timeout errors
+  if (
+    lowerMessage.includes("timeout") ||
+    lowerMessage.includes("timed out") ||
+    lowerMessage.includes("aborted")
+  ) {
+    return new TimeoutError(
+      "The request took too long. Please try again.",
+      error
+    );
+  }
+
+  // Generic error
+  return new SimulationError(message, undefined, error);
+}
+
+/**
+ * Create appropriate error from HTTP response
+ */
+async function createResponseError(response: Response): Promise<ApiError> {
+  const { message, field, details } = await parseErrorResponse(response);
+
+  if (response.status >= 400 && response.status < 500) {
+    // Client errors (validation, bad request, etc.)
+    if (response.status === 422 || field) {
+      return new ValidationError(message, field, details, response.status);
+    }
+    return new ApiError(message, response.status);
+  }
+
+  if (response.status >= 500) {
+    // Server errors
+    return new SimulationError(
+      message || "Something went wrong on our end. Please try again.",
+      response.status
+    );
+  }
+
+  return new ApiError(message, response.status);
+}
+
 export type AccountType =
   | "traditional_401k"
   | "traditional_ira"
@@ -148,15 +329,19 @@ export async function runSimulation(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}/simulate`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(params),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/simulate`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(params),
+    });
+  } catch (error) {
+    throw createFetchError(error);
+  }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || `Simulation failed: ${response.statusText}`);
+    throw await createResponseError(response);
   }
 
   return response.json();
@@ -173,48 +358,56 @@ export async function* runSimulationWithProgress(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}/simulate/stream`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(params),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/simulate/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(params),
+    });
+  } catch (error) {
+    throw createFetchError(error);
+  }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(error.detail || `Simulation failed: ${response.statusText}`);
+    throw await createResponseError(response);
   }
 
   const reader = response.body?.getReader();
   if (!reader) {
-    throw new Error("Failed to get response reader");
+    throw new SimulationError("Failed to get response reader");
   }
 
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
+      buffer += decoder.decode(value, { stream: true });
 
-    // Process complete SSE messages
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || ""; // Keep incomplete line in buffer
+      // Process complete SSE messages
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || ""; // Keep incomplete line in buffer
 
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const data = line.slice(6);
-        if (data.trim()) {
-          try {
-            const event = JSON.parse(data) as SimulationEvent;
-            yield event;
-          } catch (e) {
-            console.error("Failed to parse SSE event:", data, e);
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6);
+          if (data.trim()) {
+            try {
+              const event = JSON.parse(data) as SimulationEvent;
+              yield event;
+            } catch (e) {
+              console.error("Failed to parse SSE event:", data, e);
+            }
           }
         }
       }
     }
+  } catch (error) {
+    throw createFetchError(error);
   }
 }
 
