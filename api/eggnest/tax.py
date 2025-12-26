@@ -26,6 +26,7 @@ class MonteCarloDataset(Dataset):
         filing_status: str = "SINGLE",
         dividend_income_array: np.ndarray | None = None,
         employment_income_array: np.ndarray | None = None,
+        prior_year_agi: np.ndarray | None = None,  # AGI from 2 years prior for IRMAA
     ):
         self.n_scenarios = n_scenarios
         self.capital_gains = capital_gains_array
@@ -42,6 +43,11 @@ class MonteCarloDataset(Dataset):
         self.employment_income = (
             employment_income_array
             if employment_income_array is not None
+            else np.zeros(n_scenarios)
+        )
+        self.prior_year_agi = (
+            prior_year_agi
+            if prior_year_agi is not None
             else np.zeros(n_scenarios)
         )
 
@@ -89,6 +95,12 @@ class MonteCarloDataset(Dataset):
         }
         state_code = state_fips_map.get(self.state, 6)
 
+        # Prior year for IRMAA (2 years before current)
+        prior_year = self.year - 2
+
+        # Medicare eligibility (age 65+)
+        medicare_eligible = self.ages >= 65
+
         data = {
             "person_id": {self.year: person_ids},
             "person_household_id": {self.year: household_ids},
@@ -101,7 +113,10 @@ class MonteCarloDataset(Dataset):
             "long_term_capital_gains": {self.year: self.capital_gains},
             "social_security": {self.year: self.social_security},
             "social_security_retirement": {self.year: self.social_security},
-            "employment_income": {self.year: self.employment_income},
+            "employment_income": {
+                self.year: self.employment_income,
+                prior_year: self.prior_year_agi,  # For IRMAA calculation
+            },
             "interest_income": {self.year: np.zeros(self.n_scenarios)},
             "dividend_income": {self.year: self.dividend_income},
             "household_id": {self.year: household_ids},
@@ -116,6 +131,7 @@ class MonteCarloDataset(Dataset):
             "spm_unit_weight": {self.year: weights},
             "marital_unit_id": {self.year: marital_unit_ids},
             "marital_unit_weight": {self.year: weights},
+            "medicare_enrolled": {self.year: medicare_eligible},
         }
 
         self.save_dataset(data)
@@ -145,6 +161,7 @@ class TaxCalculator:
         dividend_income_array: np.ndarray | None = None,
         employment_income_array: np.ndarray | None = None,
         year: int | None = None,
+        prior_year_agi: np.ndarray | None = None,
     ) -> dict[str, np.ndarray]:
         """
         Calculate taxes for a batch of scenarios using PolicyEngine-US.
@@ -153,6 +170,8 @@ class TaxCalculator:
             year: Calendar year for tax calculation. If None, uses self.year.
                   PolicyEngine inflates tax brackets, so future years will
                   have lower effective tax rates on the same nominal income.
+            prior_year_agi: AGI from 2 years prior for IRMAA calculation.
+                           IRMAA uses income from 2 years before the current year.
         """
         n_scenarios = len(capital_gains_array)
         calc_year = year if year is not None else self.year
@@ -162,6 +181,9 @@ class TaxCalculator:
 
         if employment_income_array is None:
             employment_income_array = np.zeros(n_scenarios)
+
+        if prior_year_agi is None:
+            prior_year_agi = np.zeros(n_scenarios)
 
         dataset = MonteCarloDataset(
             n_scenarios=n_scenarios,
@@ -173,6 +195,7 @@ class TaxCalculator:
             filing_status=filing_status,
             dividend_income_array=dividend_income_array,
             employment_income_array=employment_income_array,
+            prior_year_agi=prior_year_agi,
         )
 
         try:
@@ -184,6 +207,7 @@ class TaxCalculator:
                 "federal_income_tax": sim.calculate("income_tax", calc_year),
                 "state_income_tax": sim.calculate("state_income_tax", calc_year),
                 "taxable_income": sim.calculate("taxable_income", calc_year),
+                "adjusted_gross_income": sim.calculate("adjusted_gross_income", calc_year),
             }
 
             results["total_tax"] = (
@@ -197,7 +221,21 @@ class TaxCalculator:
                 total_income > 0, results["total_tax"] / total_income, 0
             )
 
+            # Calculate IRMAA (Income-Related Monthly Adjustment Amount)
+            # PolicyEngine's income_adjusted_part_b_premium includes base + IRMAA surcharge
+            # Both variables return ANNUAL values, so no need to multiply by 12
+            income_adjusted_premium = sim.calculate(
+                "income_adjusted_part_b_premium", calc_year
+            )
+            base_premium = sim.calculate("base_part_b_premium", calc_year)
+
+            # IRMAA is the difference (already annual values)
+            annual_irmaa = np.maximum(0, income_adjusted_premium - base_premium)
+            results["irmaa"] = np.asarray(annual_irmaa).flatten()
+
             return results
 
         finally:
             dataset.cleanup()
+
+

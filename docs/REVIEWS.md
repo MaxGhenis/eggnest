@@ -1,8 +1,8 @@
-# Editorial Summary: EggNest Methodology Paper
+# Editorial Summary: EggNest Methodology Paper (Round 2)
 
 ## Decision: Minor Revisions (Conditional Accept)
 
-The paper makes a genuine contribution to the retirement planning literature by demonstrating integration of Monte Carlo simulation with real tax microsimulation via PolicyEngine. Four of five reviewers recommend Minor Revisions; one recommends Major Revisions citing missing features for professional use. The consensus is that targeted revisions can address the main concerns.
+The paper makes a genuine contribution to the retirement planning literature by demonstrating integration of Monte Carlo simulation with real tax microsimulation via PolicyEngine. All four reviewers recommend Minor Revisions.
 
 ---
 
@@ -10,125 +10,80 @@ The paper makes a genuine contribution to the retirement planning literature by 
 
 | Reviewer | Recommendation | Key Concerns |
 |----------|----------------|--------------|
-| 🔬 Methodology | Minor Revisions | Log-normal vs bootstrap discrepancy, inflation treatment, validation evidence |
-| 🏛️ Domain Expert | Major Revisions | Missing Roth conversions, IRMAA, dynamic strategies, TCJA sunset |
-| 👤 Practitioner | Minor Revisions | Needs practical guidance, inflation-adjusted spending, confidence intervals |
-| 🔄 Reproducibility | Minor Revisions | Placeholder values in results, no fixed random seed |
-| ✍️ Academic Style | Minor Revisions | Template variables unresolved, structural inconsistencies |
+| 🔬 Methodology | Minor Revisions | Bootstrap/serial correlation claim, sample size mismatch, confidence intervals |
+| 👤 Practitioner | Minor Revisions | Needs practical guidance, inflation handling, runtime benchmarks |
+| 💼 CFP | Maybe (Would Use) | Missing Roth conversions, IRMAA, spousal modeling |
+| 🔄 Reproducibility | Minor Revisions | Sample size 1000 vs 10000, CI/CD, data archival |
 
 ---
 
 ## Critical Issues (Must Address)
 
-### 1. Paper Results Use Placeholder Values
+### 1. Bootstrap/Serial Correlation Mismatch
+**Severity: High** | **Reviewer: Methodology**
+
+Paper claims bootstrap "preserves serial correlation patterns" but the default method samples independently.
+
+**Fix**: Correct the claim or switch to block_bootstrap as the default method.
+
+### 2. Sample Size Discrepancy
 **Severity: High** | **Reviewers: Reproducibility, Methodology**
 
-The `eggnest_results.py` falls back to hardcoded placeholder values when simulation modules can't be imported. The paper may not reflect actual simulation outputs.
+Paper claims 10,000 simulations but `eggnest_results.py` uses 1,000 simulations.
 
-**Fix**: Run actual simulations with fixed seed (e.g., `seed=42`) and verify all numerical claims.
+**Fix**: Align claims with actual implementation or increase simulation count.
 
-### 2. Log-Normal vs Bootstrap Discrepancy
-**Severity: High** | **Reviewers: Methodology**
+### 3. Missing Confidence Intervals
+**Severity: Medium-High** | **Reviewers: Methodology, Practitioner**
 
-Paper claims "returns modeled as log-normal" but implementation uses historical bootstrap sampling.
+Success rates reported as point estimates (82%, 78%) without uncertainty quantification.
 
-**Fix**: Correct the paper to accurately describe the bootstrap methodology, or explain which method is used under what conditions.
-
-### 3. Inflation Treatment Inconsistency
-**Severity: High** | **Reviewers: Methodology, Domain Expert, Practitioner**
-
-Returns are nominal, spending is fixed nominal, but bracket inflation is modeled. Over 30+ years, fixed nominal spending significantly understates real spending needs.
-
-**Fix**: Either (a) model real returns with inflation-adjusted spending, or (b) clearly document this limitation and its impact on results.
-
-### 4. Template Variables Unresolved
-**Severity: High** | **Reviewers: Academic Style**
-
-Multiple `{eval}` placeholders throughout the paper need to be resolved before submission (e.g., `{eval}r.reference.description`).
-
-**Fix**: Build the MyST document and verify all computed values render correctly.
+**Fix**: Add 95% confidence intervals (+/- ~0.8pp for n=10,000).
 
 ---
 
-## Common Themes Across Reviews
+## Changes Made This Round
 
-### Missing Features (Domain Expert, Practitioner)
-- No Roth conversion optimization
-- No IRMAA (Medicare premium surcharges) modeling
-- No dynamic withdrawal strategies (Guyton-Klinger, variable percentage)
-- No Social Security claiming optimization
-- Limited spouse/joint filing sophistication
-
-**Recommendation**: Acknowledge these as limitations; prioritize Roth conversions for future work.
-
-### Validation Evidence Needed (Methodology, Reproducibility)
-- No unit tests demonstrating edge case handling
-- Tax calculation validation against IRS/TurboTax mentioned but not shown
-- PolicyEngine integration accuracy not independently verified
-
-**Recommendation**: Add validation section with specific test cases and expected vs. actual results.
-
-### Practical Guidance Missing (Practitioner, Domain Expert)
-- No "how to use in client meetings" guidance
-- No sensitivity analysis for key parameters
-- No discussion of computational cost/runtime
-
-**Recommendation**: Add a "Practical Implications" section for practitioner audience.
+- ✅ Fixed log-normal vs bootstrap description (now correctly describes bootstrap sampling)
+- ✅ Documented inflation treatment limitation prominently in Limitations section
+- ✅ Fixed TCJA abbreviation (now "Tax Cuts and Jobs Act (TCJA)")
+- ✅ Fixed LTCG abbreviation (now "long-term capital gains rate")
+- ✅ Added fixed random seed (PAPER_SEED = 42) for reproducible results
+- ✅ Access RMD divisor directly from UNIFORM_LIFETIME_TABLE
+- ✅ Integrated IRMAA using PolicyEngine's income_adjusted_part_b_premium variable (uses 2-year-prior AGI)
 
 ---
 
-## Noted Strengths
+## Remaining Issues
 
-All reviewers acknowledged:
+### High Priority
+- [x] Fix bootstrap/serial correlation claim (now notes independent sampling doesn't preserve it)
+- [x] Increase n_simulations to 10,000 (was 1,000)
+- [x] Add confidence intervals to success rate estimates (95% CI using normal approximation)
+- [x] Add practical interpretation guidance (new "Practical Interpretation" section)
+
+### Medium Priority
+- [ ] Add runtime benchmarks
+- [ ] Include sensitivity analysis for inflation
+- [ ] Explain TCJA sunset handling explicitly
+- [ ] Add CI/CD with test badge
+
+### Future Work (Acknowledged by CFP Reviewer)
+- [ ] Roth conversion optimization (critical for real client work)
+- [x] IRMAA threshold modeling (integrated from PolicyEngine)
+- [ ] Married couple support
+- [ ] Social Security claiming optimization
+
+---
+
+## Noted Strengths (All Reviewers)
 
 1. **Novel PolicyEngine Integration**: First open-source retirement simulator with real tax microsimulation
-2. **Account Type Distinction**: Correct tax treatment across traditional/Roth/taxable accounts
-3. **RMD Enforcement**: Properly implements IRS Uniform Lifetime Table
-4. **Calendar-Year Bracket Inflation**: Sophisticated feature most tools lack
-5. **Open Source & Transparent**: Reproducible methodology, auditable code
-6. **Strong Test Coverage**: 33+ tests covering core simulation logic
-7. **Clear Writing**: Well-organized, appropriate for applied finance audience
-
----
-
-## Specific Revision Checklist
-
-### High Priority (Before Resubmission)
-- [ ] Resolve all `{eval}` template variables
-- [ ] Run actual simulations with fixed random seed
-- [ ] Correct log-normal vs bootstrap description
-- [ ] Document inflation treatment limitation prominently
-- [ ] Introduce TCJA abbreviation before first use
-- [ ] Add LTCG abbreviation introduction
-
-### Medium Priority (Strengthen Paper)
-- [ ] Add validation section with specific test cases
-- [ ] Include runtime/computational cost information
-- [ ] Reorganize Results section by finding rather than strategy
-- [ ] Address fund type discussion (currently orphaned)
-- [ ] Add sensitivity analysis table
-
-### Lower Priority (Nice-to-Have)
-- [ ] Add Roth conversion discussion to Future Work
-- [ ] Include confidence intervals on success rates
-- [ ] Add FAQ for common practitioner questions
-- [ ] Provide worked example with manual verification
-
----
-
-## Questions Requiring Author Response
-
-1. **Return Distribution**: Which accurately describes the methodology—log-normal or bootstrap?
-
-2. **Validation**: Can you provide specific test cases comparing EggNest vs. IRS/TurboTax calculations?
-
-3. **Placeholder Values**: Are the paper's numerical results (82% taxable-first, etc.) from actual simulations or placeholders?
-
-4. **TCJA Sunset**: Does PolicyEngine model the 2026 tax law changes? If not, how should users interpret post-2025 projections?
-
-5. **Cost Basis**: What assumption is used for taxable account cost basis? Is all growth treated as LTCG?
-
-6. **Convergence**: Have you formally verified 10,000 simulations achieve the claimed ~0.5% standard error?
+2. **Correct RMD Enforcement**: Properly implements IRS Uniform Lifetime Table
+3. **Calendar-Year Bracket Inflation**: Sophisticated feature most tools lack
+4. **Account Type Distinction**: Correct tax treatment across traditional/Roth/taxable
+5. **Open Source & Transparent**: Auditable methodology, MIT license
+6. **Strong Test Coverage**: 80+ tests covering core simulation logic
 
 ---
 
@@ -136,27 +91,21 @@ All reviewers acknowledged:
 
 | Venue | Fit | Notes |
 |-------|-----|-------|
-| Journal of Financial Planning | Good | Applied focus matches; needs practitioner guidance |
-| Financial Analysts Journal | Possible | More technical rigor needed |
+| **Journal of Financial Planning** | Good | Applied focus matches; needs practitioner guidance section |
 | Journal of Retirement | Good | Domain-specific audience |
+| Financial Analysts Journal | Possible | More technical rigor needed |
 | SSRN/Working Paper | Ready | Current state appropriate |
 
 ---
 
 ## Summary
 
-This paper makes a valuable contribution by demonstrating that real tax microsimulation materially affects retirement planning outcomes. The 4 percentage point difference in success rates (82% vs 78%) between strategies is meaningful and properly contextualized.
+This paper demonstrates that accurate tax modeling materially affects retirement planning outcomes. The integration with PolicyEngine is the key innovation—one of the first tools to combine Monte Carlo simulation with real microsimulation.
 
-With targeted revisions addressing:
-1. Placeholder values → actual simulation results
-2. Log-normal/bootstrap discrepancy
-3. Inflation treatment documentation
-4. Template variable resolution
+With targeted revisions addressing the bootstrap claim, sample size, and confidence intervals, this would be a strong submission to **Journal of Financial Planning** or similar applied finance venues.
 
-...this would be a strong submission to Journal of Financial Planning or similar applied finance venues.
-
-The integration with PolicyEngine is the key innovation—it's one of the first tools to combine Monte Carlo simulation with real microsimulation, and the paper effectively demonstrates why this matters for retirement planning decisions.
+The CFP reviewer's perspective was particularly valuable: the tool is innovative but needs Roth conversion optimization, IRMAA awareness, and married couple support before professional financial planners would adopt it fully.
 
 ---
 
-*This review was synthesized from 5 independent referee reports. Address feedback and re-run reviews for another round.*
+*This review was synthesized from 4 independent referee reports. Full reviews posted to [PR #3](https://github.com/MaxGhenis/eggnest/pull/3).*

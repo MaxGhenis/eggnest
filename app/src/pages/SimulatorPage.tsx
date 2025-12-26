@@ -4,6 +4,7 @@ import { Wizard, type WizardStep } from "../components/Wizard";
 import { SimulationProgress } from "../components/SimulationProgress";
 import { HoldingsEditor } from "../components/HoldingsEditor";
 import { ResultsSkeleton } from "../components/ResultsSkeleton";
+import { OutcomesChart } from "../components/OutcomesChart";
 import {
   runSimulationWithProgress,
   compareAnnuity,
@@ -2018,9 +2019,19 @@ export function SimulatorPage() {
         );
       })()}
 
+      {/* Outcomes distribution stacked area chart */}
+      {result!.outcome_paths && (
+        <div className="chart-container outcomes-chart-container">
+          <OutcomesChart
+            outcomePaths={result!.outcome_paths}
+            startAge={params.current_age}
+          />
+        </div>
+      )}
+
       {/* Summary table */}
       <div className="summary-section">
-        <h3>Outcome Distribution</h3>
+        <h3>Final Portfolio Distribution</h3>
         <table className="summary-table">
           <thead>
             <tr>
