@@ -81,6 +81,42 @@ eggnest/
 - `runSimulationWithProgress()` - AsyncGenerator for SSE events
 - TypeScript interfaces mirror Pydantic models
 
+## Deployment
+
+### Frontend (Vercel)
+- **Production URL**: https://eggnest.vercel.app
+- **Project**: `max-ghenis-projects/eggnest`
+- **Environment Variables**:
+  - `VITE_API_URL`: https://maxghenis--eggnest-api-fastapi-app.modal.run
+
+```bash
+# Deploy to production
+vercel --prod
+
+# Check env vars
+vercel env ls
+
+# Add env var
+echo "value" | vercel env add VAR_NAME production
+```
+
+### Backend (Modal)
+- **Production URL**: https://maxghenis--eggnest-api-fastapi-app.modal.run
+- **App name**: `eggnest-api`
+- **Workspace**: `maxghenis`
+
+```bash
+# Deploy to Modal
+cd api
+modal deploy modal_app.py
+
+# View logs
+modal app logs eggnest-api
+
+# List apps
+modal app list
+```
+
 ## Conventions
 
 - Backend uses Pydantic v2 models with `Field()` validators
