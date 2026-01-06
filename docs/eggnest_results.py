@@ -58,10 +58,29 @@ class SimulationResult:
     total_taxes_median: float
     p5_final: float
     p95_final: float
+    n_simulations: int = 10_000
 
     @property
     def success_pct(self) -> str:
         return f"{self.success_rate * 100:.1f}%"
+
+    @property
+    def success_ci_95(self) -> tuple[float, float]:
+        """95% confidence interval for success rate using normal approximation."""
+        import math
+        p = self.success_rate
+        n = self.n_simulations
+        # Standard error for binomial proportion
+        se = math.sqrt(p * (1 - p) / n)
+        # 95% CI: p +/- 1.96 * SE
+        margin = 1.96 * se
+        return (max(0, p - margin), min(1, p + margin))
+
+    @property
+    def success_pct_with_ci(self) -> str:
+        """Success rate with 95% CI."""
+        lo, hi = self.success_ci_95
+        return f"{self.success_rate * 100:.1f}% (95% CI: {lo * 100:.1f}%-{hi * 100:.1f}%)"
 
     @property
     def median_final_fmt(self) -> str:
@@ -179,7 +198,7 @@ def compute_results() -> Results:
     try:
         from eggnest.models import SimulationInput, Holding
         from eggnest.simulation import MonteCarloSimulator
-        from eggnest.rmd import RMD_START_AGE, get_rmd_divisor
+        from eggnest.rmd import RMD_START_AGE, UNIFORM_LIFETIME_TABLE
         from policyengine_us import Simulation
 
         ref = r.reference
@@ -191,7 +210,10 @@ def compute_results() -> Results:
             Holding(account_type="taxable", fund="bnd", balance=ref.taxable),
         ]
 
-        # Run simulations for each strategy
+        # Run simulations for each strategy with fixed seed for reproducibility
+        import numpy as np
+        PAPER_SEED = 42  # Fixed seed for reproducible paper results
+
         strategies = ["taxable_first", "traditional_first", "roth_first", "pro_rata"]
         results = {}
 
@@ -208,10 +230,12 @@ def compute_results() -> Results:
                 filing_status=ref.filing_status,
                 social_security_monthly=ref.social_security_monthly,
                 social_security_start_age=ref.social_security_start_age,
-                n_simulations=1000,  # Reduced for paper generation speed
+                n_simulations=10_000,  # Full simulation count for paper
             )
 
             sim = MonteCarloSimulator(params)
+            # Set fixed seed for reproducibility
+            sim._rng = np.random.default_rng(seed=PAPER_SEED)
             result = sim.run()
 
             results[strategy] = SimulationResult(
@@ -219,8 +243,9 @@ def compute_results() -> Results:
                 success_rate=result.success_rate,
                 median_final=result.median_final_value,
                 total_taxes_median=result.total_taxes_median,
-                p5_final=result.percentile_paths.p5[-1] if hasattr(result, 'percentile_paths') else 0,
-                p95_final=result.percentile_paths.p95[-1] if hasattr(result, 'percentile_paths') else 0,
+                p5_final=result.percentile_paths.get("p5", [0])[-1] if result.percentile_paths else 0,
+                p95_final=result.percentile_paths.get("p95", [0])[-1] if result.percentile_paths else 0,
+                n_simulations=params.n_simulations,
             )
 
         r.strategies = StrategyComparison(
@@ -256,7 +281,7 @@ def compute_results() -> Results:
         # RMD example
         r.rmd_example.age = 75
         r.rmd_example.traditional_balance = 300_000
-        r.rmd_example.divisor = get_rmd_divisor(75)
+        r.rmd_example.divisor = UNIFORM_LIFETIME_TABLE[75]  # 24.6
         r.rmd_example.rmd_amount = r.rmd_example.traditional_balance / r.rmd_example.divisor
 
         # Mortality (hardcoded from SSA tables)
@@ -289,16 +314,18 @@ r = compute_results()
 
 if __name__ == "__main__":
     print("EggNest Paper Results")
-    print("=" * 50)
+    print("=" * 60)
     print(f"\nReference Case: {r.reference.description}")
     print(f"Portfolio: {r.reference.portfolio_description}")
-    print(f"\nWithdrawal Strategies:")
+    print(f"\nWithdrawal Strategies (n={r.n_simulations:,} simulations):")
     for name, result in [("Taxable First", r.strategies.taxable_first),
                          ("Traditional First", r.strategies.traditional_first),
                          ("Roth First", r.strategies.roth_first),
                          ("Pro Rata", r.strategies.pro_rata)]:
         if result:
-            print(f"  {name}: {result.success_pct} success, {result.median_final_fmt} median, {result.taxes_fmt} taxes")
+            print(f"  {name}:")
+            print(f"    Success: {result.success_pct_with_ci}")
+            print(f"    Median final: {result.median_final_fmt}, Taxes: {result.taxes_fmt}")
 
     print(f"\nTax Bracket Inflation (${r.bracket_inflation.income:,} income):")
     print(f"  2025: ${r.bracket_inflation.tax_2025:,.0f}")

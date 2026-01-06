@@ -36,6 +36,7 @@ class Settings(BaseSettings):
         "http://localhost:5182",
         "https://app.eggnest.co",
         "https://eggnest.co",
+        "https://eggnest.vercel.app",
     ]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

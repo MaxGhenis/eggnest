@@ -99,6 +99,7 @@ class SimulationInput(BaseModel):
     # Simulation settings
     n_simulations: int = Field(default=10_000, ge=100, le=100_000, description="Number of Monte Carlo paths")
     include_mortality: bool = Field(default=True, description="Account for probability of death each year")
+    include_irmaa: bool = Field(default=True, description="Include Medicare IRMAA surcharges (ages 65+)")
     return_model: Literal["bootstrap", "block_bootstrap", "historical", "normal"] = Field(
         default="bootstrap",
         description="Return generation method: bootstrap (default), block_bootstrap, historical, or normal"
@@ -196,6 +197,24 @@ class YearBreakdown(BaseModel):
     net_income: float = Field(..., description="Net income after taxes")
 
 
+class OutcomePaths(BaseModel):
+    """Outcome distribution paths for visualization (stacked area chart)."""
+
+    # Cumulative outcomes (sum to 100% at each age)
+    died_with_money: list[float] = Field(
+        ..., description="Cumulative % who died with money remaining"
+    )
+    died_broke: list[float] = Field(
+        ..., description="Cumulative % who ran out of money before death"
+    )
+    alive_with_money: list[float] = Field(
+        ..., description="% still alive with money at each age"
+    )
+    alive_broke: list[float] = Field(
+        ..., description="% still alive but depleted at each age"
+    )
+
+
 class SimulationResult(BaseModel):
     """Results from a retirement simulation."""
 
@@ -212,6 +231,11 @@ class SimulationResult(BaseModel):
     # For charting
     percentile_paths: dict[str, list[float]] = Field(
         ..., description="Time series of percentile values (by age)"
+    )
+
+    # Outcome distribution for stacked area chart
+    outcome_paths: OutcomePaths | None = Field(
+        default=None, description="Outcome distribution over time (died rich/broke, alive rich/broke)"
     )
 
     # Year-by-year breakdown (median path)
