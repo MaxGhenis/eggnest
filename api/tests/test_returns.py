@@ -1,14 +1,12 @@
 """Tests for returns module with separate price and dividend returns."""
 
 import numpy as np
-import pytest
+
 from eggnest.returns import (
+    SP500_DIVIDEND_ARRAY,
+    SP500_PRICE_ARRAY,
     generate_blended_returns,
     get_return_arrays,
-    SP500_PRICE_ARRAY,
-    SP500_DIVIDEND_ARRAY,
-    VT_PRICE_ARRAY,
-    VT_DIVIDEND_ARRAY,
 )
 
 
@@ -33,13 +31,13 @@ def test_price_and_dividend_separate():
         stock_allocation=1.0,
         stock_index="sp500",
     )
-    
+
     # Price returns can be negative
     assert np.any(price_ret < 0)
-    
+
     # Dividend returns should always be positive (or at least non-negative)
     assert np.all(div_ret >= 0)
-    
+
     # Mean dividend yield should be around 2-5% historically
     mean_div = np.mean(div_ret)
     assert 0.01 < mean_div < 0.10
@@ -64,7 +62,7 @@ def test_get_return_arrays_alignment():
         stock_index="vt",
         bond_index="bnd",
     )
-    
+
     # All should have same length
     assert len(stock_price) == len(stock_div)
     assert len(stock_price) == len(bond_price)

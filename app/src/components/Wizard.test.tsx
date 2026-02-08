@@ -37,7 +37,7 @@ describe('Wizard', () => {
   it('shows Back button disabled on first step', () => {
     render(<Wizard steps={mockSteps} onComplete={vi.fn()} />)
 
-    const backButton = screen.getByRole('button', { name: /back/i })
+    const backButton = screen.getByRole('button', { name: /previous step/i })
     expect(backButton).toBeDisabled()
   })
 
@@ -60,7 +60,7 @@ describe('Wizard', () => {
     expect(screen.getByText('Step 2 content')).toBeInTheDocument()
 
     // Go back to step 1
-    await user.click(screen.getByRole('button', { name: /back/i }))
+    await user.click(screen.getByRole('button', { name: /previous step/i }))
     expect(screen.getByText('Step 1 content')).toBeInTheDocument()
   })
 

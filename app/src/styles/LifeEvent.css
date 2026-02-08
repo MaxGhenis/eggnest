@@ -559,6 +559,48 @@
   margin-top: 1rem;
 }
 
+/* Field validation errors */
+.life-event-page .field-error {
+  font-size: 0.8rem;
+  color: #dc2626;
+  margin: 0.25rem 0 0;
+  line-height: 1.3;
+}
+
+.form-field input[aria-invalid="true"],
+.form-field select[aria-invalid="true"] {
+  border-color: #dc2626;
+}
+
+.form-field input[aria-invalid="true"]:focus,
+.form-field select[aria-invalid="true"]:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+}
+
+/* Screen reader only utility */
+.life-event-page .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Focus visible indicators */
+.btn-calculate:focus-visible,
+.scenario-card:focus-visible,
+.scenario-btn:focus-visible,
+.back-button:focus-visible,
+.nav-link:focus-visible {
+  outline: 2px solid var(--color-primary, #d97706);
+  outline-offset: 2px;
+}
+
 /* Error Banner */
 .error-banner {
   padding: 1rem;

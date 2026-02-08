@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .config import get_settings
 
 # Supabase is optional - works without it for core simulation
 try:
     from supabase import Client, create_client
+
     HAS_SUPABASE = True
 except ImportError:
     HAS_SUPABASE = False
@@ -61,9 +62,7 @@ async def verify_jwt(token: str) -> dict | None:
     return None
 
 
-async def save_simulation(
-    user_id: str, name: str, input_params: dict
-) -> dict | None:
+async def save_simulation(user_id: str, name: str, input_params: dict) -> dict | None:
     """Save a simulation configuration for a user."""
     client = get_supabase_client()
     if not client:

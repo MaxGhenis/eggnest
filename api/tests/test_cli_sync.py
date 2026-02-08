@@ -1,18 +1,14 @@
 """Tests for CLI sync module."""
 
-import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import pytest
 import yaml
 
 from eggnest.sync import (
+    DEFAULT_SCENARIOS_DIR,
     EggNestSync,
+    get_sync_client,
     scenario_to_yaml,
     yaml_to_scenario,
-    get_sync_client,
-    DEFAULT_SCENARIOS_DIR,
 )
 
 
@@ -112,7 +108,10 @@ class TestScenarioToYaml:
         """Test converting a scenario with spouse to YAML."""
         yaml_content = scenario_to_yaml(sample_scenario_with_spouse)
 
-        assert "has_spouse: true" in yaml_content.lower() or "has_spouse: True" in yaml_content
+        assert (
+            "has_spouse: true" in yaml_content.lower()
+            or "has_spouse: True" in yaml_content
+        )
         assert "spouse:" in yaml_content
         assert "age: 58" in yaml_content
 
@@ -233,7 +232,7 @@ class TestEggNestSync:
         scenarios_dir = tmp_path / "new_scenarios"
         assert not scenarios_dir.exists()
 
-        sync = EggNestSync(scenarios_dir)
+        _sync = EggNestSync(scenarios_dir)
         assert scenarios_dir.exists()
 
     def test_list_local_empty(self, temp_scenarios_dir):
@@ -300,11 +299,21 @@ class TestRoundTrip:
 
         # Check key fields survived
         assert parsed["name"] == sample_scenario["name"]
-        assert parsed["input_params"]["initial_capital"] == sample_scenario["input_params"]["initial_capital"]
-        assert parsed["input_params"]["annual_spending"] == sample_scenario["input_params"]["annual_spending"]
-        assert parsed["input_params"]["state"] == sample_scenario["input_params"]["state"]
+        assert (
+            parsed["input_params"]["initial_capital"]
+            == sample_scenario["input_params"]["initial_capital"]
+        )
+        assert (
+            parsed["input_params"]["annual_spending"]
+            == sample_scenario["input_params"]["annual_spending"]
+        )
+        assert (
+            parsed["input_params"]["state"] == sample_scenario["input_params"]["state"]
+        )
 
-    def test_scenario_with_spouse_round_trip(self, temp_scenarios_dir, sample_scenario_with_spouse):
+    def test_scenario_with_spouse_round_trip(
+        self, temp_scenarios_dir, sample_scenario_with_spouse
+    ):
         """Test that a scenario with spouse survives round-trip conversion."""
         # Convert to YAML
         yaml_content = scenario_to_yaml(sample_scenario_with_spouse)

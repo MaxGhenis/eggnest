@@ -1,17 +1,13 @@
 """Tests for household tax and benefits calculator."""
 
-import pytest
 from fastapi.testclient import TestClient
 
+from eggnest.household import HouseholdCalculator
 from eggnest.models import (
     HouseholdInput,
     PersonInput,
-    HouseholdResult,
-    LifeEventComparison,
 )
-from eggnest.household import HouseholdCalculator
 from main import app
-
 
 client = TestClient(app)
 
@@ -37,7 +33,7 @@ class TestPersonInput:
             is_tax_unit_head=False,
         )
         assert child.age == 5
-        assert child.is_tax_unit_dependent == True  # Should default for children
+        assert child.is_tax_unit_dependent is True  # Should default for children
 
     def test_person_defaults(self):
         """Test default values for person."""
@@ -161,11 +157,7 @@ class TestHouseholdCalculator:
         result = calc.calculate(household)
 
         # Net income = gross - taxes + benefits
-        expected_net = (
-            result.total_income
-            - result.total_taxes
-            + result.total_benefits
-        )
+        expected_net = result.total_income - result.total_taxes + result.total_benefits
         assert abs(result.net_income - expected_net) < 1  # Allow small rounding
 
     def test_marginal_tax_rate(self):
@@ -188,9 +180,7 @@ class TestHouseholdCalculator:
         household = HouseholdInput(
             state="CA",
             year=2025,
-            people=[
-                PersonInput(age=25, employment_income=0, is_tax_unit_head=True)
-            ],
+            people=[PersonInput(age=25, employment_income=0, is_tax_unit_head=True)],
         )
         calc = HouseholdCalculator()
         result = calc.calculate(household)
@@ -336,7 +326,11 @@ class TestCompareEndpoint:
                     "state": "CA",
                     "year": 2025,
                     "people": [
-                        {"age": 30, "employment_income": 60000, "is_tax_unit_head": True}
+                        {
+                            "age": 30,
+                            "employment_income": 60000,
+                            "is_tax_unit_head": True,
+                        }
                     ],
                 },
                 "after": {
@@ -344,7 +338,11 @@ class TestCompareEndpoint:
                     "year": 2025,
                     "filing_status": "head_of_household",
                     "people": [
-                        {"age": 30, "employment_income": 60000, "is_tax_unit_head": True},
+                        {
+                            "age": 30,
+                            "employment_income": 60000,
+                            "is_tax_unit_head": True,
+                        },
                         {"age": 0, "is_tax_unit_dependent": True},
                     ],
                 },
@@ -369,14 +367,22 @@ class TestCompareEndpoint:
                     "state": "CA",
                     "year": 2025,
                     "people": [
-                        {"age": 35, "employment_income": 75000, "is_tax_unit_head": True}
+                        {
+                            "age": 35,
+                            "employment_income": 75000,
+                            "is_tax_unit_head": True,
+                        }
                     ],
                 },
                 "after": {
                     "state": "CA",
                     "year": 2025,
                     "people": [
-                        {"age": 35, "employment_income": 100000, "is_tax_unit_head": True}
+                        {
+                            "age": 35,
+                            "employment_income": 100000,
+                            "is_tax_unit_head": True,
+                        }
                     ],
                 },
                 "event_name": "Getting a raise",

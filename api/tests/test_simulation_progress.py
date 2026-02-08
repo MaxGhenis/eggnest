@@ -1,6 +1,7 @@
 """Tests for simulation progress streaming functionality."""
 
 import pytest
+
 from eggnest.models import SimulationInput
 from eggnest.simulation import MonteCarloSimulator
 

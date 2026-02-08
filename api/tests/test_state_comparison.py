@@ -3,9 +3,13 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from eggnest.models import SimulationInput, StateComparisonInput, StateResult, StateComparisonResult
+from eggnest.models import (
+    SimulationInput,
+    StateComparisonInput,
+    StateComparisonResult,
+    StateResult,
+)
 from main import app
-
 
 client = TestClient(app)
 
@@ -32,8 +36,7 @@ class TestStateComparisonModels:
     def test_state_comparison_input_valid(self, base_params):
         """Test valid StateComparisonInput creation."""
         comparison = StateComparisonInput(
-            base_input=base_params,
-            compare_states=["TX", "FL", "NV"]
+            base_input=base_params, compare_states=["TX", "FL", "NV"]
         )
         assert comparison.base_input.state == "CA"
         assert len(comparison.compare_states) == 3
@@ -41,17 +44,26 @@ class TestStateComparisonModels:
     def test_state_comparison_input_requires_states(self, base_params):
         """Test that compare_states is required and non-empty."""
         with pytest.raises(ValueError):
-            StateComparisonInput(
-                base_input=base_params,
-                compare_states=[]
-            )
+            StateComparisonInput(base_input=base_params, compare_states=[])
 
     def test_state_comparison_input_max_states(self, base_params):
         """Test that compare_states has max limit."""
         with pytest.raises(ValueError):
             StateComparisonInput(
                 base_input=base_params,
-                compare_states=["TX", "FL", "NV", "WA", "WY", "SD", "AK", "TN", "NH", "OR", "MT"]
+                compare_states=[
+                    "TX",
+                    "FL",
+                    "NV",
+                    "WA",
+                    "WY",
+                    "SD",
+                    "AK",
+                    "TN",
+                    "NH",
+                    "OR",
+                    "MT",
+                ],
             )
 
     def test_state_result_model(self):
@@ -197,11 +209,13 @@ class TestStateComparisonTaxDifferences:
     def test_no_income_tax_state_returns_valid_results(self, base_params):
         """Test that no-income-tax state comparison returns valid results."""
         # Run comparison with a high-income scenario where state taxes matter
-        high_income_params = base_params.model_copy(update={
-            "initial_capital": 2_000_000,
-            "annual_spending": 100_000,
-            "state": "CA",
-        })
+        high_income_params = base_params.model_copy(
+            update={
+                "initial_capital": 2_000_000,
+                "annual_spending": 100_000,
+                "state": "CA",
+            }
+        )
 
         response = client.post(
             "/compare-states",
@@ -244,5 +258,7 @@ class TestStateComparisonTaxDifferences:
         tx_result = next(r for r in data["results"] if r["state"] == "TX")
 
         # Verify calculation: savings = base_taxes - state_taxes
-        expected_tx_savings = ca_result["total_taxes_median"] - tx_result["total_taxes_median"]
+        expected_tx_savings = (
+            ca_result["total_taxes_median"] - tx_result["total_taxes_median"]
+        )
         assert abs(data["tax_savings_vs_base"]["TX"] - expected_tx_savings) < 0.01

@@ -30,6 +30,8 @@ image = (
 @modal.asgi_app()
 def fastapi_app():
     import sys
+
     sys.path.insert(0, "/root")
     from main import app
+
     return app

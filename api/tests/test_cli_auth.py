@@ -1,10 +1,8 @@
 """Tests for CLI authentication module."""
 
 import json
-import os
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -15,7 +13,6 @@ from eggnest.auth import (
     is_logged_in,
     load_credentials,
     save_credentials,
-    CREDENTIALS_FILE,
 )
 
 
@@ -109,7 +106,9 @@ class TestCredentialsPersistence:
         assert data["access_token"] == "test_access_token"
         assert data["user_email"] == "test@example.com"
 
-    def test_save_credentials_creates_directory(self, temp_credentials_file, sample_credentials):
+    def test_save_credentials_creates_directory(
+        self, temp_credentials_file, sample_credentials
+    ):
         """Test that save_credentials creates parent directory."""
         assert not temp_credentials_file.parent.exists()
         save_credentials(sample_credentials)
@@ -159,7 +158,9 @@ class TestCredentialsPersistence:
 class TestAuthHelpers:
     """Tests for authentication helper functions."""
 
-    def test_get_current_user_logged_in(self, temp_credentials_file, sample_credentials):
+    def test_get_current_user_logged_in(
+        self, temp_credentials_file, sample_credentials
+    ):
         """Test getting current user when logged in."""
         save_credentials(sample_credentials)
         assert get_current_user() == "test@example.com"
@@ -168,7 +169,9 @@ class TestAuthHelpers:
         """Test getting current user when not logged in."""
         assert get_current_user() is None
 
-    def test_is_logged_in_with_valid_credentials(self, temp_credentials_file, sample_credentials):
+    def test_is_logged_in_with_valid_credentials(
+        self, temp_credentials_file, sample_credentials
+    ):
         """Test is_logged_in with valid credentials."""
         save_credentials(sample_credentials)
         assert is_logged_in()
@@ -192,5 +195,7 @@ class TestAuthHelpers:
         """Test is_logged_in with expired credentials when refresh succeeds."""
         save_credentials(expired_credentials)
 
-        with patch("eggnest.auth.refresh_access_token", return_value=sample_credentials):
+        with patch(
+            "eggnest.auth.refresh_access_token", return_value=sample_credentials
+        ):
             assert is_logged_in()

@@ -1,7 +1,5 @@
 """Tests for the Monte Carlo simulation engine."""
 
-import pytest
-
 from eggnest.models import SimulationInput
 from eggnest.simulation import MonteCarloSimulator
 

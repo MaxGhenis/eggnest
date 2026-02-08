@@ -6,21 +6,61 @@ from eggnest.models import (
     HouseholdInput,
     HouseholdResult,
     LifeEventComparison,
-    PersonInput,
 )
-
 
 # State FIPS codes for PolicyEngine
 STATE_FIPS = {
-    "AL": "01", "AK": "02", "AZ": "04", "AR": "05", "CA": "06", "CO": "08",
-    "CT": "09", "DE": "10", "DC": "11", "FL": "12", "GA": "13", "HI": "15",
-    "ID": "16", "IL": "17", "IN": "18", "IA": "19", "KS": "20", "KY": "21",
-    "LA": "22", "ME": "23", "MD": "24", "MA": "25", "MI": "26", "MN": "27",
-    "MS": "28", "MO": "29", "MT": "30", "NE": "31", "NV": "32", "NH": "33",
-    "NJ": "34", "NM": "35", "NY": "36", "NC": "37", "ND": "38", "OH": "39",
-    "OK": "40", "OR": "41", "PA": "42", "RI": "44", "SC": "45", "SD": "46",
-    "TN": "47", "TX": "48", "UT": "49", "VT": "50", "VA": "51", "WA": "53",
-    "WV": "54", "WI": "55", "WY": "56",
+    "AL": "01",
+    "AK": "02",
+    "AZ": "04",
+    "AR": "05",
+    "CA": "06",
+    "CO": "08",
+    "CT": "09",
+    "DE": "10",
+    "DC": "11",
+    "FL": "12",
+    "GA": "13",
+    "HI": "15",
+    "ID": "16",
+    "IL": "17",
+    "IN": "18",
+    "IA": "19",
+    "KS": "20",
+    "KY": "21",
+    "LA": "22",
+    "ME": "23",
+    "MD": "24",
+    "MA": "25",
+    "MI": "26",
+    "MN": "27",
+    "MS": "28",
+    "MO": "29",
+    "MT": "30",
+    "NE": "31",
+    "NV": "32",
+    "NH": "33",
+    "NJ": "34",
+    "NM": "35",
+    "NY": "36",
+    "NC": "37",
+    "ND": "38",
+    "OH": "39",
+    "OK": "40",
+    "OR": "41",
+    "PA": "42",
+    "RI": "44",
+    "SC": "45",
+    "SD": "46",
+    "TN": "47",
+    "TX": "48",
+    "UT": "49",
+    "VT": "50",
+    "VA": "51",
+    "WA": "53",
+    "WV": "54",
+    "WI": "55",
+    "WY": "56",
 }
 
 # Filing status mapping for PolicyEngine
@@ -70,9 +110,13 @@ class HouseholdCalculator:
             if person.employment_income > 0:
                 person_data["employment_income"] = {year: person.employment_income}
             if person.self_employment_income > 0:
-                person_data["self_employment_income"] = {year: person.self_employment_income}
+                person_data["self_employment_income"] = {
+                    year: person.self_employment_income
+                }
             if person.social_security > 0:
-                person_data["social_security_retirement"] = {year: person.social_security}
+                person_data["social_security_retirement"] = {
+                    year: person.social_security
+                }
             if person.pension_income > 0:
                 person_data["taxable_pension_income"] = {year: person.pension_income}
             if person.investment_income > 0:
@@ -98,7 +142,9 @@ class HouseholdCalculator:
         # Build tax unit
         tax_unit = {
             "members": tax_unit_members,
-            "filing_status": {year: FILING_STATUS_MAP.get(household.filing_status, "SINGLE")},
+            "filing_status": {
+                year: FILING_STATUS_MAP.get(household.filing_status, "SINGLE")
+            },
         }
 
         # Build situation
@@ -154,8 +200,12 @@ class HouseholdCalculator:
 
         # Calculate total income
         total_income = sum(
-            p.employment_income + p.self_employment_income + p.social_security +
-            p.pension_income + p.investment_income + p.capital_gains
+            p.employment_income
+            + p.self_employment_income
+            + p.social_security
+            + p.pension_income
+            + p.investment_income
+            + p.capital_gains
             for p in household.people
         )
 
@@ -164,13 +214,19 @@ class HouseholdCalculator:
         state_income_tax = float(sim.calculate("state_income_tax", year).sum())
 
         # Calculate payroll taxes (employee side)
-        employee_social_security_tax = float(sim.calculate("employee_social_security_tax", year).sum())
-        employee_medicare_tax = float(sim.calculate("employee_medicare_tax", year).sum())
+        employee_social_security_tax = float(
+            sim.calculate("employee_social_security_tax", year).sum()
+        )
+        employee_medicare_tax = float(
+            sim.calculate("employee_medicare_tax", year).sum()
+        )
         payroll_tax = employee_social_security_tax + employee_medicare_tax
 
         # Self-employment tax if applicable
         try:
-            self_employment_tax = float(sim.calculate("self_employment_tax", year).sum())
+            self_employment_tax = float(
+                sim.calculate("self_employment_tax", year).sum()
+            )
             payroll_tax += self_employment_tax
         except Exception:
             pass
@@ -229,14 +285,26 @@ class HouseholdCalculator:
             marginal_situation = self._build_situation(household)
             # Add $1000 to first person's employment income
             first_person = list(marginal_situation["people"].keys())[0]
-            current_income = marginal_situation["people"][first_person].get("employment_income", {}).get(year, 0)
-            marginal_situation["people"][first_person]["employment_income"] = {year: current_income + 1000}
+            current_income = (
+                marginal_situation["people"][first_person]
+                .get("employment_income", {})
+                .get(year, 0)
+            )
+            marginal_situation["people"][first_person]["employment_income"] = {
+                year: current_income + 1000
+            }
 
             marginal_sim = Simulation(situation=marginal_situation)
             marginal_federal = float(marginal_sim.calculate("income_tax", year).sum())
-            marginal_state = float(marginal_sim.calculate("state_income_tax", year).sum())
-            marginal_payroll = float(marginal_sim.calculate("employee_social_security_tax", year).sum())
-            marginal_payroll += float(marginal_sim.calculate("employee_medicare_tax", year).sum())
+            marginal_state = float(
+                marginal_sim.calculate("state_income_tax", year).sum()
+            )
+            marginal_payroll = float(
+                marginal_sim.calculate("employee_social_security_tax", year).sum()
+            )
+            marginal_payroll += float(
+                marginal_sim.calculate("employee_medicare_tax", year).sum()
+            )
 
             marginal_total = marginal_federal + marginal_state + marginal_payroll
             base_total = federal_income_tax + state_income_tax + payroll_tax
@@ -261,7 +329,12 @@ class HouseholdCalculator:
             effective_tax_rate=effective_tax_rate,
         )
 
-    def compare(self, before: HouseholdInput, after: HouseholdInput, event_name: str = "Life Event") -> LifeEventComparison:
+    def compare(
+        self,
+        before: HouseholdInput,
+        after: HouseholdInput,
+        event_name: str = "Life Event",
+    ) -> LifeEventComparison:
         """Compare tax outcomes before and after a life event."""
         before_result = self.calculate(before)
         after_result = self.calculate(after)

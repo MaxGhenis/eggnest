@@ -1,7 +1,13 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+/** Default timeout for API requests (30 seconds) */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** Longer timeout for comparison endpoints that run multiple simulations */
+const LONG_TIMEOUT_MS = 120_000;
+
 // ============================================
-// Custom Error Classes for Better Error Handling
+// Custom error classes for better error handling
 // ============================================
 
 /**
@@ -125,6 +131,17 @@ function createFetchError(error: unknown): ApiError {
   const message = error instanceof Error ? error.message : String(error);
   const lowerMessage = message.toLowerCase();
 
+  // Check for abort (user cancellation)
+  if (
+    error instanceof DOMException &&
+    error.name === "AbortError"
+  ) {
+    return new TimeoutError(
+      "The request was cancelled.",
+      error
+    );
+  }
+
   // Check for network-related errors
   if (
     lowerMessage.includes("failed to fetch") ||
@@ -180,6 +197,89 @@ async function createResponseError(response: Response): Promise<ApiError> {
 
   return new ApiError(message, response.status);
 }
+
+// ============================================
+// Generic API fetch helper
+// ============================================
+
+interface ApiFetchOptions {
+  method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+  body?: unknown;
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  token?: string;
+}
+
+/**
+ * Generic fetch helper that standardizes base URL handling, error parsing,
+ * AbortController support, and timeout handling for all API calls.
+ */
+async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+  const {
+    method = "GET",
+    body,
+    headers: extraHeaders,
+    signal: externalSignal,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    token,
+  } = options;
+
+  // Build headers
+  const headers: Record<string, string> = { ...extraHeaders };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  // Set up timeout via AbortController
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
+
+  // Combine external signal with timeout signal
+  let signal: AbortSignal = timeoutController.signal;
+  if (externalSignal) {
+    // If the external signal is already aborted, throw immediately
+    if (externalSignal.aborted) {
+      clearTimeout(timeoutId);
+      throw new TimeoutError("The request was cancelled.");
+    }
+    // Use AbortSignal.any if available (modern browsers), otherwise fall back
+    if (typeof AbortSignal.any === "function") {
+      signal = AbortSignal.any([timeoutController.signal, externalSignal]);
+    } else {
+      // Fallback: listen to external signal to abort the timeout controller
+      externalSignal.addEventListener("abort", () => timeoutController.abort(), { once: true });
+    }
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal,
+    });
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw createFetchError(error);
+  }
+
+  clearTimeout(timeoutId);
+
+  if (!response.ok) {
+    throw await createResponseError(response);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+// ============================================
+// Type definitions
+// ============================================
 
 export type AccountType =
   | "traditional_401k"
@@ -318,33 +418,22 @@ export interface CompleteEvent {
 
 export type SimulationEvent = ProgressEvent | CompleteEvent;
 
+// ============================================
+// API functions
+// ============================================
+
 export async function runSimulation(
   params: SimulationInput,
-  token?: string
+  token?: string,
+  signal?: AbortSignal
 ): Promise<SimulationResult> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}/simulate`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(params),
-    });
-  } catch (error) {
-    throw createFetchError(error);
-  }
-
-  if (!response.ok) {
-    throw await createResponseError(response);
-  }
-
-  return response.json();
+  return apiFetch<SimulationResult>("/simulate", {
+    method: "POST",
+    body: params,
+    token,
+    signal,
+    timeoutMs: LONG_TIMEOUT_MS,
+  });
 }
 
 export async function* runSimulationWithProgress(
@@ -414,24 +503,21 @@ export async function* runSimulationWithProgress(
 export async function getMortalityRates(
   gender: "male" | "female",
   startAge: number = 65,
-  endAge: number = 100
+  endAge: number = 100,
+  signal?: AbortSignal
 ): Promise<MortalityRates> {
-  const response = await fetch(
-    `${API_URL}/mortality/${gender}?start_age=${startAge}&end_age=${endAge}`
+  return apiFetch<MortalityRates>(
+    `/mortality/${gender}?start_age=${startAge}&end_age=${endAge}`,
+    { signal }
   );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch mortality rates: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 export async function compareAnnuity(
   simulationInput: SimulationInput,
   annuityMonthlyPayment: number,
   annuityGuaranteeYears: number,
-  token?: string
+  token?: string,
+  signal?: AbortSignal
 ): Promise<{
   simulation_result: SimulationResult;
   annuity_total_guaranteed: number;
@@ -439,28 +525,17 @@ export async function compareAnnuity(
   simulation_median_total_income: number;
   recommendation: string;
 }> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_URL}/compare-annuity`, {
+  return apiFetch("/compare-annuity", {
     method: "POST",
-    headers,
-    body: JSON.stringify({
+    body: {
       simulation_input: simulationInput,
       annuity_monthly_payment: annuityMonthlyPayment,
       annuity_guarantee_years: annuityGuaranteeYears,
-    }),
+    },
+    token,
+    signal,
+    timeoutMs: LONG_TIMEOUT_MS,
   });
-
-  if (!response.ok) {
-    throw new Error(`Comparison failed: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 export interface StateResult {
@@ -480,27 +555,21 @@ export interface StateComparisonResult {
 
 export async function compareStates(
   baseInput: SimulationInput,
-  compareStates: string[]
+  statesToCompare: string[],
+  signal?: AbortSignal
 ): Promise<StateComparisonResult> {
-  const response = await fetch(`${API_URL}/compare-states`, {
+  return apiFetch<StateComparisonResult>("/compare-states", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+    body: {
       base_input: baseInput,
-      compare_states: compareStates,
-    }),
+      compare_states: statesToCompare,
+    },
+    signal,
+    timeoutMs: LONG_TIMEOUT_MS,
   });
-
-  if (!response.ok) {
-    throw new Error(`State comparison failed: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
-// Social Security Timing Types
+// Social Security timing types
 export interface SSTimingResult {
   claiming_age: number;
   monthly_benefit: number;
@@ -526,29 +595,23 @@ export async function compareSSTimings(
   baseInput: SimulationInput,
   birthYear: number,
   piaMonthly: number,
-  claimingAges?: number[]
+  claimingAges?: number[],
+  signal?: AbortSignal
 ): Promise<SSTimingComparisonResult> {
-  const response = await fetch(`${API_URL}/compare-ss-timing`, {
+  return apiFetch<SSTimingComparisonResult>("/compare-ss-timing", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+    body: {
       base_input: baseInput,
       birth_year: birthYear,
       pia_monthly: piaMonthly,
       ...(claimingAges && { claiming_ages: claimingAges }),
-    }),
+    },
+    signal,
+    timeoutMs: LONG_TIMEOUT_MS,
   });
-
-  if (!response.ok) {
-    throw new Error(`SS timing comparison failed: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
-// Asset Allocation Types
+// Asset allocation types
 export interface AllocationResult {
   stock_allocation: number;
   bond_allocation: number;
@@ -569,27 +632,21 @@ export interface AllocationComparisonResult {
 
 export async function compareAllocations(
   baseInput: SimulationInput,
-  allocations?: number[]
+  allocations?: number[],
+  signal?: AbortSignal
 ): Promise<AllocationComparisonResult> {
-  const response = await fetch(`${API_URL}/compare-allocations`, {
+  return apiFetch<AllocationComparisonResult>("/compare-allocations", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+    body: {
       base_input: baseInput,
       ...(allocations && { allocations }),
-    }),
+    },
+    signal,
+    timeoutMs: LONG_TIMEOUT_MS,
   });
-
-  if (!response.ok) {
-    throw new Error(`Allocation comparison failed: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
-// === Life Event Tax Calculator Types ===
+// === Life event tax calculator types ===
 
 export interface PersonInput {
   age: number;
@@ -635,43 +692,30 @@ export interface LifeEventComparison {
 }
 
 export async function calculateHousehold(
-  household: HouseholdInput
+  household: HouseholdInput,
+  signal?: AbortSignal
 ): Promise<HouseholdResult> {
-  const response = await fetch(`${API_URL}/calculate-household`, {
+  return apiFetch<HouseholdResult>("/calculate-household", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(household),
+    body: household,
+    signal,
   });
-
-  if (!response.ok) {
-    throw new Error(`Household calculation failed: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 export async function compareLifeEvent(
   before: HouseholdInput,
   after: HouseholdInput,
-  eventName: string = "Life Event"
+  eventName: string = "Life Event",
+  signal?: AbortSignal
 ): Promise<LifeEventComparison> {
-  const response = await fetch(`${API_URL}/compare-life-event`, {
+  return apiFetch<LifeEventComparison>("/compare-life-event", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+    body: {
       before,
       after,
       event_name: eventName,
-    }),
+    },
+    signal,
+    timeoutMs: LONG_TIMEOUT_MS,
   });
-
-  if (!response.ok) {
-    throw new Error(`Life event comparison failed: ${response.statusText}`);
-  }
-
-  return response.json();
 }
