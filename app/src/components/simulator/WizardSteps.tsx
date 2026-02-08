@@ -820,7 +820,7 @@ function ReviewStep({
         )}
       </div>
 
-      {error && <ReviewErrorBanner error={error} />}
+      {error ? <ReviewErrorBanner error={error} /> : null}
     </div>
   );
 }

@@ -275,9 +275,7 @@ class MonteCarloSimulator:
             net_need = np.maximum(0, net_need)
 
             # Build combined income arrays (shared by both tracker and legacy modes)
-            ss_income = _combine_primary_and_spouse(
-                n_sims, social_security, spouse_ss
-            )
+            ss_income = _combine_primary_and_spouse(n_sims, social_security, spouse_ss)
             employment_total = _combine_primary_and_spouse(
                 n_sims, employment, spouse_employment
             )
