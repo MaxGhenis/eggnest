@@ -7,7 +7,6 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 from rich.console import Console
@@ -23,7 +22,7 @@ from .auth import (
     is_logged_in,
 )
 from .models import SimulationInput
-from .sync import get_sync_client, DEFAULT_SCENARIOS_DIR
+from .sync import DEFAULT_SCENARIOS_DIR, get_sync_client
 
 # Setup rich console
 console = Console()
@@ -49,7 +48,7 @@ def setup_logging(verbose: bool = False) -> None:
     help=f"Scenarios directory (default: {DEFAULT_SCENARIOS_DIR})",
 )
 @click.pass_context
-def main(ctx: click.Context, verbose: bool, scenarios_dir: Optional[Path]) -> None:
+def main(ctx: click.Context, verbose: bool, scenarios_dir: Path | None) -> None:
     """EggNest - Monte Carlo retirement planning with real tax calculations.
 
     Your financial scenarios as local YAML files. Edit with any tool.
@@ -142,7 +141,7 @@ def sync(ctx: click.Context) -> None:
 @sync.command()
 @click.option("--scenario", "-s", help="Specific scenario ID to pull")
 @click.pass_context
-def pull(ctx: click.Context, scenario: Optional[str]) -> None:
+def pull(ctx: click.Context, scenario: str | None) -> None:
     """Pull scenarios from cloud to local YAML files."""
     scenarios_dir = ctx.obj["scenarios_dir"]
 
@@ -171,9 +170,14 @@ def pull(ctx: click.Context, scenario: Optional[str]) -> None:
 
 
 @sync.command()
-@click.option("--file", "-f", type=click.Path(exists=True, path_type=Path), help="Specific file to push")
+@click.option(
+    "--file",
+    "-f",
+    type=click.Path(exists=True, path_type=Path),
+    help="Specific file to push",
+)
 @click.pass_context
-def push(ctx: click.Context, file: Optional[Path]) -> None:
+def push(ctx: click.Context, file: Path | None) -> None:
     """Push local YAML files to cloud."""
     scenarios_dir = ctx.obj["scenarios_dir"]
 
@@ -223,13 +227,15 @@ def status(ctx: click.Context) -> None:
             table.add_row(s["name"], s["file"])
         console.print(table)
     else:
-        console.print("  [dim]No local scenarios. Run 'eggnest sync pull' to download.[/dim]")
+        console.print(
+            "  [dim]No local scenarios. Run 'eggnest sync pull' to download.[/dim]"
+        )
 
     # Remote scenarios (if logged in)
     if is_logged_in():
         try:
             remote = sync_client.list_remote()
-            console.print(f"\n[bold]Cloud scenarios:[/bold]")
+            console.print("\n[bold]Cloud scenarios:[/bold]")
             if remote:
                 table = Table(show_header=True)
                 table.add_column("Name")
@@ -254,14 +260,25 @@ def status(ctx: click.Context) -> None:
 
 
 @main.command()
-@click.argument("scenario_file", type=click.Path(exists=True, path_type=Path), required=False)
-@click.option("--output", "-o", type=click.Path(path_type=Path), help="Output file for results (JSON)")
-@click.option("--api-url", default="http://localhost:8000", help="API URL (default: localhost:8000)")
+@click.argument(
+    "scenario_file", type=click.Path(exists=True, path_type=Path), required=False
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output file for results (JSON)",
+)
+@click.option(
+    "--api-url",
+    default="http://localhost:8000",
+    help="API URL (default: localhost:8000)",
+)
 @click.pass_context
 def simulate(
     ctx: click.Context,
-    scenario_file: Optional[Path],
-    output: Optional[Path],
+    scenario_file: Path | None,
+    output: Path | None,
     api_url: str,
 ) -> None:
     """Run a Monte Carlo simulation on a scenario.
@@ -323,7 +340,9 @@ def simulate(
             result = response.json()
         except httpx.ConnectError:
             console.print(f"\n[red]Could not connect to API at {api_url}[/red]")
-            console.print("[dim]Start the API with: cd api && uv run uvicorn main:app --port 8000[/dim]")
+            console.print(
+                "[dim]Start the API with: cd api && uv run uvicorn main:app --port 8000[/dim]"
+            )
             sys.exit(1)
         except Exception as e:
             console.print(f"\n[red]Simulation failed: {e}[/red]")
@@ -363,7 +382,6 @@ def simulate(
 @click.pass_context
 def init(ctx: click.Context, name: str) -> None:
     """Create a new scenario file from a template."""
-    import yaml
 
     scenarios_dir = ctx.obj["scenarios_dir"]
     scenarios_dir.mkdir(parents=True, exist_ok=True)
@@ -376,8 +394,8 @@ def init(ctx: click.Context, name: str) -> None:
         if not click.confirm("Overwrite?"):
             return
 
-    # Create template
-    template = {
+    # Create template (used for reference; actual file uses YAML format below)
+    _template = {
         "name": name,
         "initial_capital": 1000000,
         "annual_spending": 60000,
@@ -451,10 +469,10 @@ has_annuity: false
 
     filepath.write_text(content)
     console.print(f"[green]Created scenario: {filepath}[/green]")
-    console.print(f"\n[bold]Next steps:[/bold]")
+    console.print("\n[bold]Next steps:[/bold]")
     console.print(f"  1. Edit the scenario: [cyan]{filepath}[/cyan]")
     console.print(f"  2. Run simulation: [cyan]eggnest simulate {filename}[/cyan]")
-    console.print(f"  3. Save to cloud: [cyan]eggnest sync push[/cyan]")
+    console.print("  3. Save to cloud: [cyan]eggnest sync push[/cyan]")
 
 
 # === List Command ===

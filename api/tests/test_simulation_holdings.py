@@ -1,7 +1,5 @@
 """Tests for simulation with holdings-based portfolios (TDD)."""
 
-import pytest
-import numpy as np
 from eggnest.models import Holding, SimulationInput
 from eggnest.simulation import MonteCarloSimulator
 
@@ -25,7 +23,7 @@ class TestSimulationWithHoldings:
         sim = MonteCarloSimulator(params)
 
         # Should have tracker attribute after initialization
-        assert hasattr(sim, 'tracker')
+        assert hasattr(sim, "tracker")
         # Tracker should be None until run is called, or created during run
         result = sim.run()
 

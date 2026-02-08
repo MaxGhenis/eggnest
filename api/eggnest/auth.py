@@ -8,7 +8,6 @@ import time
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from supabase import Client, create_client
 
@@ -62,7 +61,7 @@ def save_credentials(creds: Credentials) -> None:
     logger.info(f"Credentials saved to {CREDENTIALS_FILE}")
 
 
-def load_credentials() -> Optional[Credentials]:
+def load_credentials() -> Credentials | None:
     """Load credentials from disk."""
     if not CREDENTIALS_FILE.exists():
         return None
@@ -87,14 +86,12 @@ def get_supabase_client() -> Client:
     supabase_key = os.environ.get("EGGNEST_SUPABASE_ANON_KEY", "")
 
     if not supabase_key:
-        raise ValueError(
-            "EGGNEST_SUPABASE_ANON_KEY environment variable is required"
-        )
+        raise ValueError("EGGNEST_SUPABASE_ANON_KEY environment variable is required")
 
     return create_client(supabase_url, supabase_key)
 
 
-def refresh_access_token(creds: Credentials) -> Optional[Credentials]:
+def refresh_access_token(creds: Credentials) -> Credentials | None:
     """Refresh an expired access token using the refresh token."""
     try:
         client = get_supabase_client()
@@ -116,7 +113,7 @@ def refresh_access_token(creds: Credentials) -> Optional[Credentials]:
     return None
 
 
-def get_authenticated_client() -> Optional[Client]:
+def get_authenticated_client() -> Client | None:
     """
     Get a Supabase client authenticated with the user's credentials.
 
@@ -142,7 +139,7 @@ def get_authenticated_client() -> Optional[Client]:
         return None
 
 
-def device_login(timeout: int = 300) -> Optional[Credentials]:
+def device_login(timeout: int = 300) -> Credentials | None:
     """
     Perform OAuth device flow login.
 
@@ -226,7 +223,7 @@ def device_login(timeout: int = 300) -> Optional[Credentials]:
     return None
 
 
-def get_current_user() -> Optional[str]:
+def get_current_user() -> str | None:
     """Get the email of the currently logged in user."""
     creds = load_credentials()
     if creds:
@@ -234,7 +231,7 @@ def get_current_user() -> Optional[str]:
     return None
 
 
-def get_current_user_id() -> Optional[str]:
+def get_current_user_id() -> str | None:
     """Get the user ID of the currently logged in user from Supabase."""
     client = get_authenticated_client()
     if not client:

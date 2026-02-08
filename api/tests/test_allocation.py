@@ -1,11 +1,11 @@
 """Tests for asset allocation comparison functionality."""
 
-import pytest
 import numpy as np
+import pytest
 
 from eggnest.returns import (
-    SP500_PRICE_RETURNS,
     SP500_DIVIDEND_RETURNS,
+    SP500_PRICE_RETURNS,
     TREASURY_RETURNS,
     generate_blended_returns,
 )
@@ -35,7 +35,9 @@ class TestBondReturns:
         returns = list(TREASURY_RETURNS.values())
         mean_return = np.mean(returns)
         # Historical nominal bond returns average around 5% (2% real + 3% inflation)
-        assert 0.02 <= mean_return <= 0.08, f"Mean bond return {mean_return} out of expected range"
+        assert (
+            0.02 <= mean_return <= 0.08
+        ), f"Mean bond return {mean_return} out of expected range"
 
     def test_bond_volatility_lower_than_stocks(self):
         """Test that bonds are less volatile than stocks."""
@@ -190,7 +192,9 @@ class TestHistoricalData:
         stock_std = np.std(list(SP500_PRICE_RETURNS.values()))
 
         # Bond mean should be lower than stock mean
-        assert bond_mean < stock_mean + 0.05  # Bonds usually lower, allow some tolerance
+        assert (
+            bond_mean < stock_mean + 0.05
+        )  # Bonds usually lower, allow some tolerance
 
         # Bond volatility should be lower than stock volatility
         assert bond_std < stock_std

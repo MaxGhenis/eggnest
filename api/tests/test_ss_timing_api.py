@@ -5,12 +5,11 @@ from fastapi.testclient import TestClient
 
 from eggnest.models import (
     SimulationInput,
+    SSTimingComparisonResult,
     SSTimingInput,
     SSTimingResult,
-    SSTimingComparisonResult,
 )
 from main import app
-
 
 client = TestClient(app)
 

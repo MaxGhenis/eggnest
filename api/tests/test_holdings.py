@@ -1,10 +1,10 @@
 """Tests for holdings-based portfolio model and RMD calculations."""
 
-import pytest
 import numpy as np
-from eggnest.models import Holding, SimulationInput
-from eggnest.rmd import calculate_rmd, get_rmd_factor, RMD_START_AGE
+
 from eggnest.holdings import HoldingsTracker, create_holdings_tracker
+from eggnest.models import Holding, SimulationInput
+from eggnest.rmd import RMD_START_AGE, calculate_rmd, get_rmd_factor
 
 
 class TestHoldingModel:
@@ -19,7 +19,13 @@ class TestHoldingModel:
 
     def test_holding_account_types(self):
         """Test all account types are valid."""
-        for account_type in ["traditional_401k", "traditional_ira", "roth_401k", "roth_ira", "taxable"]:
+        for account_type in [
+            "traditional_401k",
+            "traditional_ira",
+            "roth_401k",
+            "roth_ira",
+            "taxable",
+        ]:
             h = Holding(account_type=account_type, fund="vt", balance=1000)
             assert h.account_type == account_type
 

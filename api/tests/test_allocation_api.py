@@ -4,13 +4,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from eggnest.models import (
-    SimulationInput,
+    AllocationComparisonResult,
     AllocationInput,
     AllocationResult,
-    AllocationComparisonResult,
+    SimulationInput,
 )
 from main import app
-
 
 client = TestClient(app)
 
@@ -154,7 +153,9 @@ class TestAllocationEndpoint:
         assert "percentile_95_final_value" in result
 
         # Validate sum to 1
-        assert result["stock_allocation"] + result["bond_allocation"] == pytest.approx(1.0)
+        assert result["stock_allocation"] + result["bond_allocation"] == pytest.approx(
+            1.0
+        )
 
         # Validate ranges
         assert 0 <= result["success_rate"] <= 1

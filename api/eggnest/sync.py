@@ -6,17 +6,16 @@ Enables AI agents to explore and edit financial scenarios as files.
 
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
-
-from supabase import Client, create_client
+from supabase import Client
 
 from .auth import get_authenticated_client, get_current_user_id, is_logged_in
-from .models import SimulationInput, SpouseInput, AnnuityInput
+from .models import AnnuityInput, SpouseInput
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,7 @@ class SyncConfig:
     scenarios_dir: Path
 
     @classmethod
-    def from_env(cls, scenarios_dir: Optional[Path] = None) -> "SyncConfig":
+    def from_env(cls, scenarios_dir: Path | None = None) -> "SyncConfig":
         """Create config from environment variables."""
         url = os.environ.get("EGGNEST_SUPABASE_URL", "")
         key = os.environ.get("EGGNEST_SUPABASE_ANON_KEY", "")
@@ -50,7 +49,7 @@ class SyncConfig:
         )
 
 
-def scenario_to_yaml(scenario: Dict[str, Any]) -> str:
+def scenario_to_yaml(scenario: dict[str, Any]) -> str:
     """Convert a scenario dict to YAML with helpful comments."""
     # Extract the input params
     params = scenario.get("input_params", scenario)
@@ -92,8 +91,8 @@ include_mortality: {params.get('include_mortality', True)}
 """
 
     # Add spouse section if present
-    if params.get('has_spouse') and params.get('spouse'):
-        spouse = params['spouse']
+    if params.get("has_spouse") and params.get("spouse"):
+        spouse = params["spouse"]
         yaml_content += f"""
 # === Spouse ===
 has_spouse: true
@@ -110,8 +109,8 @@ spouse:
         yaml_content += "\nhas_spouse: false\n"
 
     # Add annuity section if present
-    if params.get('has_annuity') and params.get('annuity'):
-        annuity = params['annuity']
+    if params.get("has_annuity") and params.get("annuity"):
+        annuity = params["annuity"]
         yaml_content += f"""
 # === Annuity ===
 has_annuity: true
@@ -126,7 +125,7 @@ annuity:
     return yaml_content
 
 
-def yaml_to_scenario(filepath: Path) -> Dict[str, Any]:
+def yaml_to_scenario(filepath: Path) -> dict[str, Any]:
     """Parse a YAML scenario file into a scenario dict."""
     with open(filepath) as f:
         data = yaml.safe_load(f)
@@ -151,10 +150,10 @@ def yaml_to_scenario(filepath: Path) -> Dict[str, Any]:
 class EggNestSync:
     """Handles syncing between local YAML files and Supabase."""
 
-    def __init__(self, scenarios_dir: Optional[Path] = None):
+    def __init__(self, scenarios_dir: Path | None = None):
         self.scenarios_dir = scenarios_dir or DEFAULT_SCENARIOS_DIR
         self.scenarios_dir.mkdir(parents=True, exist_ok=True)
-        self.client: Optional[Client] = None
+        self.client: Client | None = None
 
     def _get_client(self) -> Client:
         """Get authenticated Supabase client."""
@@ -166,11 +165,9 @@ class EggNestSync:
             if self.client:
                 return self.client
 
-        raise ValueError(
-            "Not logged in. Run 'eggnest auth login' first."
-        )
+        raise ValueError("Not logged in. Run 'eggnest auth login' first.")
 
-    def pull(self, scenario_id: Optional[str] = None) -> Dict[str, Any]:
+    def pull(self, scenario_id: str | None = None) -> dict[str, Any]:
         """
         Pull scenarios from Supabase to local YAML files.
 
@@ -199,7 +196,9 @@ class EggNestSync:
             # Generate filename from name or id
             filename = f"{scenario.get('name', scenario['id'])}.yaml"
             # Sanitize filename
-            filename = "".join(c if c.isalnum() or c in "._- " else "_" for c in filename)
+            filename = "".join(
+                c if c.isalnum() or c in "._- " else "_" for c in filename
+            )
             filepath = self.scenarios_dir / filename
 
             # Write YAML file
@@ -216,7 +215,7 @@ class EggNestSync:
 
         return stats
 
-    def push(self, scenario_file: Optional[Path] = None) -> Dict[str, Any]:
+    def push(self, scenario_file: Path | None = None) -> dict[str, Any]:
         """
         Push local YAML files to Supabase.
 
@@ -258,7 +257,9 @@ class EggNestSync:
                 if scenario_id:
                     record["id"] = scenario_id
                     # Update existing
-                    client.table("saved_simulations").update(record).eq("id", scenario_id).execute()
+                    client.table("saved_simulations").update(record).eq(
+                        "id", scenario_id
+                    ).execute()
                 else:
                     # Insert new
                     result = client.table("saved_simulations").insert(record).execute()
@@ -276,23 +277,25 @@ class EggNestSync:
 
         return stats
 
-    def list_local(self) -> List[Dict[str, Any]]:
+    def list_local(self) -> list[dict[str, Any]]:
         """List all local scenario files."""
         scenarios = []
         for filepath in self.scenarios_dir.glob("*.yaml"):
             try:
                 with open(filepath) as f:
                     data = yaml.safe_load(f)
-                scenarios.append({
-                    "file": filepath.name,
-                    "name": data.get("name", filepath.stem),
-                    "path": str(filepath),
-                })
+                scenarios.append(
+                    {
+                        "file": filepath.name,
+                        "name": data.get("name", filepath.stem),
+                        "path": str(filepath),
+                    }
+                )
             except Exception as e:
                 logger.warning(f"Failed to read {filepath}: {e}")
         return scenarios
 
-    def list_remote(self) -> List[Dict[str, Any]]:
+    def list_remote(self) -> list[dict[str, Any]]:
         """List all remote scenarios for the current user."""
         client = self._get_client()
         user_id = get_current_user_id()
@@ -309,6 +312,6 @@ class EggNestSync:
         return result.data or []
 
 
-def get_sync_client(scenarios_dir: Optional[Path] = None) -> EggNestSync:
+def get_sync_client(scenarios_dir: Path | None = None) -> EggNestSync:
     """Get a configured sync client."""
     return EggNestSync(scenarios_dir)

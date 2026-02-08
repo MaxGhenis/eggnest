@@ -1,7 +1,6 @@
 """Tests for CLI commands using Click's test runner."""
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -174,7 +173,9 @@ class TestSyncCommands:
         assert "push" in result.output
         assert "status" in result.output
 
-    def test_sync_status_not_logged_in(self, runner, temp_scenarios_dir, tmp_path, monkeypatch):
+    def test_sync_status_not_logged_in(
+        self, runner, temp_scenarios_dir, tmp_path, monkeypatch
+    ):
         """Test sync status shows local scenarios when not logged in."""
         # Use temp credentials file
         creds_file = tmp_path / ".eggnest" / "credentials.json"
@@ -193,7 +194,9 @@ class TestSyncCommands:
         assert "Local Scenario" in result.output
         assert "Login to see cloud scenarios" in result.output
 
-    def test_sync_pull_requires_login(self, runner, temp_scenarios_dir, tmp_path, monkeypatch):
+    def test_sync_pull_requires_login(
+        self, runner, temp_scenarios_dir, tmp_path, monkeypatch
+    ):
         """Test sync pull requires login."""
         creds_file = tmp_path / ".eggnest" / "credentials.json"
         monkeypatch.setattr("eggnest.auth.CREDENTIALS_FILE", creds_file)
@@ -206,7 +209,9 @@ class TestSyncCommands:
         assert result.exit_code == 1
         assert "Not logged in" in result.output
 
-    def test_sync_push_requires_login(self, runner, temp_scenarios_dir, tmp_path, monkeypatch):
+    def test_sync_push_requires_login(
+        self, runner, temp_scenarios_dir, tmp_path, monkeypatch
+    ):
         """Test sync push requires login."""
         creds_file = tmp_path / ".eggnest" / "credentials.json"
         monkeypatch.setattr("eggnest.auth.CREDENTIALS_FILE", creds_file)
@@ -293,7 +298,12 @@ has_annuity: false
         with patch("httpx.post", return_value=mock_response):
             result = runner.invoke(
                 main,
-                ["--scenarios-dir", str(temp_scenarios_dir), "simulate", str(scenario_file)],
+                [
+                    "--scenarios-dir",
+                    str(temp_scenarios_dir),
+                    "simulate",
+                    str(scenario_file),
+                ],
             )
 
         assert result.exit_code == 0
@@ -321,7 +331,12 @@ has_annuity: false
         with patch("httpx.post", side_effect=httpx.ConnectError("Connection refused")):
             result = runner.invoke(
                 main,
-                ["--scenarios-dir", str(temp_scenarios_dir), "simulate", str(scenario_file)],
+                [
+                    "--scenarios-dir",
+                    str(temp_scenarios_dir),
+                    "simulate",
+                    str(scenario_file),
+                ],
             )
 
         assert result.exit_code == 1
@@ -350,7 +365,13 @@ has_annuity: false
             "median_final_value": 2000000,
             "mean_final_value": 2500000,
             "initial_withdrawal_rate": 3.0,
-            "percentiles": {"p5": 0, "p25": 1000000, "p50": 2000000, "p75": 3000000, "p95": 5000000},
+            "percentiles": {
+                "p5": 0,
+                "p25": 1000000,
+                "p50": 2000000,
+                "p75": 3000000,
+                "p95": 5000000,
+            },
             "percentile_paths": {},
             "total_withdrawn_median": 1500000,
             "total_taxes_median": 300000,
@@ -361,9 +382,12 @@ has_annuity: false
             result = runner.invoke(
                 main,
                 [
-                    "--scenarios-dir", str(temp_scenarios_dir),
-                    "simulate", str(scenario_file),
-                    "--output", str(output_file),
+                    "--scenarios-dir",
+                    str(temp_scenarios_dir),
+                    "simulate",
+                    str(scenario_file),
+                    "--output",
+                    str(output_file),
                 ],
             )
 

@@ -4,14 +4,13 @@ Tracks multiple holdings with different account types and funds,
 handles per-fund returns, RMDs, and withdrawal ordering.
 """
 
-import numpy as np
-from typing import Literal
 from dataclasses import dataclass
 
-from .models import Holding, SimulationInput
-from .rmd import get_rmd_factor
-from .returns import generate_fund_returns
+import numpy as np
 
+from .models import Holding, SimulationInput
+from .returns import generate_fund_returns
+from .rmd import get_rmd_factor
 
 # Account type categories
 TRADITIONAL_ACCOUNTS = ("traditional_401k", "traditional_ira")
@@ -29,6 +28,7 @@ WITHDRAWAL_ORDER = {
 @dataclass
 class HoldingState:
     """State of a single holding during simulation."""
+
     account_type: str
     fund: str
     balance: np.ndarray  # (n_simulations,) current balance across all sims
@@ -71,7 +71,7 @@ class HoldingsTracker:
 
         # Generate returns for each unique fund (shared across holdings with same fund)
         self._fund_returns: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-        unique_funds = set(h.fund for h in holdings)
+        unique_funds = {h.fund for h in holdings}
         for fund in unique_funds:
             price_growth, div_yields = generate_fund_returns(
                 fund=fund,
@@ -86,13 +86,15 @@ class HoldingsTracker:
         self.holdings: list[HoldingState] = []
         for h in holdings:
             price_growth, div_yields = self._fund_returns[h.fund]
-            self.holdings.append(HoldingState(
-                account_type=h.account_type,
-                fund=h.fund,
-                balance=np.full(n_simulations, h.balance, dtype=float),
-                price_growth=price_growth,
-                div_yields=div_yields,
-            ))
+            self.holdings.append(
+                HoldingState(
+                    account_type=h.account_type,
+                    fund=h.fund,
+                    balance=np.full(n_simulations, h.balance, dtype=float),
+                    price_growth=price_growth,
+                    div_yields=div_yields,
+                )
+            )
 
     @property
     def total_balance(self) -> np.ndarray:
@@ -231,10 +233,16 @@ class HoldingsTracker:
                 result[key] += withdrawal
 
             # Update remaining after all pro-rata withdrawals
-            remaining = np.maximum(0, remaining - (result["taxable"] + result["traditional"] + result["roth"]))
+            remaining = np.maximum(
+                0,
+                remaining
+                - (result["taxable"] + result["traditional"] + result["roth"]),
+            )
         else:
             # Sequential withdrawal based on strategy
-            order = WITHDRAWAL_ORDER.get(self.withdrawal_strategy, WITHDRAWAL_ORDER["taxable_first"])
+            order = WITHDRAWAL_ORDER.get(
+                self.withdrawal_strategy, WITHDRAWAL_ORDER["taxable_first"]
+            )
             for category in order:
                 if category == TAXABLE_ACCOUNTS:
                     key = "taxable"
@@ -249,7 +257,12 @@ class HoldingsTracker:
                 result[key] += withdrawal
                 remaining = np.maximum(0, remaining - withdrawal)
 
-        result["total"] = result["traditional_rmd"] + result["traditional"] + result["roth"] + result["taxable"]
+        result["total"] = (
+            result["traditional_rmd"]
+            + result["traditional"]
+            + result["roth"]
+            + result["taxable"]
+        )
         return result
 
     def _withdraw_from_category(
@@ -276,10 +289,7 @@ class HoldingsTracker:
         for h in cat_holdings:
             # Avoid division by zero - use np.divide with where parameter
             proportion = np.divide(
-                h.balance,
-                cat_total,
-                out=np.zeros_like(h.balance),
-                where=cat_total > 0
+                h.balance, cat_total, out=np.zeros_like(h.balance), where=cat_total > 0
             )
             withdrawal = amount * proportion
             h.balance = np.maximum(0, h.balance - withdrawal)
@@ -311,6 +321,10 @@ def create_holdings_tracker(
         n_simulations=n_simulations,
         n_years=n_years,
         withdrawal_strategy=params.withdrawal_strategy,
-        return_method=params.return_model if params.return_model in ("bootstrap", "block_bootstrap") else "bootstrap",
+        return_method=(
+            params.return_model
+            if params.return_model in ("bootstrap", "block_bootstrap")
+            else "bootstrap"
+        ),
         rng=rng,
     )

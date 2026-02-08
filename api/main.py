@@ -1,15 +1,17 @@
 """EggNest API - Main FastAPI application."""
 
 import json
+
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from eggnest.config import get_settings
+from eggnest.household import HouseholdCalculator
 from eggnest.models import (
+    AllocationComparisonResult,
     AllocationInput,
     AllocationResult,
-    AllocationComparisonResult,
     AnnuityComparison,
     AnnuityComparisonResult,
     HouseholdInput,
@@ -20,21 +22,20 @@ from eggnest.models import (
     SavedSimulation,
     SimulationInput,
     SimulationResult,
+    SSTimingComparisonResult,
+    SSTimingInput,
+    SSTimingResult,
     StateComparisonInput,
     StateComparisonResult,
     StateResult,
-    SSTimingInput,
-    SSTimingComparisonResult,
-    SSTimingResult,
 )
-from eggnest.ss_timing import (
-    get_full_retirement_age,
-    calculate_adjusted_benefit,
-)
-from eggnest.simulation import MonteCarloSimulator, compare_to_annuity
-from eggnest.mortality import get_mortality_rates, calculate_survival_curve
+from eggnest.mortality import calculate_survival_curve, get_mortality_rates
 from eggnest.returns import get_historical_stats
-from eggnest.household import HouseholdCalculator
+from eggnest.simulation import MonteCarloSimulator, compare_to_annuity
+from eggnest.ss_timing import (
+    calculate_adjusted_benefit,
+    get_full_retirement_age,
+)
 from eggnest.supabase_client import (
     delete_simulation,
     get_user_simulations,
@@ -96,7 +97,9 @@ async def get_current_user(authorization: str | None = Header(None)) -> dict | N
     return await verify_jwt(token)
 
 
-async def require_user(user: dict | None = Depends(get_current_user)) -> dict:
+async def require_user(
+    user: dict | None = Depends(get_current_user),  # noqa: B008
+) -> dict:
     """Require authenticated user."""
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -173,7 +176,12 @@ async def get_mortality(gender: str, start_age: int = 65, end_age: int = 100):
 
     mortality_rates = get_mortality_rates(gender)
     ages = list(range(start_age, end_age + 1))
-    rates = [mortality_rates.get(age, mortality_rates[max(k for k in mortality_rates if k <= age)]) for age in ages]
+    rates = [
+        mortality_rates.get(
+            age, mortality_rates[max(k for k in mortality_rates if k <= age)]
+        )
+        for age in ages
+    ]
     survival = calculate_survival_curve(start_age, end_age + 1, gender)
 
     return MortalityRates(ages=ages, rates=rates, survival_curve=survival)
@@ -189,7 +197,9 @@ async def compare_annuity_endpoint(comparison: AnnuityComparison):
     simulator = MonteCarloSimulator(comparison.simulation_input)
     sim_result = simulator.run()
 
-    n_years = comparison.simulation_input.max_age - comparison.simulation_input.current_age
+    n_years = (
+        comparison.simulation_input.max_age - comparison.simulation_input.current_age
+    )
     annuity_comparison = compare_to_annuity(
         simulation_result=sim_result,
         annuity_monthly_payment=comparison.annuity_monthly_payment,
@@ -219,7 +229,9 @@ async def compare_states_endpoint(comparison: StateComparisonInput):
     Useful for evaluating relocation decisions.
     """
     base_state = comparison.base_input.state
-    all_states = [base_state] + [s for s in comparison.compare_states if s != base_state]
+    all_states = [base_state] + [
+        s for s in comparison.compare_states if s != base_state
+    ]
 
     results: list[StateResult] = []
     base_taxes = 0.0
@@ -230,7 +242,9 @@ async def compare_states_endpoint(comparison: StateComparisonInput):
         simulator = MonteCarloSimulator(state_input)
         sim_result = simulator.run()
 
-        net_after_tax = sim_result.total_withdrawn_median - sim_result.total_taxes_median
+        net_after_tax = (
+            sim_result.total_withdrawn_median - sim_result.total_taxes_median
+        )
 
         result = StateResult(
             state=state,
@@ -375,14 +389,14 @@ async def compare_allocations_endpoint(allocation_input: AllocationInput):
 
         # Calculate blended expected return and volatility
         expected_return = (
-            stock_alloc * historical_stats["stock_mean"] +
-            bond_alloc * historical_stats["bond_mean"]
+            stock_alloc * historical_stats["stock_mean"]
+            + bond_alloc * historical_stats["bond_mean"]
         )
         # Simplified volatility calculation (doesn't account for correlation)
         # A more accurate calculation would use covariance, but this gives a reasonable estimate
         volatility = (
-            stock_alloc * historical_stats["stock_std"] +
-            bond_alloc * historical_stats["bond_std"]
+            stock_alloc * historical_stats["stock_std"]
+            + bond_alloc * historical_stats["bond_std"]
         )
 
         result = AllocationResult(
@@ -418,7 +432,7 @@ async def compare_allocations_endpoint(allocation_input: AllocationInput):
     elif optimal_success.success_rate >= 0.8:
         recommendation = f"A {int(optimal_success.stock_allocation * 100)}% stock allocation achieves {optimal_success.success_rate:.0%} success. Consider increasing savings or reducing spending to improve odds."
     else:
-        recommendation = f"Success rates are below target across all allocations. Consider increasing savings, reducing spending, or delaying retirement to improve outcomes."
+        recommendation = "Success rates are below target across all allocations. Consider increasing savings, reducing spending, or delaying retirement to improve outcomes."
 
     return AllocationComparisonResult(
         results=results,
@@ -459,7 +473,7 @@ async def compare_life_event_endpoint(comparison: LifeEventComparisonInput):
 
 
 @app.get("/simulations", response_model=list[SavedSimulation])
-async def list_simulations(user: dict = Depends(require_user)):
+async def list_simulations(user: dict = Depends(require_user)):  # noqa: B008
     """List all saved simulations for the current user."""
     simulations = await get_user_simulations(user["id"])
     return [
@@ -477,7 +491,7 @@ async def list_simulations(user: dict = Depends(require_user)):
 
 @app.post("/simulations", response_model=SavedSimulation)
 async def create_simulation(
-    simulation: SavedSimulation, user: dict = Depends(require_user)
+    simulation: SavedSimulation, user: dict = Depends(require_user)  # noqa: B008
 ):
     """Save a new simulation configuration."""
     result = await save_simulation(
@@ -497,7 +511,9 @@ async def create_simulation(
 
 
 @app.delete("/simulations/{simulation_id}")
-async def remove_simulation(simulation_id: str, user: dict = Depends(require_user)):
+async def remove_simulation(
+    simulation_id: str, user: dict = Depends(require_user)  # noqa: B008
+):
     """Delete a saved simulation."""
     success = await delete_simulation(user["id"], simulation_id)
     if not success:

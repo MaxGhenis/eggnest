@@ -4,14 +4,14 @@ from datetime import datetime
 
 import numpy as np
 
-# Base year for calendar year calculations
-START_YEAR = datetime.now().year
-
+from .holdings import create_holdings_tracker
 from .models import SimulationInput, SimulationResult, YearBreakdown
-from .tax import TaxCalculator
 from .mortality import generate_alive_mask, generate_joint_alive_mask
 from .returns import generate_blended_returns
-from .holdings import create_holdings_tracker
+from .tax import TaxCalculator
+
+# Base year for calendar year calculations
+START_YEAR = datetime.now().year
 
 
 class MonteCarloSimulator:
@@ -95,8 +95,13 @@ class MonteCarloSimulator:
         if p.include_mortality:
             if p.has_spouse and p.spouse:
                 primary_alive, spouse_alive, either_alive = generate_joint_alive_mask(
-                    n_sims, n_years, p.current_age, p.gender,
-                    p.spouse.age, p.spouse.gender, self._rng
+                    n_sims,
+                    n_years,
+                    p.current_age,
+                    p.gender,
+                    p.spouse.age,
+                    p.spouse.gender,
+                    self._rng,
                 )
             else:
                 either_alive = generate_alive_mask(
@@ -111,21 +116,27 @@ class MonteCarloSimulator:
 
         # Calculate initial withdrawal rate for reporting
         guaranteed_income = (
-            p.social_security_monthly * 12 +
-            p.pension_annual +
-            (p.employment_income if p.current_age < p.retirement_age else 0)
+            p.social_security_monthly * 12
+            + p.pension_annual
+            + (p.employment_income if p.current_age < p.retirement_age else 0)
         )
         if p.has_spouse and p.spouse:
             guaranteed_income += (
-                p.spouse.social_security_monthly * 12 +
-                p.spouse.pension_annual +
-                (p.spouse.employment_income if p.spouse.age < p.spouse.retirement_age else 0)
+                p.spouse.social_security_monthly * 12
+                + p.spouse.pension_annual
+                + (
+                    p.spouse.employment_income
+                    if p.spouse.age < p.spouse.retirement_age
+                    else 0
+                )
             )
         if p.has_annuity and p.annuity:
             guaranteed_income += p.annuity.monthly_payment * 12
 
         initial_net_need = max(0, annual_spending - guaranteed_income)
-        initial_withdrawal_rate = (initial_net_need / p.total_capital * 100) if p.total_capital > 0 else 0
+        initial_withdrawal_rate = (
+            (initial_net_need / p.total_capital * 100) if p.total_capital > 0 else 0
+        )
 
         # Yield initial progress
         yield ("progress", 0, n_years)
@@ -157,10 +168,14 @@ class MonteCarloSimulator:
             employment = 0.0
             if p.employment_income > 0 and current_age < p.retirement_age:
                 years_worked = min(year, p.retirement_age - p.current_age)
-                employment = p.employment_income * ((1 + p.employment_growth_rate) ** years_worked)
+                employment = p.employment_income * (
+                    (1 + p.employment_growth_rate) ** years_worked
+                )
 
-            ss_start_age = getattr(p, 'social_security_start_age', 67)
-            social_security = p.social_security_monthly * 12 if current_age >= ss_start_age else 0
+            ss_start_age = getattr(p, "social_security_start_age", 67)
+            social_security = (
+                p.social_security_monthly * 12 if current_age >= ss_start_age else 0
+            )
             pension = p.pension_annual
 
             # Spouse income
@@ -169,10 +184,15 @@ class MonteCarloSimulator:
             spouse_pension = 0.0
             if p.has_spouse and p.spouse and spouse_alive is not None:
                 spouse_current_age = p.spouse.age + year
-                if p.spouse.employment_income > 0 and spouse_current_age < p.spouse.retirement_age:
+                if (
+                    p.spouse.employment_income > 0
+                    and spouse_current_age < p.spouse.retirement_age
+                ):
                     years_worked = min(year, p.spouse.retirement_age - p.spouse.age)
-                    spouse_employment = p.spouse.employment_income * ((1 + p.spouse.employment_growth_rate) ** years_worked)
-                spouse_ss_start = getattr(p.spouse, 'social_security_start_age', 67)
+                    spouse_employment = p.spouse.employment_income * (
+                        (1 + p.spouse.employment_growth_rate) ** years_worked
+                    )
+                spouse_ss_start = getattr(p.spouse, "social_security_start_age", 67)
                 if spouse_current_age >= spouse_ss_start:
                     spouse_ss = p.spouse.social_security_monthly * 12
                 spouse_pension = p.spouse.pension_annual
@@ -196,9 +216,13 @@ class MonteCarloSimulator:
                     annuity_income = p.annuity.monthly_payment * 12
                     if year >= p.annuity.guarantee_years:
                         # Only pay if primary alive after guarantee
-                        annuity_income = np.where(primary_alive[:, year], annuity_income, 0)
+                        annuity_income = np.where(
+                            primary_alive[:, year], annuity_income, 0
+                        )
                 else:  # life_only
-                    annuity_income = np.where(primary_alive[:, year], p.annuity.monthly_payment * 12, 0)
+                    annuity_income = np.where(
+                        primary_alive[:, year], p.annuity.monthly_payment * 12, 0
+                    )
 
             # Portfolio dividend income
             if self.tracker:
@@ -215,9 +239,13 @@ class MonteCarloSimulator:
 
             # Total guaranteed income (not including dividends)
             total_guaranteed = (
-                employment + social_security + pension +
-                spouse_employment + spouse_ss + spouse_pension +
-                annuity_income
+                employment
+                + social_security
+                + pension
+                + spouse_employment
+                + spouse_ss
+                + spouse_pension
+                + annuity_income
             )
 
             # Make sure total_guaranteed is broadcastable
@@ -250,15 +278,23 @@ class MonteCarloSimulator:
                 employment_total = np.full(n_sims, employment)
                 if isinstance(spouse_employment, np.ndarray):
                     employment_total = employment_total + spouse_employment
-                elif isinstance(spouse_employment, (int, float)) and spouse_employment > 0:
+                elif (
+                    isinstance(spouse_employment, (int, float))
+                    and spouse_employment > 0
+                ):
                     employment_total = employment_total + spouse_employment
 
                 # Traditional withdrawals are ordinary income (add to employment income)
-                trad_withdrawals = withdrawal_result["traditional"] + withdrawal_result["traditional_rmd"]
+                trad_withdrawals = (
+                    withdrawal_result["traditional"]
+                    + withdrawal_result["traditional_rmd"]
+                )
                 ordinary_income = employment_total + trad_withdrawals
 
                 tax_results = self.tax_calc.calculate_batch_taxes(
-                    capital_gains_array=np.asarray(withdrawal_result["taxable"]).flatten(),
+                    capital_gains_array=np.asarray(
+                        withdrawal_result["taxable"]
+                    ).flatten(),
                     social_security_array=np.asarray(ss_income).flatten(),
                     ages=np.full(n_sims, current_age),
                     filing_status=p.filing_status,
@@ -287,7 +323,10 @@ class MonteCarloSimulator:
                 employment_total = np.full(n_sims, employment)
                 if isinstance(spouse_employment, np.ndarray):
                     employment_total = employment_total + spouse_employment
-                elif isinstance(spouse_employment, (int, float)) and spouse_employment > 0:
+                elif (
+                    isinstance(spouse_employment, (int, float))
+                    and spouse_employment > 0
+                ):
                     employment_total = employment_total + spouse_employment
 
                 tax_results = self.tax_calc.calculate_batch_taxes(
@@ -321,14 +360,34 @@ class MonteCarloSimulator:
             total_taxes[active] += estimated_taxes[active]
 
             # Store yearly breakdown data
-            yearly_employment[:, year] = np.broadcast_to(employment_total, n_sims) if isinstance(employment_total, np.ndarray) else employment_total
-            yearly_ss[:, year] = np.broadcast_to(ss_income, n_sims) if isinstance(ss_income, np.ndarray) else ss_income
-            yearly_pension[:, year] = pension + (spouse_pension if isinstance(spouse_pension, (int, float)) else np.median(spouse_pension))
+            yearly_employment[:, year] = (
+                np.broadcast_to(employment_total, n_sims)
+                if isinstance(employment_total, np.ndarray)
+                else employment_total
+            )
+            yearly_ss[:, year] = (
+                np.broadcast_to(ss_income, n_sims)
+                if isinstance(ss_income, np.ndarray)
+                else ss_income
+            )
+            yearly_pension[:, year] = pension + (
+                spouse_pension
+                if isinstance(spouse_pension, (int, float))
+                else np.median(spouse_pension)
+            )
             yearly_dividends[:, year] = dividends
-            yearly_annuity[:, year] = np.broadcast_to(annuity_income, n_sims) if isinstance(annuity_income, np.ndarray) else annuity_income
+            yearly_annuity[:, year] = (
+                np.broadcast_to(annuity_income, n_sims)
+                if isinstance(annuity_income, np.ndarray)
+                else annuity_income
+            )
             yearly_withdrawal[:, year] = gross_withdrawal
-            yearly_federal_tax[:, year] = np.asarray(tax_results["federal_income_tax"]).flatten()
-            yearly_state_tax[:, year] = np.asarray(tax_results["state_income_tax"]).flatten()
+            yearly_federal_tax[:, year] = np.asarray(
+                tax_results["federal_income_tax"]
+            ).flatten()
+            yearly_state_tax[:, year] = np.asarray(
+                tax_results["state_income_tax"]
+            ).flatten()
             yearly_total_tax[:, year] = estimated_taxes
 
             # Yield progress after each year
@@ -357,7 +416,9 @@ class MonteCarloSimulator:
         # Median depletion age
         depleted_sims = failure_year[failure_year <= n_years]
         median_depletion_age = (
-            int(p.current_age + np.median(depleted_sims)) if len(depleted_sims) > 0 else None
+            int(p.current_age + np.median(depleted_sims))
+            if len(depleted_sims) > 0
+            else None
         )
 
         # 10-year failure probability
@@ -384,27 +445,33 @@ class MonteCarloSimulator:
             total_income = employment + ss + pension_val + divs + annuity_val
             net_income = total_income + withdrawal - total_tax
             effective_rate = total_tax / total_income if total_income > 0 else 0
-            portfolio_return = (portfolio_end - portfolio_start + withdrawal) / portfolio_start if portfolio_start > 0 else 0
+            portfolio_return = (
+                (portfolio_end - portfolio_start + withdrawal) / portfolio_start
+                if portfolio_start > 0
+                else 0
+            )
 
-            year_breakdown.append(YearBreakdown(
-                age=current_age,
-                year_index=year,
-                portfolio_start=portfolio_start,
-                portfolio_end=portfolio_end,
-                portfolio_return=portfolio_return,
-                employment_income=employment,
-                social_security=ss,
-                pension=pension_val,
-                dividends=divs,
-                annuity=annuity_val,
-                total_income=total_income,
-                withdrawal=withdrawal,
-                federal_tax=fed_tax,
-                state_tax=state_tax,
-                total_tax=total_tax,
-                effective_tax_rate=effective_rate,
-                net_income=net_income,
-            ))
+            year_breakdown.append(
+                YearBreakdown(
+                    age=current_age,
+                    year_index=year,
+                    portfolio_start=portfolio_start,
+                    portfolio_end=portfolio_end,
+                    portfolio_return=portfolio_return,
+                    employment_income=employment,
+                    social_security=ss,
+                    pension=pension_val,
+                    dividends=divs,
+                    annuity=annuity_val,
+                    total_income=total_income,
+                    withdrawal=withdrawal,
+                    federal_tax=fed_tax,
+                    state_tax=state_tax,
+                    total_tax=total_tax,
+                    effective_tax_rate=effective_rate,
+                    net_income=net_income,
+                )
+            )
 
         result = SimulationResult(
             success_rate=success_rate,
@@ -418,7 +485,9 @@ class MonteCarloSimulator:
                 "p95": float(np.percentile(final_values, 95)),
             },
             median_depletion_age=median_depletion_age,
-            median_depletion_year=float(np.median(depleted_sims)) if len(depleted_sims) > 0 else None,
+            median_depletion_year=(
+                float(np.median(depleted_sims)) if len(depleted_sims) > 0 else None
+            ),
             total_withdrawn_median=float(np.median(total_withdrawn)),
             total_taxes_median=float(np.median(total_taxes)),
             percentile_paths=percentile_paths,
@@ -479,9 +548,13 @@ def compare_to_annuity(
     if simulation_result.success_rate > 0.9 and prob_beats > 0.6:
         recommendation = "Consider investing - high probability of exceeding annuity returns with low depletion risk."
     elif simulation_result.success_rate < 0.7:
-        recommendation = "Consider the annuity - simulation shows significant depletion risk."
+        recommendation = (
+            "Consider the annuity - simulation shows significant depletion risk."
+        )
     else:
-        recommendation = "Mixed results - consider a hybrid approach or consult a financial advisor."
+        recommendation = (
+            "Mixed results - consider a hybrid approach or consult a financial advisor."
+        )
 
     return {
         "annuity_total_guaranteed": annuity_total,
