@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { useMemo } from "react";
 import type { WizardStep } from "../Wizard";
 import type {
@@ -144,8 +145,6 @@ export function useWizardSteps({
     ];
 
     return steps;
-    // We need wide dependencies here since wizard steps render form content
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     params, spouse, annuity, portfolioMode, holdings, withdrawalStrategy,
     isReceivingSS, isSpouseReceivingSS, error,

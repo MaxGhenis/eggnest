@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Wizard } from "../components/Wizard";
 import { SimulationProgress } from "../components/SimulationProgress";
@@ -31,14 +31,24 @@ import "../styles/Wizard.css";
 import "../styles/Skeleton.css";
 
 export function SimulatorPage() {
-  // Core input state
-  const [params, setParams] = useState<SimulationInput>(DEFAULT_PARAMS);
-  const [spouse, setSpouse] = useState<SpouseInput>(DEFAULT_SPOUSE);
+  // Parse URL params once at init to merge with defaults
+  const [urlData] = useState(() => parseUrlParams());
+  const hasUrlParams = Object.keys(urlData.params).length > 0;
+
+  // Core input state (merge URL params into defaults)
+  const [params, setParams] = useState<SimulationInput>(() =>
+    hasUrlParams ? { ...DEFAULT_PARAMS, ...urlData.params } : DEFAULT_PARAMS
+  );
+  const [spouse, setSpouse] = useState<SpouseInput>(() =>
+    Object.keys(urlData.spouse).length > 0
+      ? { ...DEFAULT_SPOUSE, ...urlData.spouse }
+      : DEFAULT_SPOUSE
+  );
   const [annuity, setAnnuity] = useState(DEFAULT_ANNUITY);
 
   // UI navigation state
   const [showWizard, setShowWizard] = useState(true);
-  const [showPersonaPicker, setShowPersonaPicker] = useState(true);
+  const [showPersonaPicker, setShowPersonaPicker] = useState(!hasUrlParams);
 
   // SS receiving status (for users already receiving benefits)
   const [isReceivingSS, setIsReceivingSS] = useState(false);
@@ -72,18 +82,6 @@ export function SimulatorPage() {
     setWithdrawalStrategy: portfolio.setWithdrawalStrategy,
     setShowPersonaPicker,
   });
-
-  // Load URL params on mount (they override defaults)
-  useEffect(() => {
-    const urlData = parseUrlParams();
-    if (Object.keys(urlData.params).length > 0) {
-      setParams((prev) => ({ ...prev, ...urlData.params }));
-      setShowPersonaPicker(false);
-    }
-    if (Object.keys(urlData.spouse).length > 0) {
-      setSpouse((prev) => ({ ...prev, ...urlData.spouse }));
-    }
-  }, []);
 
   // Param updater
   const updateParam = useCallback(<K extends keyof SimulationInput>(

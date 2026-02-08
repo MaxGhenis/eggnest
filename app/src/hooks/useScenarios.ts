@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import type { SimulationInput, SpouseInput, AnnuityInput, Holding } from "../lib/api";
 import type { SavedScenario } from "../lib/simulatorUtils";
 import { SCENARIOS_STORAGE_KEY, DEFAULT_PARAMS } from "../lib/constants";
@@ -39,22 +39,20 @@ export function useScenarios(deps: ScenarioDeps): UseScenariosReturn {
     setWithdrawalStrategy, setShowPersonaPicker,
   } = deps;
 
-  const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>([]);
-  const [scenarioName, setScenarioName] = useState("");
-  const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
-
-  // Load saved scenarios from localStorage on mount
-  useEffect(() => {
+  const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>(() => {
     try {
       const stored = localStorage.getItem(SCENARIOS_STORAGE_KEY);
       if (stored) {
-        setSavedScenarios(JSON.parse(stored));
+        return JSON.parse(stored);
       }
     } catch (e) {
       console.error("Failed to load saved scenarios:", e);
     }
-  }, []);
+    return [];
+  });
+  const [scenarioName, setScenarioName] = useState("");
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const saveScenario = useCallback((name: string) => {
     const scenario: SavedScenario = {
