@@ -1,30 +1,16 @@
-import { useState, useEffect } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { SimulatorPage } from "./pages/SimulatorPage";
 import { LifeEventPage } from "./pages/LifeEventPage";
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<"simulator" | "life-event">("simulator");
-
-  useEffect(() => {
-    // Simple hash-based routing
-    const handleHashChange = () => {
-      if (window.location.hash === "#/life-event") {
-        setCurrentPage("life-event");
-      } else {
-        setCurrentPage("simulator");
-      }
-    };
-
-    handleHashChange();
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
-  }, []);
-
-  if (currentPage === "life-event") {
-    return <LifeEventPage />;
-  }
-
-  return <SimulatorPage />;
+  return (
+    <Routes>
+      <Route path="/" element={<SimulatorPage />} />
+      <Route path="/life-event" element={<LifeEventPage />} />
+      {/* Catch-all: redirect unknown paths to home */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }
 
 export default App;

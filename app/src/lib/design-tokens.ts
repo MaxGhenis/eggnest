@@ -1,3 +1,12 @@
+/**
+ * @deprecated This file is maintained for backward compatibility.
+ * New code should use the vanilla-extract design system instead:
+ *
+ *   import { vars, lightThemeClass, darkThemeClass } from '../styles';
+ *
+ * The canonical token definitions now live in `src/styles/theme.css.ts`.
+ */
+
 /* EggNest Design System - TypeScript tokens for use in JS/TSX */
 
 export const colors = {

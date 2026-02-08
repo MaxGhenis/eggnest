@@ -9,7 +9,7 @@ from typing import Literal
 from dataclasses import dataclass
 
 from .models import Holding, SimulationInput
-from .rmd import calculate_rmd
+from .rmd import get_rmd_factor
 from .returns import generate_fund_returns
 
 
@@ -162,13 +162,11 @@ class HoldingsTracker:
         Returns:
             RMD amount (n_simulations,)
         """
+        factor = get_rmd_factor(age)
+        if factor == 0.0:
+            return np.zeros(self.n_simulations)
         trad_balance = self.traditional_balance
-        # Vectorized RMD calculation
-        rmd = np.zeros(self.n_simulations)
-        if age >= 73:  # RMD_START_AGE
-            for i in range(self.n_simulations):
-                rmd[i] = calculate_rmd(trad_balance[i], age)
-        return rmd
+        return np.maximum(0.0, trad_balance * factor)
 
     def withdraw(
         self,

@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { SimulatorPage } from './SimulatorPage';
 
 describe('SimulatorPage - Portfolio Mode', () => {
   const navigateToMoneyStep = async () => {
     const user = userEvent.setup();
-    render(<SimulatorPage />);
+    render(<MemoryRouter><SimulatorPage /></MemoryRouter>);
 
     // Click "Start from scratch"
     const startButton = screen.getByText('Start from scratch with your own numbers');
