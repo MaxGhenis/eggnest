@@ -3,12 +3,16 @@ import { test, expect } from '@playwright/test';
 test.describe('Simulator Wizard', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
+    // Dismiss the PersonaPicker by clicking "Start from scratch"
+    await page.click('.persona-start-scratch');
+    // Wait for wizard to appear
+    await expect(page.locator('.wizard')).toBeVisible();
   });
 
   test('loads the simulator page', async ({ page }) => {
     // Check header elements
     await expect(page.locator('.sim-header')).toBeVisible();
-    await expect(page.locator('.sim-title')).toContainText('Retirement Simulator');
+    await expect(page.locator('.sim-title')).toContainText('Financial Simulator');
 
     // Check wizard is visible
     await expect(page.locator('.wizard')).toBeVisible();
@@ -99,8 +103,8 @@ test.describe('Simulator Wizard', () => {
     await page.click('.wizard-btn-primary');
     await expect(page.locator('.wizard-header h2')).toContainText('Your Money');
 
-    // Find portfolio input and clear it
-    const portfolioInput = page.locator('.wizard-field').first().locator('input[type="number"]');
+    // Find portfolio input (inside the "Current Portfolio Value" field with $ prefix)
+    const portfolioInput = page.locator('.wizard-field-prefix input[type="number"]').first();
     await portfolioInput.clear();
     await portfolioInput.fill('750000');
     await expect(portfolioInput).toHaveValue('750000');
