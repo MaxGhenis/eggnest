@@ -91,15 +91,11 @@ export function ResultsPanel({
     [result.success_rate]
   );
 
-  const successColor = useMemo(
-    () =>
-      result.success_rate >= 0.9
-        ? "#10b981"
-        : result.success_rate >= 0.75
-          ? "#f59e0b"
-          : "#ef4444",
-    [result.success_rate]
-  );
+  const successColor = useMemo(() => {
+    if (result.success_rate >= 0.9) return "#10b981";
+    if (result.success_rate >= 0.75) return "#f59e0b";
+    return "#ef4444";
+  }, [result.success_rate]);
 
   const ages = useMemo(
     () => result.percentile_paths.p50.map((_, i) => params.current_age + i),

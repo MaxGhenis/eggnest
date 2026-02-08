@@ -152,9 +152,120 @@ export function SimulatorPage() {
     error: simulation.error,
   });
 
+  function renderContent() {
+    if (showPersonaPicker && showWizard && !simulation.result) {
+      return (
+        <PersonaPicker
+          personas={EXAMPLE_PERSONAS}
+          isLoading={simulation.isLoading}
+          progress={simulation.progress}
+          onLoadPersona={loadPersona}
+          onStartFromScratch={() => setShowPersonaPicker(false)}
+        />
+      );
+    }
+
+    if (showWizard) {
+      return (
+        <>
+          <ScenarioManager
+            savedScenarios={scenarios.savedScenarios}
+            scenarioName={scenarios.scenarioName}
+            setScenarioName={scenarios.setScenarioName}
+            showSaveDialog={scenarios.showSaveDialog}
+            setShowSaveDialog={scenarios.setShowSaveDialog}
+            onSave={scenarios.saveScenario}
+            onLoad={scenarios.loadSavedScenario}
+            onDelete={scenarios.deleteScenario}
+          />
+          <Wizard
+            steps={wizardSteps}
+            onComplete={handleSimulate}
+            isLoading={simulation.isLoading}
+            completeButtonText="Run Simulation"
+            loadingButtonText="Running simulation..."
+            loadingContent={
+              <SimulationProgress
+                currentYear={simulation.progress.currentYear}
+                totalYears={simulation.progress.totalYears}
+              />
+            }
+          />
+        </>
+      );
+    }
+
+    if (simulation.isLoading && !simulation.result) {
+      return (
+        <ResultsSkeleton
+          currentYear={simulation.progress.currentYear}
+          totalYears={simulation.progress.totalYears}
+        />
+      );
+    }
+
+    if (simulation.error && !simulation.result) {
+      return (
+        <ErrorState
+          error={simulation.error}
+          onRetry={() => {
+            simulation.setError(null);
+            handleSimulate();
+          }}
+          onEditInputs={() => {
+            simulation.setError(null);
+            setShowWizard(true);
+          }}
+        />
+      );
+    }
+
+    if (simulation.result) {
+      return (
+        <ResultsPanel
+          result={simulation.result}
+          params={params}
+          annuity={annuity}
+          annuityResult={simulation.annuityResult}
+          selectedYearIndex={simulation.selectedYearIndex}
+          setSelectedYearIndex={simulation.setSelectedYearIndex}
+          linkCopied={scenarios.linkCopied}
+          onCopyLink={scenarios.copyLinkToClipboard}
+          onEditInputs={() => setShowWizard(true)}
+          onWhatIf={runWhatIfScenario}
+          // State comparison
+          stateComparisonResult={comparisons.stateComparisonResult}
+          isComparingStates={comparisons.isComparingStates}
+          selectedCompareStates={comparisons.selectedCompareStates}
+          onCompareStates={comparisons.handleCompareStates}
+          onToggleCompareState={comparisons.toggleCompareState}
+          onResetStateComparison={() => {
+            comparisons.setStateComparisonResult(null);
+            comparisons.setSelectedCompareStates([]);
+          }}
+          // SS timing
+          ssTimingResult={comparisons.ssTimingResult}
+          isComparingSSTiming={comparisons.isComparingSSTiming}
+          birthYear={comparisons.birthYear}
+          setBirthYear={comparisons.setBirthYear}
+          piaMonthly={comparisons.piaMonthly}
+          setPiaMonthly={comparisons.setPiaMonthly}
+          onCompareSSTimings={comparisons.handleCompareSSTimings}
+          onResetSSTimings={() => comparisons.setSSTimingResult(null)}
+          // Allocation
+          allocationResult={comparisons.allocationResult}
+          isComparingAllocations={comparisons.isComparingAllocations}
+          onCompareAllocations={comparisons.handleCompareAllocations}
+          onResetAllocations={() => comparisons.setAllocationResult(null)}
+        />
+      );
+    }
+
+    return null;
+  }
+
   return (
     <div className="simulator">
-      {/* Header */}
       <header className="sim-header">
         <a href={HOME_URL} className="sim-logo">
           <img src="/logo.svg" alt="EggNest" height="28" />
@@ -164,97 +275,7 @@ export function SimulatorPage() {
       </header>
 
       <div className="sim-content">
-        {showPersonaPicker && showWizard && !simulation.result ? (
-          <PersonaPicker
-            personas={EXAMPLE_PERSONAS}
-            isLoading={simulation.isLoading}
-            progress={simulation.progress}
-            onLoadPersona={loadPersona}
-            onStartFromScratch={() => setShowPersonaPicker(false)}
-          />
-        ) : showWizard ? (
-          <>
-            <ScenarioManager
-              savedScenarios={scenarios.savedScenarios}
-              scenarioName={scenarios.scenarioName}
-              setScenarioName={scenarios.setScenarioName}
-              showSaveDialog={scenarios.showSaveDialog}
-              setShowSaveDialog={scenarios.setShowSaveDialog}
-              onSave={scenarios.saveScenario}
-              onLoad={scenarios.loadSavedScenario}
-              onDelete={scenarios.deleteScenario}
-            />
-            <Wizard
-              steps={wizardSteps}
-              onComplete={handleSimulate}
-              isLoading={simulation.isLoading}
-              completeButtonText="Run Simulation"
-              loadingButtonText="Running simulation..."
-              loadingContent={
-                <SimulationProgress
-                  currentYear={simulation.progress.currentYear}
-                  totalYears={simulation.progress.totalYears}
-                />
-              }
-            />
-          </>
-        ) : simulation.isLoading && !simulation.result ? (
-          <ResultsSkeleton
-            currentYear={simulation.progress.currentYear}
-            totalYears={simulation.progress.totalYears}
-          />
-        ) : simulation.error && !simulation.result ? (
-          <ErrorState
-            error={simulation.error}
-            onRetry={() => {
-              simulation.setError(null);
-              handleSimulate();
-            }}
-            onEditInputs={() => {
-              simulation.setError(null);
-              setShowWizard(true);
-            }}
-          />
-        ) : (
-          simulation.result && (
-            <ResultsPanel
-              result={simulation.result}
-              params={params}
-              annuity={annuity}
-              annuityResult={simulation.annuityResult}
-              selectedYearIndex={simulation.selectedYearIndex}
-              setSelectedYearIndex={simulation.setSelectedYearIndex}
-              linkCopied={scenarios.linkCopied}
-              onCopyLink={scenarios.copyLinkToClipboard}
-              onEditInputs={() => setShowWizard(true)}
-              onWhatIf={runWhatIfScenario}
-              // State comparison
-              stateComparisonResult={comparisons.stateComparisonResult}
-              isComparingStates={comparisons.isComparingStates}
-              selectedCompareStates={comparisons.selectedCompareStates}
-              onCompareStates={comparisons.handleCompareStates}
-              onToggleCompareState={comparisons.toggleCompareState}
-              onResetStateComparison={() => {
-                comparisons.setStateComparisonResult(null);
-                comparisons.setSelectedCompareStates([]);
-              }}
-              // SS timing
-              ssTimingResult={comparisons.ssTimingResult}
-              isComparingSSTiming={comparisons.isComparingSSTiming}
-              birthYear={comparisons.birthYear}
-              setBirthYear={comparisons.setBirthYear}
-              piaMonthly={comparisons.piaMonthly}
-              setPiaMonthly={comparisons.setPiaMonthly}
-              onCompareSSTimings={comparisons.handleCompareSSTimings}
-              onResetSSTimings={() => comparisons.setSSTimingResult(null)}
-              // Allocation
-              allocationResult={comparisons.allocationResult}
-              isComparingAllocations={comparisons.isComparingAllocations}
-              onCompareAllocations={comparisons.handleCompareAllocations}
-              onResetAllocations={() => comparisons.setAllocationResult(null)}
-            />
-          )
-        )}
+        {renderContent()}
       </div>
     </div>
   );
