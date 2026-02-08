@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import type { SimulationInput, SpouseInput, AnnuityInput, Holding } from "../lib/api";
 import type { SavedScenario } from "../lib/simulatorUtils";
 import { SCENARIOS_STORAGE_KEY, DEFAULT_PARAMS } from "../lib/constants";
+import type { PortfolioMode, WithdrawalStrategy } from "./usePortfolio";
 
 export interface UseScenariosReturn {
   savedScenarios: SavedScenario[];
@@ -20,15 +21,15 @@ interface ScenarioDeps {
   params: SimulationInput;
   spouse: SpouseInput;
   annuity: AnnuityInput;
-  portfolioMode: "simple" | "detailed";
+  portfolioMode: PortfolioMode;
   holdings: Holding[];
-  withdrawalStrategy: "taxable_first" | "traditional_first" | "roth_first" | "pro_rata";
+  withdrawalStrategy: WithdrawalStrategy;
   setParams: React.Dispatch<React.SetStateAction<SimulationInput>>;
   setSpouse: React.Dispatch<React.SetStateAction<SpouseInput>>;
   setAnnuity: React.Dispatch<React.SetStateAction<AnnuityInput>>;
-  setPortfolioMode: React.Dispatch<React.SetStateAction<"simple" | "detailed">>;
+  setPortfolioMode: React.Dispatch<React.SetStateAction<PortfolioMode>>;
   setHoldings: React.Dispatch<React.SetStateAction<Holding[]>>;
-  setWithdrawalStrategy: React.Dispatch<React.SetStateAction<"taxable_first" | "traditional_first" | "roth_first" | "pro_rata">>;
+  setWithdrawalStrategy: React.Dispatch<React.SetStateAction<WithdrawalStrategy>>;
   setShowPersonaPicker: React.Dispatch<React.SetStateAction<boolean>>;
 }
 

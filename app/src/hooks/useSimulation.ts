@@ -10,6 +10,7 @@ import {
 } from "../lib/api";
 import type { AnnuityComparisonResult } from "../lib/simulatorUtils";
 import { buildUrlParams } from "../lib/simulatorUtils";
+import type { PortfolioMode, WithdrawalStrategy } from "./usePortfolio";
 
 export interface SimulationProgress {
   currentYear: number;
@@ -30,17 +31,17 @@ export interface UseSimulationReturn {
     params: SimulationInput,
     spouse: SpouseInput,
     annuity: AnnuityInput,
-    portfolioMode: "simple" | "detailed",
+    portfolioMode: PortfolioMode,
     holdings: Holding[],
-    withdrawalStrategy: "taxable_first" | "traditional_first" | "roth_first" | "pro_rata",
+    withdrawalStrategy: WithdrawalStrategy,
   ) => Promise<void>;
   handleSimulateWithParams: (
     simParams: SimulationInput,
     simSpouse: SpouseInput | undefined,
     annuity: AnnuityInput,
-    portfolioMode: "simple" | "detailed",
+    portfolioMode: PortfolioMode,
     holdings: Holding[],
-    withdrawalStrategy: "taxable_first" | "traditional_first" | "roth_first" | "pro_rata",
+    withdrawalStrategy: WithdrawalStrategy,
   ) => Promise<void>;
 }
 
@@ -56,9 +57,9 @@ export function useSimulation(): UseSimulationReturn {
     params: SimulationInput,
     spouse: SpouseInput | undefined,
     annuity: AnnuityInput,
-    portfolioMode: "simple" | "detailed",
+    portfolioMode: PortfolioMode,
     holdings: Holding[],
-    withdrawalStrategy: "taxable_first" | "traditional_first" | "roth_first" | "pro_rata",
+    withdrawalStrategy: WithdrawalStrategy,
   ): SimulationInput => {
     return {
       ...params,
@@ -70,49 +71,31 @@ export function useSimulation(): UseSimulationReturn {
     };
   }, []);
 
-  const handleSimulateWithParams = useCallback(async (
-    simParams: SimulationInput,
-    simSpouse: SpouseInput | undefined,
-    annuity: AnnuityInput,
-    portfolioMode: "simple" | "detailed",
-    holdings: Holding[],
-    withdrawalStrategy: "taxable_first" | "traditional_first" | "roth_first" | "pro_rata",
-  ) => {
-    setIsLoading(true);
-    setError(null);
-    setAnnuityResult(null);
-    setProgress({ currentYear: 0, totalYears: simParams.max_age - simParams.current_age });
-
-    try {
-      const fullParams = buildFullParams(simParams, simSpouse, annuity, portfolioMode, holdings, withdrawalStrategy);
-
-      // Use streaming API with progress updates
-      for await (const event of runSimulationWithProgress(fullParams)) {
-        if (event.type === "progress") {
-          setProgress({ currentYear: event.year, totalYears: event.total_years });
-        } else if (event.type === "complete") {
-          setResult(event.result);
-        }
+  /** Stream simulation results, updating progress as events arrive. */
+  const runStreaming = useCallback(async (fullParams: SimulationInput) => {
+    for await (const event of runSimulationWithProgress(fullParams)) {
+      if (event.type === "progress") {
+        setProgress({ currentYear: event.year, totalYears: event.total_years });
+      } else if (event.type === "complete") {
+        setResult(event.result);
       }
-      // Update URL with current params for sharing
-      const urlString = buildUrlParams(simParams, simParams.has_spouse ? simSpouse : undefined);
-      const newUrl = urlString ? `${window.location.pathname}?${urlString}` : window.location.pathname;
-      window.history.replaceState(null, "", newUrl);
-    } catch (err) {
-      setError(err);
-      setResult(null);
-    } finally {
-      setIsLoading(false);
     }
-  }, [buildFullParams]);
+  }, []);
+
+  /** Update the browser URL to reflect current simulation params (for sharing). */
+  function updateUrlForSharing(params: SimulationInput, spouse: SpouseInput | undefined): void {
+    const urlString = buildUrlParams(params, params.has_spouse ? spouse : undefined);
+    const newUrl = urlString ? `${window.location.pathname}?${urlString}` : window.location.pathname;
+    window.history.replaceState(null, "", newUrl);
+  }
 
   const handleSimulate = useCallback(async (
     params: SimulationInput,
     spouse: SpouseInput,
     annuity: AnnuityInput,
-    portfolioMode: "simple" | "detailed",
+    portfolioMode: PortfolioMode,
     holdings: Holding[],
-    withdrawalStrategy: "taxable_first" | "traditional_first" | "roth_first" | "pro_rata",
+    withdrawalStrategy: WithdrawalStrategy,
   ) => {
     setIsLoading(true);
     setError(null);
@@ -120,7 +103,8 @@ export function useSimulation(): UseSimulationReturn {
     setProgress({ currentYear: 0, totalYears: params.max_age - params.current_age });
 
     try {
-      const fullParams = buildFullParams(params, params.has_spouse ? spouse : undefined, annuity, portfolioMode, holdings, withdrawalStrategy);
+      const resolvedSpouse = params.has_spouse ? spouse : undefined;
+      const fullParams = buildFullParams(params, resolvedSpouse, annuity, portfolioMode, holdings, withdrawalStrategy);
 
       if (params.has_annuity && annuity.monthly_payment > 0) {
         // Annuity comparison doesn't support streaming yet, use regular API
@@ -132,26 +116,41 @@ export function useSimulation(): UseSimulationReturn {
         setResult(comparison.simulation_result);
         setAnnuityResult(comparison);
       } else {
-        // Use streaming API with progress updates
-        for await (const event of runSimulationWithProgress(fullParams)) {
-          if (event.type === "progress") {
-            setProgress({ currentYear: event.year, totalYears: event.total_years });
-          } else if (event.type === "complete") {
-            setResult(event.result);
-          }
-        }
+        await runStreaming(fullParams);
       }
-      // Update URL with current params for sharing
-      const urlString = buildUrlParams(params, params.has_spouse ? spouse : undefined);
-      const newUrl = urlString ? `${window.location.pathname}?${urlString}` : window.location.pathname;
-      window.history.replaceState(null, "", newUrl);
+      updateUrlForSharing(params, resolvedSpouse);
     } catch (err) {
       setError(err);
       setResult(null);
     } finally {
       setIsLoading(false);
     }
-  }, [buildFullParams]);
+  }, [buildFullParams, runStreaming]);
+
+  const handleSimulateWithParams = useCallback(async (
+    simParams: SimulationInput,
+    simSpouse: SpouseInput | undefined,
+    annuity: AnnuityInput,
+    portfolioMode: PortfolioMode,
+    holdings: Holding[],
+    withdrawalStrategy: WithdrawalStrategy,
+  ) => {
+    setIsLoading(true);
+    setError(null);
+    setAnnuityResult(null);
+    setProgress({ currentYear: 0, totalYears: simParams.max_age - simParams.current_age });
+
+    try {
+      const fullParams = buildFullParams(simParams, simSpouse, annuity, portfolioMode, holdings, withdrawalStrategy);
+      await runStreaming(fullParams);
+      updateUrlForSharing(simParams, simSpouse);
+    } catch (err) {
+      setError(err);
+      setResult(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [buildFullParams, runStreaming]);
 
   return {
     result,

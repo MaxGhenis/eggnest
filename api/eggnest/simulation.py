@@ -14,6 +14,20 @@ from .tax import TaxCalculator
 START_YEAR = datetime.now().year
 
 
+def _combine_primary_and_spouse(
+    n_sims: int,
+    primary_value: float,
+    spouse_value: float | np.ndarray,
+) -> np.ndarray:
+    """Combine a primary scalar and a spouse value (scalar or array) into a simulation array."""
+    result = np.full(n_sims, primary_value)
+    if isinstance(spouse_value, np.ndarray):
+        result = result + spouse_value
+    elif isinstance(spouse_value, (int, float)) and spouse_value > 0:
+        result = result + spouse_value
+    return result
+
+
 class MonteCarloSimulator:
     """
     Monte Carlo simulator for retirement planning.
@@ -260,29 +274,18 @@ class MonteCarloSimulator:
             net_need = annual_spending - total_income_for_spending
             net_need = np.maximum(0, net_need)
 
+            # Build combined income arrays (shared by both tracker and legacy modes)
+            ss_income = _combine_primary_and_spouse(
+                n_sims, social_security, spouse_ss
+            )
+            employment_total = _combine_primary_and_spouse(
+                n_sims, employment, spouse_employment
+            )
+
             # Handle withdrawals and taxes
             if self.tracker:
                 # Use tracker to withdraw with proper tax treatment
                 withdrawal_result = self.tracker.withdraw(net_need, current_age)
-
-                # Calculate taxes based on account types
-                # Traditional withdrawals (including RMD) = ordinary income
-                # Taxable withdrawals = capital gains
-                # Roth withdrawals = tax-free (not included)
-                ss_income = np.full(n_sims, social_security)
-                if isinstance(spouse_ss, np.ndarray):
-                    ss_income = ss_income + spouse_ss
-                elif isinstance(spouse_ss, (int, float)) and spouse_ss > 0:
-                    ss_income = ss_income + spouse_ss
-
-                employment_total = np.full(n_sims, employment)
-                if isinstance(spouse_employment, np.ndarray):
-                    employment_total = employment_total + spouse_employment
-                elif (
-                    isinstance(spouse_employment, (int, float))
-                    and spouse_employment > 0
-                ):
-                    employment_total = employment_total + spouse_employment
 
                 # Traditional withdrawals are ordinary income (add to employment income)
                 trad_withdrawals = (
@@ -314,21 +317,6 @@ class MonteCarloSimulator:
 
             else:
                 # Legacy mode: simplified tax treatment (all withdrawals as capital gains)
-                ss_income = np.full(n_sims, social_security)
-                if isinstance(spouse_ss, np.ndarray):
-                    ss_income = ss_income + spouse_ss
-                elif isinstance(spouse_ss, (int, float)) and spouse_ss > 0:
-                    ss_income = ss_income + spouse_ss
-
-                employment_total = np.full(n_sims, employment)
-                if isinstance(spouse_employment, np.ndarray):
-                    employment_total = employment_total + spouse_employment
-                elif (
-                    isinstance(spouse_employment, (int, float))
-                    and spouse_employment > 0
-                ):
-                    employment_total = employment_total + spouse_employment
-
                 tax_results = self.tax_calc.calculate_batch_taxes(
                     capital_gains_array=np.asarray(net_need).flatten(),
                     social_security_array=np.asarray(ss_income).flatten(),

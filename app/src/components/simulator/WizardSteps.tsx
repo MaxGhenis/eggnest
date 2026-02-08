@@ -9,6 +9,7 @@ import type {
 } from "../../lib/api";
 import { HoldingsEditor } from "../HoldingsEditor";
 import { US_STATES } from "../../lib/constants";
+import type { PortfolioMode, WithdrawalStrategy } from "../../hooks/usePortfolio";
 import {
   formatCurrency,
   getWithdrawalRateContext,
@@ -22,12 +23,12 @@ interface WizardStepsProps {
   setSpouse: React.Dispatch<React.SetStateAction<SpouseInput>>;
   annuity: AnnuityInput;
   setAnnuity: React.Dispatch<React.SetStateAction<AnnuityInput>>;
-  portfolioMode: "simple" | "detailed";
-  setPortfolioMode: React.Dispatch<React.SetStateAction<"simple" | "detailed">>;
+  portfolioMode: PortfolioMode;
+  setPortfolioMode: React.Dispatch<React.SetStateAction<PortfolioMode>>;
   holdings: Holding[];
   setHoldings: React.Dispatch<React.SetStateAction<Holding[]>>;
-  withdrawalStrategy: "taxable_first" | "traditional_first" | "roth_first" | "pro_rata";
-  setWithdrawalStrategy: React.Dispatch<React.SetStateAction<"taxable_first" | "traditional_first" | "roth_first" | "pro_rata">>;
+  withdrawalStrategy: WithdrawalStrategy;
+  setWithdrawalStrategy: React.Dispatch<React.SetStateAction<WithdrawalStrategy>>;
   isReceivingSS: boolean;
   setIsReceivingSS: React.Dispatch<React.SetStateAction<boolean>>;
   isSpouseReceivingSS: boolean;
@@ -54,98 +55,94 @@ export function useWizardSteps({
   setIsSpouseReceivingSS,
   error,
 }: WizardStepsProps): WizardStep[] {
-  return useMemo(() => {
-    const steps: WizardStep[] = [
-      {
-        id: "about",
-        title: "About You",
-        subtitle: "Let's start with some basic information",
-        content: (
-          <AboutYouStep
-            params={params}
-            updateParam={updateParam}
-          />
-        ),
-      },
-      {
-        id: "money",
-        title: "Your Money",
-        subtitle: "How much have you saved, and how much do you need?",
-        content: (
-          <MoneyStep
-            params={params}
-            updateParam={updateParam}
-            portfolioMode={portfolioMode}
-            setPortfolioMode={setPortfolioMode}
-            holdings={holdings}
-            setHoldings={setHoldings}
-            withdrawalStrategy={withdrawalStrategy}
-            setWithdrawalStrategy={setWithdrawalStrategy}
-          />
-        ),
-      },
-      {
-        id: "income",
-        title: "Income Sources",
-        subtitle: "What income sources do you have?",
-        content: (
-          <IncomeStep
-            params={params}
-            updateParam={updateParam}
-            isReceivingSS={isReceivingSS}
-            setIsReceivingSS={setIsReceivingSS}
-          />
-        ),
-      },
-      {
-        id: "spouse",
-        title: "Spouse",
-        subtitle: "Retiring with a partner? Include their details.",
-        optional: true,
-        content: (
-          <SpouseStep
-            params={params}
-            updateParam={updateParam}
-            spouse={spouse}
-            setSpouse={setSpouse}
-            isSpouseReceivingSS={isSpouseReceivingSS}
-            setIsSpouseReceivingSS={setIsSpouseReceivingSS}
-          />
-        ),
-      },
-      {
-        id: "annuity",
-        title: "Annuity",
-        subtitle: "Compare your portfolio to a guaranteed annuity",
-        optional: true,
-        content: (
-          <AnnuityStep
-            params={params}
-            updateParam={updateParam}
-            annuity={annuity}
-            setAnnuity={setAnnuity}
-          />
-        ),
-      },
-      {
-        id: "review",
-        title: "Review",
-        subtitle: "Check your inputs and run the simulation",
-        content: (
-          <ReviewStep
-            params={params}
-            spouse={spouse}
-            annuity={annuity}
-            portfolioMode={portfolioMode}
-            holdings={holdings}
-            error={error}
-          />
-        ),
-      },
-    ];
-
-    return steps;
-  }, [
+  return useMemo((): WizardStep[] => [
+    {
+      id: "about",
+      title: "About You",
+      subtitle: "Let's start with some basic information",
+      content: (
+        <AboutYouStep
+          params={params}
+          updateParam={updateParam}
+        />
+      ),
+    },
+    {
+      id: "money",
+      title: "Your Money",
+      subtitle: "How much have you saved, and how much do you need?",
+      content: (
+        <MoneyStep
+          params={params}
+          updateParam={updateParam}
+          portfolioMode={portfolioMode}
+          setPortfolioMode={setPortfolioMode}
+          holdings={holdings}
+          setHoldings={setHoldings}
+          withdrawalStrategy={withdrawalStrategy}
+          setWithdrawalStrategy={setWithdrawalStrategy}
+        />
+      ),
+    },
+    {
+      id: "income",
+      title: "Income Sources",
+      subtitle: "What income sources do you have?",
+      content: (
+        <IncomeStep
+          params={params}
+          updateParam={updateParam}
+          isReceivingSS={isReceivingSS}
+          setIsReceivingSS={setIsReceivingSS}
+        />
+      ),
+    },
+    {
+      id: "spouse",
+      title: "Spouse",
+      subtitle: "Retiring with a partner? Include their details.",
+      optional: true,
+      content: (
+        <SpouseStep
+          params={params}
+          updateParam={updateParam}
+          spouse={spouse}
+          setSpouse={setSpouse}
+          isSpouseReceivingSS={isSpouseReceivingSS}
+          setIsSpouseReceivingSS={setIsSpouseReceivingSS}
+        />
+      ),
+    },
+    {
+      id: "annuity",
+      title: "Annuity",
+      subtitle: "Compare your portfolio to a guaranteed annuity",
+      optional: true,
+      content: (
+        <AnnuityStep
+          params={params}
+          updateParam={updateParam}
+          annuity={annuity}
+          setAnnuity={setAnnuity}
+        />
+      ),
+    },
+    {
+      id: "review",
+      title: "Review",
+      subtitle: "Check your inputs and run the simulation",
+      content: (
+        <ReviewStep
+          params={params}
+          spouse={spouse}
+          annuity={annuity}
+          portfolioMode={portfolioMode}
+          holdings={holdings}
+          error={error}
+        />
+      ),
+    },
+  ], [
     params, spouse, annuity, portfolioMode, holdings, withdrawalStrategy,
     isReceivingSS, isSpouseReceivingSS, error,
     updateParam, setSpouse, setAnnuity, setPortfolioMode,
@@ -240,12 +237,12 @@ function MoneyStep({
 }: {
   params: SimulationInput;
   updateParam: <K extends keyof SimulationInput>(key: K, value: SimulationInput[K]) => void;
-  portfolioMode: "simple" | "detailed";
-  setPortfolioMode: React.Dispatch<React.SetStateAction<"simple" | "detailed">>;
+  portfolioMode: PortfolioMode;
+  setPortfolioMode: React.Dispatch<React.SetStateAction<PortfolioMode>>;
   holdings: Holding[];
   setHoldings: React.Dispatch<React.SetStateAction<Holding[]>>;
-  withdrawalStrategy: "taxable_first" | "traditional_first" | "roth_first" | "pro_rata";
-  setWithdrawalStrategy: React.Dispatch<React.SetStateAction<"taxable_first" | "traditional_first" | "roth_first" | "pro_rata">>;
+  withdrawalStrategy: WithdrawalStrategy;
+  setWithdrawalStrategy: React.Dispatch<React.SetStateAction<WithdrawalStrategy>>;
 }) {
   const totalPortfolio = portfolioMode === "detailed" && holdings.length > 0
     ? holdings.reduce((sum, h) => sum + h.balance, 0)
@@ -335,9 +332,7 @@ function MoneyStep({
               id="withdrawal-strategy"
               value={withdrawalStrategy}
               onChange={(e) =>
-                setWithdrawalStrategy(
-                  e.target.value as "taxable_first" | "traditional_first" | "roth_first" | "pro_rata"
-                )
+                setWithdrawalStrategy(e.target.value as WithdrawalStrategy)
               }
             >
               <option value="taxable_first">
@@ -728,7 +723,7 @@ function ReviewStep({
   params: SimulationInput;
   spouse: SpouseInput;
   annuity: AnnuityInput;
-  portfolioMode: "simple" | "detailed";
+  portfolioMode: PortfolioMode;
   holdings: Holding[];
   error: unknown;
 }) {
@@ -825,19 +820,21 @@ function ReviewStep({
         )}
       </div>
 
-      {error ? (() => {
-        const errorInfo = getErrorInfo(error);
-        return (
-          <div className="error-banner" style={{ marginTop: "1rem" }}>
-            <strong>{errorInfo.title}:</strong> {errorInfo.message}
-            {errorInfo.field && (
-              <span style={{ display: "block", marginTop: "0.5rem", fontStyle: "italic" }}>
-                Check: {errorInfo.field.replace(/_/g, " ")}
-              </span>
-            )}
-          </div>
-        );
-      })() : null}
+      {error && <ReviewErrorBanner error={error} />}
+    </div>
+  );
+}
+
+function ReviewErrorBanner({ error }: { error: unknown }) {
+  const errorInfo = getErrorInfo(error);
+  return (
+    <div className="error-banner" style={{ marginTop: "1rem" }}>
+      <strong>{errorInfo.title}:</strong> {errorInfo.message}
+      {errorInfo.field && (
+        <span style={{ display: "block", marginTop: "0.5rem", fontStyle: "italic" }}>
+          Check: {errorInfo.field.replace(/_/g, " ")}
+        </span>
+      )}
     </div>
   );
 }

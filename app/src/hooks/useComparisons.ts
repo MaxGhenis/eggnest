@@ -12,6 +12,7 @@ import {
   type AllocationComparisonResult,
 } from "../lib/api";
 import { NO_TAX_STATES } from "../lib/constants";
+import type { PortfolioMode, WithdrawalStrategy } from "./usePortfolio";
 
 export interface UseComparisonsReturn {
   // State comparison
@@ -44,9 +45,9 @@ interface ComparisonDeps {
   params: SimulationInput;
   spouse: SpouseInput;
   annuity: AnnuityInput;
-  portfolioMode: "simple" | "detailed";
+  portfolioMode: PortfolioMode;
   holdings: Holding[];
-  withdrawalStrategy: "taxable_first" | "traditional_first" | "roth_first" | "pro_rata";
+  withdrawalStrategy: WithdrawalStrategy;
   result: unknown;
   setError: (err: unknown) => void;
 }

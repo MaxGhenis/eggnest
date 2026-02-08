@@ -38,6 +38,19 @@ export function Wizard({
   const step = steps[currentStep];
   const hasErrors = validationErrors.length > 0;
 
+  function getPrimaryButtonLabel(): string {
+    if (!isLastStep) return "Next";
+    if (isLoading) return loadingButtonText;
+    return completeButtonText;
+  }
+
+  function getPrimaryButtonAriaLabel(): string {
+    if (!isLastStep) return "Go to next step";
+    if (isLoading) return loadingButtonText;
+    if (hasErrors) return "Fix validation errors to continue";
+    return completeButtonText;
+  }
+
   const handleNext = () => {
     if (isLastStep) {
       if (!hasErrors) {
@@ -157,21 +170,9 @@ export function Wizard({
           className="wizard-btn wizard-btn-primary"
           onClick={handleNext}
           disabled={isLoading || (isLastStep && hasErrors)}
-          aria-label={
-            isLastStep
-              ? isLoading
-                ? loadingButtonText
-                : hasErrors
-                  ? "Fix validation errors to continue"
-                  : completeButtonText
-              : "Go to next step"
-          }
+          aria-label={getPrimaryButtonAriaLabel()}
         >
-          {isLastStep
-            ? isLoading
-              ? loadingButtonText
-              : completeButtonText
-            : "Next"}
+          {getPrimaryButtonLabel()}
         </button>
       </div>
     </div>
