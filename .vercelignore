@@ -3,5 +3,4 @@ api/
 
 # Ignore other non-frontend directories
 supabase/
-web/
 .beads/
