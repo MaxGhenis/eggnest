@@ -162,6 +162,6 @@ describe('HoldingsEditor', () => {
     expect(screen.getAllByText('VT (Total World)').length).toBeGreaterThan(0);
     expect(screen.getAllByText('S&P 500').length).toBeGreaterThan(0);
     expect(screen.getAllByText('BND (Total Bond)').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Treasury Bonds').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Treasury bonds').length).toBeGreaterThan(0);
   });
 });
