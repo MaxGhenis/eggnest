@@ -131,10 +131,10 @@ h1, h2, h3, h4, h5, h6 {
   background: linear-gradient(135deg, #fef3c7 0%, #fed7aa 50%, #fdba74 100%);
 }
 .bg-gradient-golden {
-  background: linear-gradient(135deg, #d97706 0%, #ea580c 100%);
+  background-image: linear-gradient(135deg, #d97706 0%, #ea580c 100%);
 }
 .bg-gradient-golden-refined {
-  background: linear-gradient(135deg, #d97706 0%, #c2410c 40%, #9a3412 100%);
+  background-image: linear-gradient(135deg, #d97706 0%, #c2410c 40%, #9a3412 100%);
 }
 .bg-gradient-warm {
   background: linear-gradient(180deg, #fffbf5 0%, #fef7ed 100%);
