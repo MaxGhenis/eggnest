@@ -31,7 +31,7 @@ describe('Wizard', () => {
 
     expect(screen.getByRole('heading', { name: 'Step 1' })).toBeInTheDocument()
     expect(screen.getByText('Step 1 content')).toBeInTheDocument()
-    expect(screen.getByText(/Step 1 of 3/)).toBeInTheDocument()
+    expect(screen.getByText('1 / 3')).toBeInTheDocument()
   })
 
   it('shows Back button disabled on first step', () => {
@@ -48,7 +48,7 @@ describe('Wizard', () => {
     await user.click(screen.getByRole('button', { name: /next/i }))
 
     expect(screen.getByText('Step 2 content')).toBeInTheDocument()
-    expect(screen.getByText('Step 2 of 3')).toBeInTheDocument()
+    expect(screen.getByText('2 / 3')).toBeInTheDocument()
   })
 
   it('navigates back when clicking Back', async () => {
@@ -139,11 +139,10 @@ describe('Wizard', () => {
     await user.click(screen.getByRole('button', { name: /next/i }))
     expect(screen.getByText('Step 2 content')).toBeInTheDocument()
 
-    // Click on step 1 indicator (first button in progress bar)
-    const stepIndicators = screen.getAllByRole('button')
-    const step1Indicator = stepIndicators.find(btn => btn.classList.contains('wizard-step-indicator') && btn.classList.contains('completed'))
-    expect(step1Indicator).toBeDefined()
-    await user.click(step1Indicator!)
+    // Click on step 1 indicator (uses aria-label with "completed")
+    const step1Indicator = screen.getByRole('button', { name: /Step 1:.*completed/i })
+    expect(step1Indicator).toBeInTheDocument()
+    await user.click(step1Indicator)
 
     expect(screen.getByText('Step 1 content')).toBeInTheDocument()
   })
@@ -155,8 +154,8 @@ describe('Wizard', () => {
     // Go to step 2
     await user.click(screen.getByRole('button', { name: /next/i }))
 
-    // Step 1 should have checkmark (svg path)
-    const step1Button = screen.getAllByRole('button')[0]
-    expect(step1Button.querySelector('svg')).toBeInTheDocument()
+    // Step 1 should have checkmark (svg in the completed step button)
+    const step1Button = screen.getByRole('button', { name: /Step 1:.*completed/i })
+    expect(step1Button.querySelector('svg')).toBeTruthy()
   })
 })
