@@ -220,17 +220,19 @@ export default function SimulatorPage() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-[var(--color-border-light)] bg-white/90 px-4 py-3 backdrop-blur-md md:px-6">
-        <a href={HOME_URL} className="flex items-center gap-2">
-          <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
-        </a>
-        <span className="text-sm font-semibold text-[var(--color-text)]">Financial Simulator</span>
-        <Link href="/life-event" className="text-sm font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-dark)]">
-          Tax & Benefits Calculator
-        </Link>
+      <header className="header-glass sticky top-0 z-50 border-b border-[var(--color-border-light)]">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
+          <a href={HOME_URL} className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
+            <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
+          </a>
+          <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Financial Simulator</span>
+          <Link href="/life-event" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">
+            Tax & Benefits Calculator
+          </Link>
+        </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-4 py-8 md:px-6">
+      <main className="mx-auto max-w-4xl px-4 py-10 md:px-6 md:py-12">
         {renderContent()}
       </main>
     </div>

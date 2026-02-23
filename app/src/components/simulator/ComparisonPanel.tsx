@@ -12,7 +12,7 @@ import { formatCurrency, formatPercent } from "../../lib/simulatorUtils";
 import { US_STATES, NO_TAX_STATES } from "../../lib/constants";
 
 /* Shared styles */
-const sectionCls = "rounded-[var(--radius-lg)] bg-[var(--color-bg-card)] p-6 shadow-[var(--shadow-sm)] border border-[var(--color-border-light)]";
+const sectionCls = "section-card";
 const btnPrimary = "rounded-[var(--radius-md)] bg-gradient-golden px-5 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-sm)] transition-all hover:shadow-[var(--shadow-md)] hover:brightness-110 disabled:opacity-50";
 const btnSecondary = "rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-sm font-medium text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)]";
 
@@ -28,7 +28,7 @@ interface AnnuityComparisonProps {
 export function AnnuityComparison({ annuityResult, guaranteeYears }: AnnuityComparisonProps) {
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold mb-4">Annuity Comparison</h3>
+      <h3 className="text-lg font-semibold mb-4">Annuity comparison</h3>
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-[var(--radius-md)] bg-[var(--color-gray-50)] p-4">
           <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Annuity Guaranteed Total</div>
@@ -81,6 +81,7 @@ export function StateComparison({
   return (
     <div className={sectionCls}>
       <h3 className="text-lg font-semibold">Compare states</h3>
+
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">See how relocating could affect your taxes and outcomes.</p>
 
       {!stateComparisonResult && !isComparingStates && (

@@ -58,7 +58,7 @@ interface ResultsPanelProps {
   onResetAllocations: () => void;
 }
 
-const sectionCls = "rounded-[var(--radius-lg)] bg-[var(--color-bg-card)] p-6 shadow-[var(--shadow-sm)] border border-[var(--color-border-light)]";
+const sectionCls = "section-card";
 
 export function ResultsPanel({
   result, params, annuity, annuityResult,
@@ -77,11 +77,11 @@ export function ResultsPanel({
     <div className="space-y-6">
       {/* Actions row */}
       <div className="flex flex-wrap items-center gap-3">
-        <button className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)]" onClick={onEditInputs}>
+        <button className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-text-muted)] shadow-[var(--shadow-sm)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)] hover:shadow-[var(--shadow-md)]" onClick={onEditInputs}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
           Edit Inputs
         </button>
-        <button className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 py-2 text-sm font-medium text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)]" onClick={onCopyLink}>
+        <button className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-text-muted)] shadow-[var(--shadow-sm)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)] hover:shadow-[var(--shadow-md)]" onClick={onCopyLink}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
@@ -91,35 +91,38 @@ export function ResultsPanel({
       </div>
 
       {/* Success banner */}
-      <div className="rounded-[var(--radius-lg)] p-5" style={{ borderLeft: `4px solid ${interpretation.color}`, background: "var(--color-bg-card)" }}>
-        <div className="flex items-center justify-between">
-          <span className="text-lg font-bold" style={{ color: interpretation.color }}>{interpretation.label}</span>
-          <span className="text-sm font-semibold" style={{ color: interpretation.color }}>{formatPercent(result.success_rate)} success rate</span>
+      <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
+        <div className="h-1.5" style={{ background: `linear-gradient(90deg, ${interpretation.color}, ${interpretation.color}88)` }} />
+        <div className="p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-lg font-bold" style={{ color: interpretation.color }}>{interpretation.label}</span>
+            <span className="rounded-full px-3 py-1 text-sm font-bold" style={{ color: interpretation.color, background: `${interpretation.color}12` }}>{formatPercent(result.success_rate)}</span>
+          </div>
+          <p className="mt-1.5 text-sm text-[var(--color-text-muted)]">{interpretation.description}</p>
         </div>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">{interpretation.description}</p>
       </div>
 
       {/* Metrics grid */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <div className="rounded-[var(--radius-md)] p-4 border-2" style={{ borderColor: successColor, background: "var(--color-bg-card)" }}>
-          <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Success Rate</div>
-          <div className="mt-1 text-2xl font-bold" style={{ color: successColor }}>{formatPercent(result.success_rate)}</div>
-          <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">Probability of not running out</div>
+        <div className="metric-card metric-card-primary" style={{ borderColor: successColor }}>
+          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Success Rate</div>
+          <div className="mt-1.5 text-2xl font-bold tabular-nums" style={{ color: successColor }}>{formatPercent(result.success_rate)}</div>
+          <div className="mt-1 text-xs text-[var(--color-text-muted)]">Probability of not running out</div>
         </div>
-        <div className={`rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4`}>
-          <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Withdrawal Rate</div>
-          <div className="mt-1 text-2xl font-bold text-[var(--color-text)]">{result.initial_withdrawal_rate.toFixed(1)}%</div>
-          <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">From portfolio in year 1</div>
+        <div className="metric-card">
+          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Withdrawal Rate</div>
+          <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{result.initial_withdrawal_rate.toFixed(1)}%</div>
+          <div className="mt-1 text-xs text-[var(--color-text-muted)]">From portfolio in year 1</div>
         </div>
-        <div className={`rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4`}>
-          <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Median Final</div>
-          <div className="mt-1 text-2xl font-bold text-[var(--color-text)]">{formatCurrency(result.median_final_value)}</div>
-          <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">50th pctl at age {params.max_age}</div>
+        <div className="metric-card">
+          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Median Final</div>
+          <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{formatCurrency(result.median_final_value)}</div>
+          <div className="mt-1 text-xs text-[var(--color-text-muted)]">50th pctl at age {params.max_age}</div>
         </div>
-        <div className={`rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4`}>
-          <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">10-Yr Depletion Risk</div>
-          <div className="mt-1 text-2xl font-bold text-[var(--color-text)]">{formatPercent(result.prob_10_year_failure)}</div>
-          <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">Depletion within 10 years</div>
+        <div className="metric-card">
+          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">10-Yr Depletion Risk</div>
+          <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{formatPercent(result.prob_10_year_failure)}</div>
+          <div className="mt-1 text-xs text-[var(--color-text-muted)]">Depletion within 10 years</div>
         </div>
       </div>
 
@@ -154,8 +157,11 @@ export function ResultsPanel({
         onCompare={onCompareAllocations} onReset={onResetAllocations} />
 
       {result.median_depletion_age && (
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">
-          <strong>Warning:</strong> In scenarios where the portfolio is depleted, the median depletion occurs at age {result.median_depletion_age}. Consider reducing spending or increasing savings.
+        <div className="flex gap-3 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">
+          <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-warning)] text-xs font-bold text-white">!</span>
+          <div>
+            <strong>Depletion risk:</strong> In scenarios where the portfolio is depleted, the median depletion occurs at age {result.median_depletion_age}. Consider reducing spending or increasing savings.
+          </div>
         </div>
       )}
 
@@ -203,9 +209,11 @@ function PortfolioChart({ result, ages, selectedYearIndex, setSelectedYearIndex 
 
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold">Portfolio Value Over Time</h3>
-      <p className="mt-1 text-xs text-[var(--color-text-light)]">Click on the chart to see year details. Click legend items to toggle visibility.</p>
-      <div className="plotly-chart-wrapper mt-3">
+      <div className="mb-4 flex items-baseline justify-between">
+        <h3 className="text-lg font-semibold">Portfolio value over time</h3>
+        <span className="text-xs text-[var(--color-text-light)]">Click chart for year details</span>
+      </div>
+      <div className="plotly-chart-wrapper -mx-2">
         <Plot data={chartData} layout={layout} config={{ responsive: true, displayModeBar: false, scrollZoom: false }} style={{ width: "100%" }}
           onClick={(event: { points?: Array<{ pointIndex?: number }> }) => {
             if (event.points && event.points.length > 0) {
@@ -232,11 +240,14 @@ function YearDetailPanel({ year, selectedYearIndex, totalYears, onClose, onPrevi
   onClose: () => void; onPrevious: () => void; onNext: () => void;
 }) {
   return (
-    <div className={`${sectionCls} !border-[var(--color-primary-200)]`}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold">Age {year.age} Details</h3>
-        <button className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--color-text-light)] hover:bg-[var(--color-gray-100)]" onClick={onClose} aria-label="Close">&times;</button>
+    <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-primary-200)] bg-[var(--color-bg-card)] shadow-[var(--shadow-md)]">
+      <div className="border-b border-[var(--color-primary-100)] bg-[var(--color-primary-50)] px-6 py-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-[var(--color-primary-dark)]">Age {year.age} details</h3>
+          <button className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-primary)] hover:bg-[var(--color-primary-100)]" onClick={onClose} aria-label="Close">&times;</button>
+        </div>
       </div>
+      <div className="p-6">
       <div className="grid gap-6 sm:grid-cols-3">
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)] mb-2">Portfolio</h4>
@@ -263,12 +274,13 @@ function YearDetailPanel({ year, selectedYearIndex, totalYears, onClose, onPrevi
         </div>
       </div>
       <div className="mt-4 flex justify-between">
-        <button className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40" disabled={selectedYearIndex === 0} onClick={onPrevious}>
+        <button className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-4 py-1.5 text-sm font-medium text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-gray-50)] disabled:opacity-40" disabled={selectedYearIndex === 0} onClick={onPrevious}>
           &larr; Previous
         </button>
-        <button className="rounded-[var(--radius-sm)] border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-40" disabled={selectedYearIndex === totalYears - 1} onClick={onNext}>
+        <button className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-4 py-1.5 text-sm font-medium text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-gray-50)] disabled:opacity-40" disabled={selectedYearIndex === totalYears - 1} onClick={onNext}>
           Next &rarr;
         </button>
+      </div>
       </div>
     </div>
   );
@@ -277,7 +289,7 @@ function YearDetailPanel({ year, selectedYearIndex, totalYears, onClose, onPrevi
 function OutcomeDistribution({ result }: { result: SimulationResult }) {
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold mb-4">Outcome Distribution</h3>
+      <h3 className="text-lg font-semibold mb-4">Outcome distribution</h3>
       <div className="overflow-x-auto">
         <table className="w-full table-auto-style">
           <thead><tr><th>Percentile</th><th>Final Portfolio</th><th>Interpretation</th></tr></thead>
@@ -297,7 +309,7 @@ function OutcomeDistribution({ result }: { result: SimulationResult }) {
 function TaxSummary({ result, state }: { result: SimulationResult; state: string }) {
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold mb-4">Tax Summary (Median)</h3>
+      <h3 className="text-lg font-semibold mb-4">Tax summary (median)</h3>
       <div className="space-y-2">
         {[
           ["Total Withdrawals", formatCurrency(result.total_withdrawn_median)],
@@ -322,7 +334,7 @@ function YearBreakdownTable({ result }: { result: SimulationResult }) {
     <div className={sectionCls}>
       <details>
         <summary className="cursor-pointer">
-          <h3 className="inline text-lg font-semibold">Year-by-Year Breakdown (Median)</h3>
+          <h3 className="inline text-lg font-semibold">Year-by-year breakdown (median)</h3>
           <span className="ml-2 text-xs text-[var(--color-text-light)]">Click to expand</span>
         </summary>
         <div className="mt-4 overflow-x-auto">
@@ -351,7 +363,7 @@ function YearBreakdownTable({ result }: { result: SimulationResult }) {
 function WhatIfScenarios({ params, onWhatIf }: { params: SimulationInput; onWhatIf: (mod: Partial<SimulationInput>) => void }) {
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold">Explore Scenarios</h3>
+      <h3 className="text-lg font-semibold">Explore scenarios</h3>
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">See how changes affect your success rate</p>
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
@@ -361,11 +373,11 @@ function WhatIfScenarios({ params, onWhatIf }: { params: SimulationInput; onWhat
           ...(params.social_security_start_age < 70 ? [{ label: "Delay SS to 70", value: "+24% benefit", icon: "\uD83D\uDD50", mod: { social_security_start_age: 70 } }] : []),
         ].map(({ label, value, icon, mod }) => (
           <button key={label}
-            className="flex flex-col items-center gap-1 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 text-center transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-sm)]"
+            className="flex flex-col items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 text-center transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5"
             onClick={() => onWhatIf(mod)}>
-            <span className="text-xl" aria-hidden="true">{icon}</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-primary-50)] text-base" aria-hidden="true">{icon}</span>
             <span className="text-sm font-medium text-[var(--color-text)]">{label}</span>
-            <span className="text-xs text-[var(--color-primary)]">{value}</span>
+            <span className="text-xs font-semibold text-[var(--color-primary)]">{value}</span>
           </button>
         ))}
       </div>
@@ -376,21 +388,21 @@ function WhatIfScenarios({ params, onWhatIf }: { params: SimulationInput; onWhat
 function NextStepsCTA({ hasAnnuity }: { hasAnnuity: boolean }) {
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold mb-4">Take the Next Step</h3>
+      <h3 className="text-lg font-semibold mb-4">Take the next step</h3>
       <div className="space-y-3">
         {[
-          { href: "https://www.nerdwallet.com/best/investing/financial-advisors-for-retirement", icon: "\uD83D\uDC64", title: "Talk to a Fiduciary Advisor", desc: "Get personalized advice from a fee-only advisor who works in your interest." },
-          { href: "https://investor.vanguard.com/investment-products/index-funds", icon: "\uD83D\uDCC8", title: "Low-Cost Index Funds", desc: "Simple, diversified investing with minimal fees." },
-          ...(hasAnnuity ? [{ href: "https://www.immediateannuities.com/", icon: "\uD83D\uDEE1\uFE0F", title: "Compare Annuity Quotes", desc: "Get quotes from multiple insurers for guaranteed income." }] : []),
+          { href: "https://www.nerdwallet.com/best/investing/financial-advisors-for-retirement", icon: "\uD83D\uDC64", title: "Talk to a fiduciary advisor", desc: "Get personalized advice from a fee-only advisor who works in your interest." },
+          { href: "https://investor.vanguard.com/investment-products/index-funds", icon: "\uD83D\uDCC8", title: "Low-cost index funds", desc: "Simple, diversified investing with minimal fees." },
+          ...(hasAnnuity ? [{ href: "https://www.immediateannuities.com/", icon: "\uD83D\uDEE1\uFE0F", title: "Compare annuity quotes", desc: "Get quotes from multiple insurers for guaranteed income." }] : []),
         ].map(({ href, icon, title, desc }) => (
           <a key={href} href={href} target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-4 rounded-[var(--radius-md)] border border-[var(--color-border-light)] p-4 transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-sm)]">
-            <span className="text-2xl" aria-hidden="true">{icon}</span>
+            className="group flex items-center gap-4 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-white p-4 transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-md)]">
+            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-50)] text-xl transition-colors group-hover:bg-[var(--color-primary-100)]" aria-hidden="true">{icon}</span>
             <div className="flex-1">
               <div className="font-semibold text-[var(--color-text)]">{title}</div>
               <div className="text-sm text-[var(--color-text-muted)]">{desc}</div>
             </div>
-            <span className="text-[var(--color-text-light)]" aria-hidden="true">&rarr;</span>
+            <span className="text-[var(--color-text-light)] transition-transform group-hover:translate-x-0.5" aria-hidden="true">&rarr;</span>
           </a>
         ))}
       </div>

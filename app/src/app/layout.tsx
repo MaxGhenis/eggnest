@@ -36,7 +36,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] font-[var(--font-body)]">
+      <body className="min-h-screen bg-gradient-page text-[var(--color-text)] font-[var(--font-body)]">
         {children}
       </body>
     </html>

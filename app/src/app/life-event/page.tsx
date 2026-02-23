@@ -66,7 +66,7 @@ const fieldCls = "space-y-1.5";
 const labelCls = "block text-sm font-medium text-[var(--color-text-muted)]";
 const inputCls = "w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm transition-colors focus:border-[var(--color-primary)] focus:outline-none";
 const selectCls = inputCls;
-const sectionCls = "rounded-[var(--radius-lg)] bg-[var(--color-bg-card)] p-6 shadow-[var(--shadow-sm)] border border-[var(--color-border-light)]";
+const sectionCls = "section-card";
 
 export default function LifeEventPage() {
   const [baseHousehold, setBaseHousehold] = useState<HouseholdInput>({
@@ -136,8 +136,20 @@ export default function LifeEventPage() {
 
   const renderSetup = () => (
     <div className="space-y-8">
+      {/* Page hero */}
+      <div className="text-center">
+        <div className="mb-3 inline-block rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1 text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+          PolicyEngine-powered
+        </div>
+        <h1 className="text-2xl font-semibold text-[var(--color-text)] md:text-3xl" style={{ letterSpacing: "-0.03em" }}>
+          How will life changes
+          <br />
+          <span className="bg-gradient-golden bg-clip-text text-transparent">affect your taxes?</span>
+        </h1>
+      </div>
+
       <div className={sectionCls}>
-        <h2 className="text-xl font-semibold">Your current situation</h2>
+        <h2 className="text-lg font-semibold">Your current situation</h2>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">Tell us about yourself to see how life events affect your taxes</p>
 
         <form className="mt-6 space-y-5" onSubmit={(e) => { e.preventDefault(); calculateCurrent(); }} noValidate>
@@ -181,27 +193,28 @@ export default function LifeEventPage() {
             </select>
           </div>
           <button type="submit"
-            className="w-full rounded-[var(--radius-md)] bg-gradient-golden py-3 text-sm font-semibold text-white shadow-[var(--shadow-sm)] transition-all hover:shadow-[var(--shadow-md)] hover:brightness-110 disabled:opacity-50"
+            className="w-full rounded-[var(--radius-md)] bg-gradient-golden py-3.5 text-sm font-semibold text-white shadow-[var(--shadow-sm)] transition-all hover:shadow-[var(--shadow-md)] hover:brightness-110 disabled:opacity-50"
             disabled={isLoading || hasErrors}>
-            {isLoading ? "Calculating..." : "Calculate Current Taxes"}
+            {isLoading ? "Calculating..." : "Calculate current taxes"}
           </button>
         </form>
 
         {currentResult && (
           <div className="mt-6">
-            <h3 className="text-sm font-semibold text-[var(--color-text)]">Your current tax situation</h3>
+            <div className="divider-fade mb-5" />
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Your current tax situation</h3>
             <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
               {[
-                { label: "Total Income", value: formatCurrencyLocal(currentResult.total_income) },
-                { label: "Federal Tax", value: formatCurrencyLocal(currentResult.federal_income_tax) },
-                { label: "State Tax", value: formatCurrencyLocal(currentResult.state_income_tax) },
+                { label: "Total income", value: formatCurrencyLocal(currentResult.total_income) },
+                { label: "Federal tax", value: formatCurrencyLocal(currentResult.federal_income_tax) },
+                { label: "State tax", value: formatCurrencyLocal(currentResult.state_income_tax) },
                 { label: "FICA", value: formatCurrencyLocal(currentResult.payroll_tax) },
-                { label: "Net Income", value: formatCurrencyLocal(currentResult.net_income), highlight: true },
-                { label: "Effective Rate", value: formatPercentLocal(currentResult.effective_tax_rate) },
+                { label: "Net income", value: formatCurrencyLocal(currentResult.net_income), highlight: true },
+                { label: "Effective rate", value: formatPercentLocal(currentResult.effective_tax_rate) },
               ].map(({ label, value, highlight }) => (
-                <div key={label} className={`rounded-[var(--radius-sm)] p-3 ${highlight ? "bg-[var(--color-primary-50)] border border-[var(--color-primary-200)]" : "bg-[var(--color-gray-50)]"}`}>
-                  <div className="text-xs text-[var(--color-text-light)]">{label}</div>
-                  <div className={`text-lg font-bold ${highlight ? "text-[var(--color-primary)]" : "text-[var(--color-text)]"}`}>{value}</div>
+                <div key={label} className={`metric-card ${highlight ? "metric-card-primary bg-[var(--color-primary-50)]" : ""}`}>
+                  <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">{label}</div>
+                  <div className={`mt-1 text-lg font-bold tabular-nums ${highlight ? "text-[var(--color-primary)]" : "text-[var(--color-text)]"}`}>{value}</div>
                 </div>
               ))}
             </div>
@@ -210,15 +223,15 @@ export default function LifeEventPage() {
       </div>
 
       <div className={sectionCls}>
-        <h2 className="text-xl font-semibold">Explore life events</h2>
+        <h2 className="text-lg font-semibold">Explore life events</h2>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">See how major life changes affect your taxes and benefits</p>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4" role="group" aria-label="Life event scenarios">
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4" role="group" aria-label="Life event scenarios">
           {LIFE_EVENT_SCENARIOS.map((scenario) => (
             <button key={scenario.id}
-              className="flex flex-col items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-5 text-center transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-sm)] disabled:opacity-50"
+              className="flex flex-col items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-5 text-center transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5 disabled:opacity-50"
               onClick={() => runScenario(scenario)} disabled={isLoading || hasErrors}
               aria-label={`${scenario.name}: ${scenario.description}`}>
-              <span className="text-2xl" aria-hidden="true">{scenario.emoji}</span>
+              <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-50)] text-xl" aria-hidden="true">{scenario.emoji}</span>
               <span className="text-sm font-semibold text-[var(--color-text)]">{scenario.name}</span>
               <span className="text-xs text-[var(--color-text-muted)]">{scenario.description}</span>
             </button>
@@ -248,18 +261,21 @@ export default function LifeEventPage() {
         </button>
 
         <div className="text-center">
-          <span className="text-3xl" aria-hidden="true">{selectedScenario.emoji}</span>
-          <h2 className="mt-2 text-2xl font-semibold">{selectedScenario.name}</h2>
-          <p className="text-sm text-[var(--color-text-muted)]">{selectedScenario.description}</p>
+          <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-50)] text-3xl" aria-hidden="true">{selectedScenario.emoji}</span>
+          <h2 className="text-2xl font-semibold">{selectedScenario.name}</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">{selectedScenario.description}</p>
         </div>
 
         {/* Impact banner */}
-        <div className={`rounded-[var(--radius-lg)] p-6 text-center ${isBetterOff ? "bg-[var(--color-success-light)] border border-[var(--color-success)]" : "bg-[var(--color-danger-light)] border border-[var(--color-danger)]"}`}
+        <div className={`overflow-hidden rounded-[var(--radius-lg)] text-center ${isBetterOff ? "border border-[var(--color-success)]" : "border border-[var(--color-danger)]"}`}
           role="status">
-          <div className="text-sm text-[var(--color-text-muted)]">Net Income Impact</div>
-          <div className={`text-3xl font-bold ${isBetterOff ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
-            {net_income_change >= 0 ? "+" : ""}{formatCurrencyLocal(net_income_change)}
-            <span className="ml-1 text-base font-normal">{isBetterOff ? " more" : " less"} per year</span>
+          <div className="h-1" style={{ background: isBetterOff ? "var(--color-success)" : "var(--color-danger)" }} />
+          <div className={`p-6 ${isBetterOff ? "bg-[var(--color-success-light)]" : "bg-[var(--color-danger-light)]"}`}>
+            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Net income impact</div>
+            <div className={`mt-2 text-3xl font-bold tabular-nums ${isBetterOff ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
+              {net_income_change >= 0 ? "+" : ""}{formatCurrencyLocal(net_income_change)}
+              <span className="ml-1 text-base font-normal">{isBetterOff ? " more" : " less"} per year</span>
+            </div>
           </div>
         </div>
 
@@ -300,6 +316,7 @@ export default function LifeEventPage() {
         {(Object.keys(before_result.benefits).length > 0 || Object.keys(after_result.benefits).length > 0) && (
           <div className={sectionCls}>
             <h3 className="text-lg font-semibold mb-4">Benefits breakdown</h3>
+
             <div className="space-y-2">
               {Object.entries({ ...before_result.benefits, ...after_result.benefits })
                 .filter(([key, v]) => v > 0 || (before_result.benefits[key] || 0) > 0)
@@ -330,14 +347,14 @@ export default function LifeEventPage() {
           <h3 className="text-lg font-semibold mb-4">Tax rates</h3>
           <div className="grid gap-4 sm:grid-cols-2">
             {[
-              { label: "Effective Tax Rate", before: formatPercentLocal(before_result.effective_tax_rate), after: formatPercentLocal(after_result.effective_tax_rate) },
-              { label: "Marginal Tax Rate", before: formatPercentLocal(before_result.marginal_tax_rate), after: formatPercentLocal(after_result.marginal_tax_rate) },
+              { label: "Effective tax rate", before: formatPercentLocal(before_result.effective_tax_rate), after: formatPercentLocal(after_result.effective_tax_rate) },
+              { label: "Marginal tax rate", before: formatPercentLocal(before_result.marginal_tax_rate), after: formatPercentLocal(after_result.marginal_tax_rate) },
             ].map(({ label, before, after }) => (
               <div key={label} className="rounded-[var(--radius-md)] bg-[var(--color-gray-50)] p-4">
-                <div className="text-xs text-[var(--color-text-light)]">{label}</div>
-                <div className="mt-1 flex items-center gap-2 text-lg font-bold">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)]">{label}</div>
+                <div className="mt-2 flex items-center gap-3 text-lg font-bold tabular-nums">
                   <span>{before}</span>
-                  <span className="text-[var(--color-text-light)]" aria-hidden="true">&rarr;</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 text-[var(--color-text-light)]" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
                   <span>{after}</span>
                 </div>
               </div>
@@ -351,9 +368,9 @@ export default function LifeEventPage() {
           <div className="flex flex-wrap gap-3">
             {LIFE_EVENT_SCENARIOS.filter(s => s.id !== selectedScenario.id).map((scenario) => (
               <button key={scenario.id}
-                className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-white px-4 py-2 text-sm font-medium transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-sm)] disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-white px-4 py-2.5 text-sm font-medium shadow-[var(--shadow-sm)] transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5 disabled:opacity-50"
                 onClick={() => runScenario(scenario)} disabled={isLoading}>
-                <span aria-hidden="true">{scenario.emoji}</span>
+                <span className="flex h-6 w-6 items-center justify-center rounded bg-[var(--color-primary-50)] text-xs" aria-hidden="true">{scenario.emoji}</span>
                 <span>{scenario.name}</span>
               </button>
             ))}
@@ -369,25 +386,30 @@ export default function LifeEventPage() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-[var(--color-border-light)] bg-white/90 px-4 py-3 backdrop-blur-md md:px-6">
-        <a href={HOME_URL} className="flex items-center gap-2" aria-label="EggNest home">
-          <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
-        </a>
-        <span className="text-sm font-semibold text-[var(--color-text)]">Tax & Benefits Calculator</span>
-        <Link href="/" className="text-sm font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-dark)]">
-          Retirement Simulator
-        </Link>
+      <header className="header-glass sticky top-0 z-50 border-b border-[var(--color-border-light)]">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
+          <a href={HOME_URL} className="flex items-center gap-2.5 transition-opacity hover:opacity-80" aria-label="EggNest home">
+            <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
+          </a>
+          <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Tax & Benefits Calculator</span>
+          <Link href="/" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">
+            Retirement Simulator
+          </Link>
+        </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-8 md:px-6">
+      <main className="mx-auto max-w-3xl px-4 py-10 md:px-6 md:py-12">
         {showSetup ? renderSetup() : renderResults()}
       </main>
 
       {isLoading && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" role="status" aria-label="Calculating">
-          <div className="flex items-center gap-3 rounded-[var(--radius-lg)] bg-white px-6 py-4 shadow-[var(--shadow-lg)]">
-            <div className="h-5 w-5 animate-spin-slow rounded-full border-2 border-[var(--color-primary-200)] border-t-[var(--color-primary)]" aria-hidden="true" />
-            <span className="text-sm font-medium text-[var(--color-text)]">Calculating...</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-sm" role="status" aria-label="Calculating">
+          <div className="flex flex-col items-center gap-3 rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-white px-8 py-6 shadow-[var(--shadow-xl)]">
+            <div className="h-8 w-8 animate-spin-slow rounded-full border-[3px] border-[var(--color-primary-200)] border-t-[var(--color-primary)]" aria-hidden="true" />
+            <div className="text-center">
+              <span className="text-sm font-semibold text-[var(--color-text)]">Calculating taxes...</span>
+              <div className="mt-0.5 text-xs text-[var(--color-text-light)]">Powered by PolicyEngine</div>
+            </div>
           </div>
         </div>
       )}

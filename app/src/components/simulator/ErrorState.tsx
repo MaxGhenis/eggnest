@@ -13,7 +13,7 @@ export function ErrorState({ error, onRetry, onEditInputs }: ErrorStateProps) {
 
   return (
     <div className="flex min-h-[400px] items-center justify-center p-8">
-      <div className="mx-auto max-w-md space-y-6 rounded-[var(--radius-xl)] bg-[var(--color-bg-card)] p-8 text-center shadow-[var(--shadow-lg)]">
+      <div className="mx-auto max-w-md space-y-6 rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-8 text-center shadow-[var(--shadow-xl)]">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-danger-light)]">
           <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7">
             <circle cx="12" cy="12" r="10" />

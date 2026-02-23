@@ -73,67 +73,76 @@ export function Wizard({
 
   return (
     <div
-      className="mx-auto max-w-2xl rounded-[var(--radius-xl)] bg-[var(--color-bg-card)] p-6 shadow-[var(--shadow-lg)] md:p-8"
+      className="mx-auto max-w-2xl overflow-hidden rounded-[var(--radius-xl)] bg-[var(--color-bg-card)] shadow-[var(--shadow-lg)]"
       role="form"
       aria-label="Simulation setup wizard"
     >
-      {/* Progress indicator */}
-      <nav className="mb-8 flex items-center gap-1 overflow-x-auto pb-2" aria-label="Wizard steps">
-        {steps.map((s, index) => {
-          const isCurrent = index === currentStep;
-          const isCompleted = index < currentStep;
-          const isClickable = index <= currentStep + 1;
-          return (
-            <button
-              key={s.id}
-              className={`flex flex-shrink-0 flex-col items-center gap-1.5 rounded-[var(--radius-md)] px-3 py-2 text-center transition-all duration-200 ${
-                isCurrent
-                  ? "bg-[var(--color-primary-50)] text-[var(--color-primary)]"
-                  : isCompleted
-                    ? "text-[var(--color-success)]"
-                    : "text-[var(--color-text-light)]"
-              } ${isClickable ? "cursor-pointer hover:bg-[var(--color-gray-50)]" : "cursor-default opacity-50"}`}
-              onClick={() => handleStepClick(index)}
-              disabled={!isClickable}
-              aria-label={`Step ${index + 1}: ${s.title}${isCompleted ? " (completed)" : isCurrent ? " (current)" : ""}`}
-              aria-current={isCurrent ? "step" : undefined}
-            >
-              <span
-                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
+      {/* Progress indicator - top bar */}
+      <nav className="border-b border-[var(--color-border-light)] bg-[var(--color-gray-50)] px-6 py-4 md:px-8" aria-label="Wizard steps">
+        <div className="flex items-center gap-1 overflow-x-auto pb-1">
+          {steps.map((s, index) => {
+            const isCurrent = index === currentStep;
+            const isCompleted = index < currentStep;
+            const isClickable = index <= currentStep + 1;
+            return (
+              <button
+                key={s.id}
+                className={`flex flex-shrink-0 flex-col items-center gap-1.5 rounded-[var(--radius-md)] px-3 py-2 text-center transition-all duration-200 ${
                   isCurrent
-                    ? "bg-[var(--color-primary)] text-white"
+                    ? "bg-white text-[var(--color-primary)] shadow-[var(--shadow-sm)]"
                     : isCompleted
-                      ? "bg-[var(--color-success)] text-white"
-                      : "bg-[var(--color-gray-200)] text-[var(--color-text-muted)]"
-                }`}
-                aria-hidden="true"
+                      ? "text-[var(--color-success)]"
+                      : "text-[var(--color-text-light)]"
+                } ${isClickable ? "cursor-pointer hover:bg-white/80" : "cursor-default opacity-50"}`}
+                onClick={() => handleStepClick(index)}
+                disabled={!isClickable}
+                aria-label={`Step ${index + 1}: ${s.title}${isCompleted ? " (completed)" : isCurrent ? " (current)" : ""}`}
+                aria-current={isCurrent ? "step" : undefined}
               >
-                {isCompleted ? (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="h-3.5 w-3.5">
-                    <path d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  index + 1
+                <span
+                  className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-all duration-200 ${
+                    isCurrent
+                      ? "bg-[var(--color-primary)] text-white shadow-[var(--shadow-glow-sm)]"
+                      : isCompleted
+                        ? "bg-[var(--color-success)] text-white"
+                        : "bg-[var(--color-gray-200)] text-[var(--color-text-muted)]"
+                  }`}
+                  aria-hidden="true"
+                >
+                  {isCompleted ? (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="h-3.5 w-3.5">
+                      <path d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    index + 1
+                  )}
+                </span>
+                <span className="text-[0.65rem] font-medium leading-tight">{s.title}</span>
+                {s.optional && (
+                  <span className="text-[0.55rem] text-[var(--color-text-light)]">Optional</span>
                 )}
-              </span>
-              <span className="text-[0.65rem] font-medium leading-tight">{s.title}</span>
-              {s.optional && (
-                <span className="text-[0.55rem] text-[var(--color-text-light)]">Optional</span>
-              )}
-            </button>
-          );
-        })}
+              </button>
+            );
+          })}
+        </div>
+        {/* Linear progress track */}
+        <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-[var(--color-gray-200)]">
+          <div
+            className="h-full rounded-full bg-gradient-golden transition-all duration-500 ease-out"
+            style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
+          />
+        </div>
       </nav>
 
       {/* Step content */}
-      <main aria-live="polite">
+      <main className="px-6 py-8 md:px-8" aria-live="polite">
         {isLoading && loadingContent ? (
           <div role="status" aria-label="Loading">
             {loadingContent}
           </div>
         ) : (
           <section aria-labelledby={`wizard-step-heading-${step.id}`}>
-            <div className="mb-6">
+            <div className="mb-7">
               <h2
                 id={`wizard-step-heading-${step.id}`}
                 className="text-xl font-semibold text-[var(--color-text)] md:text-2xl"
@@ -141,7 +150,7 @@ export function Wizard({
                 {step.title}
               </h2>
               {step.subtitle && (
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">{step.subtitle}</p>
+                <p className="mt-1.5 text-sm text-[var(--color-text-muted)]">{step.subtitle}</p>
               )}
             </div>
             <div className="space-y-5">{step.content}</div>
@@ -168,7 +177,7 @@ export function Wizard({
       </main>
 
       {/* Navigation */}
-      <div className="mt-8 flex items-center justify-between border-t border-[var(--color-border-light)] pt-6" role="navigation" aria-label="Wizard navigation">
+      <div className="flex items-center justify-between border-t border-[var(--color-border-light)] bg-[var(--color-gray-50)] px-6 py-4 md:px-8" role="navigation" aria-label="Wizard navigation">
         <button
           className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-sm font-medium text-[var(--color-text-muted)] transition-all duration-200 hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)] disabled:cursor-not-allowed disabled:opacity-40"
           onClick={handleBack}
@@ -178,8 +187,8 @@ export function Wizard({
           Back
         </button>
 
-        <div className="text-xs text-[var(--color-text-light)]" aria-live="polite">
-          Step {currentStep + 1} of {steps.length}
+        <div className="text-xs font-medium tabular-nums text-[var(--color-text-light)]" aria-live="polite">
+          {currentStep + 1} / {steps.length}
         </div>
 
         <button

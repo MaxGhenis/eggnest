@@ -78,11 +78,13 @@ export function ResultsSkeleton({
       </div>
 
       {/* Progress overlay */}
-      <div className="absolute inset-0 flex items-center justify-center rounded-[var(--radius-lg)] bg-white/80 backdrop-blur-sm">
-        <SimulationProgress
-          currentYear={currentYear}
-          totalYears={totalYears}
-        />
+      <div className="absolute inset-0 flex items-center justify-center rounded-[var(--radius-lg)] bg-white/85 backdrop-blur-md">
+        <div className="w-full max-w-sm rounded-[var(--radius-xl)] border border-[var(--color-border-light)] bg-white p-6 shadow-[var(--shadow-lg)] animate-pulse-glow">
+          <SimulationProgress
+            currentYear={currentYear}
+            totalYears={totalYears}
+          />
+        </div>
       </div>
     </div>
   );

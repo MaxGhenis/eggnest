@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* EggNest Design System - Golden Hour Edition */
+/* EggNest Design System - Refined Wealth Advisory */
 /* Fraunces (display serif) + DM Sans (body sans) */
 
 @theme {
@@ -56,11 +56,13 @@
   --color-border: #e7e5e4;
   --color-border-light: #f5f5f4;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.04);
-  --shadow-md: 0 4px 12px rgba(28, 25, 23, 0.06), 0 1px 3px rgba(28, 25, 23, 0.04);
-  --shadow-lg: 0 12px 32px rgba(28, 25, 23, 0.08), 0 4px 12px rgba(28, 25, 23, 0.04);
+  /* Shadows - layered for realism */
+  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.04), 0 0 0 1px rgba(28, 25, 23, 0.02);
+  --shadow-md: 0 4px 16px rgba(28, 25, 23, 0.06), 0 1px 4px rgba(28, 25, 23, 0.04), 0 0 0 1px rgba(28, 25, 23, 0.01);
+  --shadow-lg: 0 16px 40px rgba(28, 25, 23, 0.08), 0 6px 16px rgba(28, 25, 23, 0.04), 0 0 0 1px rgba(28, 25, 23, 0.01);
+  --shadow-xl: 0 24px 56px rgba(28, 25, 23, 0.1), 0 8px 24px rgba(28, 25, 23, 0.05);
   --shadow-glow: 0 0 40px rgba(234, 88, 12, 0.12);
+  --shadow-glow-sm: 0 0 20px rgba(234, 88, 12, 0.08);
 
   /* Border Radius */
   --radius-sm: 8px;
@@ -93,7 +95,7 @@ body {
   font-family: var(--font-body);
   color: var(--color-text);
   background: var(--color-bg);
-  line-height: 1.6;
+  line-height: 1.65;
   margin: 0;
 }
 
@@ -131,11 +133,26 @@ h1, h2, h3, h4, h5, h6 {
 .bg-gradient-golden {
   background: linear-gradient(135deg, #d97706 0%, #ea580c 100%);
 }
+.bg-gradient-golden-refined {
+  background: linear-gradient(135deg, #d97706 0%, #c2410c 40%, #9a3412 100%);
+}
 .bg-gradient-warm {
   background: linear-gradient(180deg, #fffbf5 0%, #fef7ed 100%);
 }
 .bg-gradient-card {
   background: linear-gradient(180deg, #ffffff 0%, #fefcf9 100%);
+}
+.bg-gradient-page {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(254, 243, 199, 0.35) 0%, transparent 70%),
+    linear-gradient(180deg, #fffbf5 0%, #faf8f5 40%, #f7f5f2 100%);
+}
+
+/* Header glass effect */
+.header-glass {
+  background: rgba(255, 253, 250, 0.85);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
 }
 
 /* Focus ring shorthand */
@@ -146,12 +163,12 @@ h1, h2, h3, h4, h5, h6 {
 /* Skeleton pulse animation */
 @keyframes skeleton-pulse {
   0% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50% { opacity: 0.35; }
   100% { opacity: 1; }
 }
 
 .animate-skeleton {
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  animation: skeleton-pulse 1.8s ease-in-out infinite;
 }
 
 /* Spinner animation */
@@ -165,32 +182,167 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Progress bar fill transition */
 .progress-fill-transition {
-  transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Progress bar shimmer */
+@keyframes progress-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.progress-bar-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 100%
+  );
+  animation: progress-shimmer 1.8s ease-in-out infinite;
+}
+
+/* Pulse glow for active progress */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(217, 119, 6, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(217, 119, 6, 0.4); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Fade-in-up animation for staggered reveals */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
 }
 
 /* Table styles */
+.table-auto-style {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
 .table-auto-style th {
   text-align: left;
   font-weight: 600;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   color: var(--color-text-muted);
-  padding: 0.75rem 1rem;
+  padding: 0.875rem 1rem;
   border-bottom: 2px solid var(--color-border);
+  background: var(--color-gray-50);
+}
+
+.table-auto-style th:first-child {
+  border-radius: var(--radius-sm) 0 0 0;
+}
+
+.table-auto-style th:last-child {
+  border-radius: 0 var(--radius-sm) 0 0;
 }
 
 .table-auto-style td {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--color-border-light);
   font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-auto-style tbody tr {
+  transition: background-color 0.15s ease;
 }
 
 .table-auto-style tbody tr:hover {
   background: var(--color-gray-50);
 }
 
+.table-auto-style tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* Plotly chart container */
+.plotly-chart-wrapper {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
 .plotly-chart-wrapper .js-plotly-plot {
   width: 100% !important;
+}
+
+/* Card section base -- reusable elevated section */
+.section-card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.section-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* Metric card with top accent bar */
+.metric-card {
+  position: relative;
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  overflow: hidden;
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.metric-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.metric-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-gold) 0%, var(--color-gold-light) 100%);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.metric-card:hover::before {
+  opacity: 1;
+}
+
+.metric-card-primary::before {
+  opacity: 1;
+}
+
+/* Subtle divider with fade */
+.divider-fade {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-border), transparent);
 }
