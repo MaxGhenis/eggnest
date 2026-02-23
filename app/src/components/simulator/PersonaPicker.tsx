@@ -23,7 +23,7 @@ export function PersonaPicker({
       {/* Hero */}
       <div className="text-center">
         <div className="mb-3 inline-block rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1 text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
-          Monte Carlo Simulation
+          Monte Carlo simulation
         </div>
         <h2 className="text-3xl font-semibold text-[var(--color-text)] md:text-4xl" style={{ letterSpacing: "-0.03em" }}>
           See your financial
@@ -63,7 +63,7 @@ export function PersonaPicker({
                 onClick={() => onLoadPersona(persona, true)}
                 disabled={isLoading}
               >
-                {isLoading ? "Running..." : "Run Simulation"}
+                {isLoading ? "Running..." : "Run simulation"}
               </button>
               <button
                 className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)]"

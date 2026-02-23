@@ -1,7 +1,7 @@
 /**
  * Shared utility functions for the simulator.
  */
-import type { SimulationInput, SpouseInput, SimulationResult } from "./api";
+import type { SimulationInput, SpouseInput, AnnuityInput, Holding, SimulationResult } from "./api";
 import {
   NetworkError,
   TimeoutError,
@@ -10,6 +10,7 @@ import {
   ApiError,
 } from "./api";
 import { URL_PARAM_MAP } from "./constants";
+import type { PortfolioMode, WithdrawalStrategy } from "../hooks/usePortfolio";
 
 // ============================================
 // Types
@@ -66,7 +67,7 @@ export interface ErrorInfo {
 export const EXAMPLE_PERSONAS: Persona[] = [
   {
     id: "early-retiree",
-    name: "Early Retiree",
+    name: "Early retiree",
     description: "55-year-old leaving tech with $1.5M saved",
     emoji: "\u{1F3D6}\u{FE0F}",
     params: {
@@ -96,7 +97,7 @@ export const EXAMPLE_PERSONAS: Persona[] = [
   },
   {
     id: "retiring-couple",
-    name: "Retiring Couple",
+    name: "Retiring couple",
     description: "Both 62, $800K saved, ready to retire",
     emoji: "\u{1F46B}",
     params: {
@@ -136,7 +137,7 @@ export const EXAMPLE_PERSONAS: Persona[] = [
   },
   {
     id: "conservative-saver",
-    name: "Conservative Saver",
+    name: "Conservative saver",
     description: "67-year-old with pension and modest savings",
     emoji: "\u{1F3E6}",
     params: {
@@ -166,7 +167,7 @@ export const EXAMPLE_PERSONAS: Persona[] = [
   },
   {
     id: "high-earner",
-    name: "High Earner",
+    name: "High earner",
     description: "50-year-old still working, $2M saved",
     emoji: "\u{1F4BC}",
     params: {
@@ -261,7 +262,7 @@ export function getSuccessRateInterpretation(rate: number): { label: string; des
     };
   } else {
     return {
-      label: "High Risk",
+      label: "High risk",
       description: "More likely than not to run out of money. Substantial changes recommended.",
       color: "#ef4444",
     };
@@ -290,7 +291,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
   // Handle typed API errors
   if (error instanceof NetworkError) {
     return {
-      title: "Connection Problem",
+      title: "Connection problem",
       message: "Unable to reach the simulation server.",
       suggestion: "Check your internet connection and try again. If the problem persists, the server may be temporarily unavailable.",
       technical: error.message,
@@ -299,7 +300,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
 
   if (error instanceof TimeoutError) {
     return {
-      title: "Request Timed Out",
+      title: "Request timed out",
       message: "The simulation took longer than expected to complete.",
       suggestion: "Try running the simulation again. For complex scenarios, consider reducing the number of simulations.",
       technical: error.message,
@@ -311,7 +312,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
       ? `The issue is with "${error.field.replace(/_/g, " ")}".`
       : "";
     return {
-      title: "Invalid Input",
+      title: "Invalid input",
       message: error.message,
       suggestion: `${fieldHint} Please review your inputs and make sure all values are reasonable.`,
       field: error.field,
@@ -321,7 +322,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
 
   if (error instanceof SimulationError) {
     return {
-      title: "Simulation Error",
+      title: "Simulation error",
       message: "Something went wrong while running your simulation.",
       suggestion: "This is usually temporary. Please wait a moment and try again.",
       technical: error.message,
@@ -330,7 +331,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
 
   if (error instanceof ApiError) {
     return {
-      title: "Server Error",
+      title: "Server error",
       message: error.message || "An unexpected error occurred.",
       suggestion: "Please try again. If the problem continues, try refreshing the page.",
       technical: error.statusCode ? `Status: ${error.statusCode}` : undefined,
@@ -343,7 +344,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
 
     if (lowerError.includes("network") || lowerError.includes("fetch") || lowerError.includes("failed to fetch")) {
       return {
-        title: "Connection Problem",
+        title: "Connection problem",
         message: "We couldn't reach the simulation server.",
         suggestion: "Check your internet connection and try again.",
         technical: error,
@@ -352,7 +353,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
 
     if (lowerError.includes("timeout") || lowerError.includes("timed out")) {
       return {
-        title: "Request Timed Out",
+        title: "Request timed out",
         message: "The simulation took longer than expected.",
         suggestion: "Try running the simulation again.",
         technical: error,
@@ -360,7 +361,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
     }
 
     return {
-      title: "Something Went Wrong",
+      title: "Something went wrong",
       message: error,
       suggestion: "Please try again. If the problem continues, try refreshing the page.",
       technical: error,
@@ -370,7 +371,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
   // Handle Error objects
   if (error instanceof Error) {
     return {
-      title: "Something Went Wrong",
+      title: "Something went wrong",
       message: error.message || "An unexpected error occurred.",
       suggestion: "Please try again. If the problem continues, try refreshing the page or adjusting your inputs.",
       technical: error.message,
@@ -379,7 +380,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
 
   // Default fallback
   return {
-    title: "Something Went Wrong",
+    title: "Something went wrong",
     message: "We encountered an unexpected error while running your simulation.",
     suggestion: "Please try again. If the problem continues, try refreshing the page or adjusting your inputs.",
   };
@@ -498,4 +499,33 @@ export function buildUrlParams(params: SimulationInput, spouse?: SpouseInput): s
   }
 
   return urlParams.toString();
+}
+
+// ============================================
+// Simulation parameter helpers
+// ============================================
+
+/**
+ * Build the full simulation parameters object from the UI state,
+ * merging in spouse, annuity, holdings, and withdrawal strategy as needed.
+ *
+ * Used by both useSimulation and useComparisons hooks to avoid duplication.
+ */
+export function buildFullParams(
+  params: SimulationInput,
+  spouse: SpouseInput | undefined,
+  annuity: AnnuityInput,
+  portfolioMode: PortfolioMode,
+  holdings: Holding[],
+  withdrawalStrategy: WithdrawalStrategy,
+): SimulationInput {
+  const hasDetailedHoldings = portfolioMode === "detailed" && holdings.length > 0;
+  return {
+    ...params,
+    spouse: params.has_spouse ? spouse : undefined,
+    annuity: params.has_annuity ? annuity : undefined,
+    holdings: hasDetailedHoldings ? holdings : undefined,
+    initial_capital: hasDetailedHoldings ? undefined : params.initial_capital,
+    withdrawal_strategy: hasDetailedHoldings ? withdrawalStrategy : undefined,
+  };
 }

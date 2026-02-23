@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "EggNest - Financial Planning Simulator",
+  title: "EggNest - Financial planning simulator",
   description:
     "Monte Carlo financial simulation with real tax calculations. See your actual probability of success, not just guesses.",
   icons: {

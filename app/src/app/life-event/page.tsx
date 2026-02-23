@@ -30,17 +30,17 @@ interface LifeEventScenario {
 
 const LIFE_EVENT_SCENARIOS: LifeEventScenario[] = [
   {
-    id: "having-child", name: "Having a Child", description: "See how a new child affects your taxes and benefits", emoji: "\uD83D\uDC76",
+    id: "having-child", name: "Having a child", description: "See how a new child affects your taxes and benefits", emoji: "\uD83D\uDC76",
     beforeSetup: (base) => ({ ...base, filing_status: "single" as FilingStatus, people: [{ ...base.people[0], is_tax_unit_head: true }] }),
     afterSetup: (base) => ({ ...base, filing_status: "head_of_household" as FilingStatus, people: [{ ...base.people[0], is_tax_unit_head: true }, { age: 0, employment_income: 0, is_tax_unit_dependent: true }] }),
   },
   {
-    id: "getting-married", name: "Getting Married", description: "Compare single vs married filing jointly", emoji: "\uD83D\uDC92",
+    id: "getting-married", name: "Getting married", description: "Compare single vs married filing jointly", emoji: "\uD83D\uDC92",
     beforeSetup: (base) => ({ ...base, filing_status: "single" as FilingStatus, people: [{ ...base.people[0], is_tax_unit_head: true }] }),
     afterSetup: (base) => ({ ...base, filing_status: "married_filing_jointly" as FilingStatus, people: [{ ...base.people[0], is_tax_unit_head: true }, { age: base.people[0].age - 2, employment_income: Math.round((base.people[0].employment_income || 50000) * 0.8), is_tax_unit_spouse: true }] }),
   },
   {
-    id: "income-change", name: "Getting a Raise", description: "See how higher income changes your taxes", emoji: "\uD83D\uDCC8",
+    id: "income-change", name: "Getting a raise", description: "See how higher income changes your taxes", emoji: "\uD83D\uDCC8",
     beforeSetup: (base) => base,
     afterSetup: (base) => ({ ...base, people: base.people.map((p, i) => i === 0 ? { ...p, employment_income: Math.round((p.employment_income || 50000) * 1.25) } : p) }),
   },
@@ -188,8 +188,8 @@ export default function LifeEventPage() {
             <select id="filing-status" value={baseHousehold.filing_status}
               onChange={(e) => updateHouseholdField("filing_status", e.target.value)} className={selectCls}>
               <option value="single">Single</option>
-              <option value="married_filing_jointly">Married Filing Jointly</option>
-              <option value="head_of_household">Head of Household</option>
+              <option value="married_filing_jointly">Married filing jointly</option>
+              <option value="head_of_household">Head of household</option>
             </select>
           </div>
           <button type="submit"
@@ -257,7 +257,7 @@ export default function LifeEventPage() {
         <button className="inline-flex items-center gap-2 text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
           onClick={() => setShowSetup(true)} aria-label="Back to setup">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
-          Back to Setup
+          Back to setup
         </button>
 
         <div className="text-center">
@@ -286,13 +286,13 @@ export default function LifeEventPage() {
               <thead><tr><th>Category</th><th>Before</th><th>After</th><th>Change</th></tr></thead>
               <tbody>
                 {[
-                  { label: "Total Income", before: before_result.total_income, after: after_result.total_income, positive: "more" as const },
-                  { label: "Federal Tax", before: before_result.federal_income_tax, after: after_result.federal_income_tax, positive: "less" as const },
-                  { label: "State Tax", before: before_result.state_income_tax, after: after_result.state_income_tax, positive: "less" as const },
-                  { label: "Payroll Tax", before: before_result.payroll_tax, after: after_result.payroll_tax, positive: "less" as const },
-                  { label: "Total Taxes", before: before_result.total_taxes, after: after_result.total_taxes, positive: "less" as const, bold: true },
-                  { label: "Total Benefits", before: before_result.total_benefits, after: after_result.total_benefits, positive: "more" as const },
-                  { label: "Net Income", before: before_result.net_income, after: after_result.net_income, positive: "more" as const, bold: true },
+                  { label: "Total income", before: before_result.total_income, after: after_result.total_income, positive: "more" as const },
+                  { label: "Federal tax", before: before_result.federal_income_tax, after: after_result.federal_income_tax, positive: "less" as const },
+                  { label: "State tax", before: before_result.state_income_tax, after: after_result.state_income_tax, positive: "less" as const },
+                  { label: "Payroll tax", before: before_result.payroll_tax, after: after_result.payroll_tax, positive: "less" as const },
+                  { label: "Total taxes", before: before_result.total_taxes, after: after_result.total_taxes, positive: "less" as const, bold: true },
+                  { label: "Total benefits", before: before_result.total_benefits, after: after_result.total_benefits, positive: "more" as const },
+                  { label: "Net income", before: before_result.net_income, after: after_result.net_income, positive: "more" as const, bold: true },
                 ].map(({ label, before, after, positive, bold }) => {
                   const change = after - before;
                   const isGood = positive === "more" ? change > 0 : change < 0;
@@ -391,9 +391,9 @@ export default function LifeEventPage() {
           <a href={HOME_URL} className="flex items-center gap-2.5 transition-opacity hover:opacity-80" aria-label="EggNest home">
             <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
           </a>
-          <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Tax & Benefits Calculator</span>
+          <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Tax & benefits calculator</span>
           <Link href="/" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">
-            Retirement Simulator
+            Retirement simulator
           </Link>
         </div>
       </header>

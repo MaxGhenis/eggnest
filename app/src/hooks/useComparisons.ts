@@ -12,6 +12,7 @@ import {
   type AllocationComparisonResult,
 } from "../lib/api";
 import { NO_TAX_STATES } from "../lib/constants";
+import { buildFullParams } from "../lib/simulatorUtils";
 import type { PortfolioMode, WithdrawalStrategy } from "./usePortfolio";
 
 export interface UseComparisonsReturn {
@@ -70,16 +71,10 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
   const [allocationResult, setAllocationResult] = useState<AllocationComparisonResult | null>(null);
   const [isComparingAllocations, setIsComparingAllocations] = useState(false);
 
-  const buildFullParams = useCallback((): SimulationInput => {
-    return {
-      ...params,
-      spouse: params.has_spouse ? spouse : undefined,
-      annuity: params.has_annuity ? annuity : undefined,
-      holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
-      initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : params.initial_capital,
-      withdrawal_strategy: portfolioMode === "detailed" && holdings.length > 0 ? withdrawalStrategy : undefined,
-    };
-  }, [params, spouse, annuity, portfolioMode, holdings, withdrawalStrategy]);
+  const getFullParams = useCallback(
+    () => buildFullParams(params, params.has_spouse ? spouse : undefined, annuity, portfolioMode, holdings, withdrawalStrategy),
+    [params, spouse, annuity, portfolioMode, holdings, withdrawalStrategy],
+  );
 
   const handleCompareStates = useCallback(async (statesToCompare?: string[]) => {
     if (!result) return;
@@ -88,7 +83,7 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
     setStateComparisonResult(null);
 
     try {
-      const fullParams = buildFullParams();
+      const fullParams = getFullParams();
 
       // Use provided states, selected states, or default to no-tax states
       const states = statesToCompare ||
@@ -102,7 +97,7 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
     } finally {
       setIsComparingStates(false);
     }
-  }, [result, params.state, selectedCompareStates, buildFullParams, setError]);
+  }, [result, params.state, selectedCompareStates, getFullParams, setError]);
 
   const toggleCompareState = useCallback((state: string) => {
     setSelectedCompareStates(prev =>
@@ -119,7 +114,7 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
     setSSTimingResult(null);
 
     try {
-      const fullParams = buildFullParams();
+      const fullParams = getFullParams();
 
       const comparison = await compareSSTimings(
         fullParams,
@@ -132,7 +127,7 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
     } finally {
       setIsComparingSSTiming(false);
     }
-  }, [result, birthYear, piaMonthly, buildFullParams, setError]);
+  }, [result, birthYear, piaMonthly, getFullParams, setError]);
 
   const handleCompareAllocations = useCallback(async () => {
     if (!result) return;
@@ -141,7 +136,7 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
     setAllocationResult(null);
 
     try {
-      const fullParams = buildFullParams();
+      const fullParams = getFullParams();
 
       const comparison = await compareAllocations(
         fullParams,
@@ -153,7 +148,7 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
     } finally {
       setIsComparingAllocations(false);
     }
-  }, [result, buildFullParams, setError]);
+  }, [result, getFullParams, setError]);
 
   return {
     stateComparisonResult,

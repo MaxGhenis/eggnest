@@ -31,17 +31,17 @@ export function AnnuityComparison({ annuityResult, guaranteeYears }: AnnuityComp
       <h3 className="text-lg font-semibold mb-4">Annuity comparison</h3>
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-[var(--radius-md)] bg-[var(--color-gray-50)] p-4">
-          <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Annuity Guaranteed Total</div>
+          <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Annuity guaranteed total</div>
           <div className="mt-1 text-xl font-bold text-[var(--color-text)]">{formatCurrency(annuityResult.annuity_total_guaranteed)}</div>
           <div className="mt-1 text-xs text-[var(--color-text-muted)]">Over {guaranteeYears} year guarantee period</div>
         </div>
         <div className="rounded-[var(--radius-md)] bg-[var(--color-gray-50)] p-4">
-          <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Portfolio Median Total</div>
+          <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Portfolio median total</div>
           <div className="mt-1 text-xl font-bold text-[var(--color-text)]">{formatCurrency(annuityResult.simulation_median_total_income)}</div>
           <div className="mt-1 text-xs text-[var(--color-text-muted)]">Median total income from portfolio</div>
         </div>
         <div className="rounded-[var(--radius-md)] bg-[var(--color-primary-50)] p-4 border border-[var(--color-primary-200)]">
-          <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Portfolio Beats Annuity</div>
+          <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Portfolio beats annuity</div>
           <div className="mt-1 text-xl font-bold" style={{
             color: annuityResult.probability_simulation_beats_annuity >= 0.6 ? "#10b981"
               : annuityResult.probability_simulation_beats_annuity >= 0.4 ? "#f59e0b" : "#ef4444"
@@ -87,7 +87,7 @@ export function StateComparison({
       {!stateComparisonResult && !isComparingStates && (
         <div className="mt-4 space-y-4">
           <button className={btnSecondary} onClick={() => onCompareStates()} disabled={isComparingStates}>
-            Compare to No-Income-Tax States
+            Compare to no-income-tax states
           </button>
           <div className="text-center text-xs text-[var(--color-text-light)]">or select specific states</div>
           <div className="flex flex-wrap gap-1.5">
@@ -127,7 +127,7 @@ export function StateComparison({
             <table className="w-full table-auto-style">
               <thead>
                 <tr>
-                  <th>State</th><th>Total Taxes</th><th>Tax Savings</th><th>Success Rate</th>
+                  <th>State</th><th>Total taxes</th><th>Tax savings</th><th>Success rate</th>
                 </tr>
               </thead>
               <tbody>
@@ -153,7 +153,7 @@ export function StateComparison({
           <p className="text-xs text-[var(--color-text-muted)]">
             Tax savings show lifetime difference compared to {params.state}. Positive values mean you save money by relocating.
           </p>
-          <button className={btnSecondary} onClick={onResetComparison}>Compare Different States</button>
+          <button className={btnSecondary} onClick={onResetComparison}>Compare different states</button>
         </div>
       )}
     </div>
@@ -191,13 +191,13 @@ export function SSTimingComparison({
         <div className="mt-4 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className={fieldCls}>
-              <label className={labelCls}>Your Birth Year</label>
+              <label className={labelCls}>Your birth year</label>
               <input type="number" value={birthYear} onChange={(e) => setBirthYear(Number(e.target.value))}
                 min={1930} max={2000} className={inputCls} />
-              <div className="text-xs text-[var(--color-text-light)]">Used to determine your Full Retirement Age</div>
+              <div className="text-xs text-[var(--color-text-light)]">Used to determine your full retirement age</div>
             </div>
             <div className={fieldCls}>
-              <label className={labelCls}>Estimated Benefit at FRA (PIA)</label>
+              <label className={labelCls}>Estimated benefit at FRA (PIA)</label>
               <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
                 <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
                 <input type="number" value={piaMonthly} onChange={(e) => setPiaMonthly(Number(e.target.value))}
@@ -208,7 +208,7 @@ export function SSTimingComparison({
             </div>
           </div>
           <button className={btnPrimary} onClick={onCompare} disabled={isComparingSSTiming || piaMonthly <= 0}>
-            Compare Claiming Ages
+            Compare claiming ages
           </button>
         </div>
       )}
@@ -224,7 +224,7 @@ export function SSTimingComparison({
         <div className="mt-4 space-y-4">
           <div className="flex flex-wrap gap-4">
             <div className="rounded-[var(--radius-md)] bg-[var(--color-gray-50)] px-4 py-2 text-sm">
-              <span className="text-[var(--color-text-muted)]">Full Retirement Age: </span>
+              <span className="text-[var(--color-text-muted)]">Full retirement age: </span>
               <span className="font-semibold">{Math.floor(ssTimingResult.full_retirement_age)} years
                 {ssTimingResult.full_retirement_age % 1 > 0 && ` ${Math.round((ssTimingResult.full_retirement_age % 1) * 12)} months`}
               </span>
@@ -263,7 +263,7 @@ export function SSTimingComparison({
           <p className="text-xs text-[var(--color-text-muted)]">
             Early claiming permanently reduces your benefit. Delayed claiming (after FRA, up to 70) permanently increases it by 8% per year.
           </p>
-          <button className={btnSecondary} onClick={onReset}>Change Assumptions</button>
+          <button className={btnSecondary} onClick={onReset}>Change assumptions</button>
         </div>
       )}
     </div>
@@ -291,7 +291,7 @@ export function AllocationComparison({
 
       {!allocationResult && (
         <button className={`mt-4 ${btnPrimary}`} onClick={onCompare} disabled={isComparingAllocations}>
-          {isComparingAllocations ? "Comparing..." : "Compare Allocations"}
+          {isComparingAllocations ? "Comparing..." : "Compare allocations"}
         </button>
       )}
 
@@ -299,12 +299,12 @@ export function AllocationComparison({
         <div className="mt-4 space-y-4">
           <div className="flex flex-wrap gap-4">
             <div className="rounded-[var(--radius-md)] bg-[var(--color-success-light)] px-4 py-2 text-sm">
-              <span className="text-[var(--color-text-muted)]">Optimal for Success: </span>
+              <span className="text-[var(--color-text-muted)]">Optimal for success: </span>
               <span className="font-semibold text-[var(--color-success)]">{Math.round(allocationResult.optimal_for_success * 100)}% Stocks</span>
             </div>
             {allocationResult.optimal_for_safety !== allocationResult.optimal_for_success && (
               <div className="rounded-[var(--radius-md)] bg-[var(--color-primary-50)] px-4 py-2 text-sm">
-                <span className="text-[var(--color-text-muted)]">Optimal for Safety: </span>
+                <span className="text-[var(--color-text-muted)]">Optimal for safety: </span>
                 <span className="font-semibold text-[var(--color-primary)]">{Math.round(allocationResult.optimal_for_safety * 100)}% Stocks</span>
               </div>
             )}
@@ -312,7 +312,7 @@ export function AllocationComparison({
           <div className="overflow-x-auto">
             <table className="w-full table-auto-style">
               <thead>
-                <tr><th>Allocation</th><th>Success</th><th>Median Final</th><th>Worst (5th)</th><th>Best (95th)</th><th>Volatility</th></tr>
+                <tr><th>Allocation</th><th>Success</th><th>Median final</th><th>Worst (5th)</th><th>Best (95th)</th><th>Volatility</th></tr>
               </thead>
               <tbody>
                 {allocationResult.results.map((r) => (
@@ -334,7 +334,7 @@ export function AllocationComparison({
             </table>
           </div>
           <p className="text-sm text-[var(--color-text-muted)]">{allocationResult.recommendation}</p>
-          <button className={btnSecondary} onClick={onReset}>Hide Results</button>
+          <button className={btnSecondary} onClick={onReset}>Hide results</button>
         </div>
       )}
     </div>

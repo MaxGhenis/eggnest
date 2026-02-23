@@ -79,14 +79,14 @@ export function ResultsPanel({
       <div className="flex flex-wrap items-center gap-3">
         <button className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-text-muted)] shadow-[var(--shadow-sm)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)] hover:shadow-[var(--shadow-md)]" onClick={onEditInputs}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
-          Edit Inputs
+          Edit inputs
         </button>
         <button className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-text-muted)] shadow-[var(--shadow-sm)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)] hover:shadow-[var(--shadow-md)]" onClick={onCopyLink}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
           </svg>
-          {linkCopied ? "Link Copied!" : "Copy Link"}
+          {linkCopied ? "Link copied!" : "Copy link"}
         </button>
       </div>
 
@@ -105,22 +105,22 @@ export function ResultsPanel({
       {/* Metrics grid */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <div className="metric-card metric-card-primary" style={{ borderColor: successColor }}>
-          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Success Rate</div>
+          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Success rate</div>
           <div className="mt-1.5 text-2xl font-bold tabular-nums" style={{ color: successColor }}>{formatPercent(result.success_rate)}</div>
           <div className="mt-1 text-xs text-[var(--color-text-muted)]">Probability of not running out</div>
         </div>
         <div className="metric-card">
-          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Withdrawal Rate</div>
+          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Withdrawal rate</div>
           <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{result.initial_withdrawal_rate.toFixed(1)}%</div>
           <div className="mt-1 text-xs text-[var(--color-text-muted)]">From portfolio in year 1</div>
         </div>
         <div className="metric-card">
-          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Median Final</div>
+          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Median final</div>
           <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{formatCurrency(result.median_final_value)}</div>
           <div className="mt-1 text-xs text-[var(--color-text-muted)]">50th pctl at age {params.max_age}</div>
         </div>
         <div className="metric-card">
-          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">10-Yr Depletion Risk</div>
+          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">10-yr depletion risk</div>
           <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{formatPercent(result.prob_10_year_failure)}</div>
           <div className="mt-1 text-xs text-[var(--color-text-muted)]">Depletion within 10 years</div>
         </div>
@@ -179,10 +179,10 @@ function PortfolioChart({ result, ages, selectedYearIndex, setSelectedYearIndex 
   result: SimulationResult; ages: number[]; selectedYearIndex: number | null; setSelectedYearIndex: (index: number | null) => void;
 }) {
   const chartData = useMemo(() => [
-    { x: ages, y: result.percentile_paths.p95, type: "scatter" as const, mode: "lines" as const, line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" as const }, name: "95th Percentile", legendgroup: "outer", hoverinfo: "skip" as const },
-    { x: ages, y: result.percentile_paths.p5, type: "scatter" as const, mode: "lines" as const, fill: "tonexty" as const, fillcolor: "rgba(217,119,6,0.08)", line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" as const }, name: "5th Percentile", legendgroup: "outer", hoverinfo: "skip" as const },
-    { x: ages, y: result.percentile_paths.p75, type: "scatter" as const, mode: "lines" as const, line: { color: "rgba(217,119,6,0.6)", width: 1.5 }, name: "75th Percentile", legendgroup: "inner", hoverinfo: "skip" as const },
-    { x: ages, y: result.percentile_paths.p25, type: "scatter" as const, mode: "lines" as const, fill: "tonexty" as const, fillcolor: "rgba(217,119,6,0.15)", line: { color: "rgba(217,119,6,0.6)", width: 1.5 }, name: "25th Percentile", legendgroup: "inner", hoverinfo: "skip" as const },
+    { x: ages, y: result.percentile_paths.p95, type: "scatter" as const, mode: "lines" as const, line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" as const }, name: "95th percentile", legendgroup: "outer", hoverinfo: "skip" as const },
+    { x: ages, y: result.percentile_paths.p5, type: "scatter" as const, mode: "lines" as const, fill: "tonexty" as const, fillcolor: "rgba(217,119,6,0.08)", line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" as const }, name: "5th percentile", legendgroup: "outer", hoverinfo: "skip" as const },
+    { x: ages, y: result.percentile_paths.p75, type: "scatter" as const, mode: "lines" as const, line: { color: "rgba(217,119,6,0.6)", width: 1.5 }, name: "75th percentile", legendgroup: "inner", hoverinfo: "skip" as const },
+    { x: ages, y: result.percentile_paths.p25, type: "scatter" as const, mode: "lines" as const, fill: "tonexty" as const, fillcolor: "rgba(217,119,6,0.15)", line: { color: "rgba(217,119,6,0.6)", width: 1.5 }, name: "25th percentile", legendgroup: "inner", hoverinfo: "skip" as const },
     { x: ages, y: result.percentile_paths.p50, type: "scatter" as const, mode: "lines" as const, line: { color: chartColors.primary, width: 3 }, name: "Median (50th)", hoverinfo: "skip" as const },
     {
       x: ages, y: result.percentile_paths.p50, type: "scatter" as const, mode: "markers" as const,
@@ -200,7 +200,7 @@ function PortfolioChart({ result, ages, selectedYearIndex, setSelectedYearIndex 
     autosize: true, height: 420, margin: { l: 80, r: 40, t: 40, b: 60 },
     font: { family: "DM Sans, system-ui, sans-serif", size: 12 },
     xaxis: { title: { text: "Age", font: { family: "DM Sans, system-ui, sans-serif", size: 14 } }, gridcolor: colors.gray200, tickfont: { family: "DM Sans, system-ui, sans-serif", size: 12 }, showgrid: true, zeroline: false },
-    yaxis: { title: { text: "Portfolio Value", font: { family: "DM Sans, system-ui, sans-serif", size: 14 } }, gridcolor: colors.gray200, tickformat: "$~s", tickfont: { family: "DM Sans, system-ui, sans-serif", size: 12 }, rangemode: "tozero" as const, showgrid: true, zeroline: true, zerolinecolor: colors.gray300 },
+    yaxis: { title: { text: "Portfolio value", font: { family: "DM Sans, system-ui, sans-serif", size: 14 } }, gridcolor: colors.gray200, tickformat: "$~s", tickfont: { family: "DM Sans, system-ui, sans-serif", size: 12 }, rangemode: "tozero" as const, showgrid: true, zeroline: true, zerolinecolor: colors.gray300 },
     legend: { x: 0.5, y: 1.15, xanchor: "center" as const, orientation: "h" as const, font: { family: "DM Sans, system-ui, sans-serif", size: 11 }, bgcolor: "rgba(255,255,255,0.9)", bordercolor: colors.gray200, borderwidth: 1, itemclick: "toggle" as const, itemdoubleclick: "toggleothers" as const },
     paper_bgcolor: "transparent", plot_bgcolor: "transparent", hovermode: "x unified" as const,
     hoverlabel: { bgcolor: "white", bordercolor: colors.gray300, font: { family: "DM Sans, system-ui, sans-serif", size: 13, color: colors.gray800 }, align: "left" as const },
@@ -251,8 +251,8 @@ function YearDetailPanel({ year, selectedYearIndex, totalYears, onClose, onPrevi
       <div className="grid gap-6 sm:grid-cols-3">
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)] mb-2">Portfolio</h4>
-          <DetailRow label="Start of Year" value={formatCurrency(year.portfolio_start)} />
-          <DetailRow label="End of Year" value={formatCurrency(year.portfolio_end)} />
+          <DetailRow label="Start of year" value={formatCurrency(year.portfolio_start)} />
+          <DetailRow label="End of year" value={formatCurrency(year.portfolio_end)} />
           <DetailRow label="Return" value={`${(year.portfolio_return * 100).toFixed(1)}%`} />
         </div>
         <div>
@@ -262,15 +262,15 @@ function YearDetailPanel({ year, selectedYearIndex, totalYears, onClose, onPrevi
           {year.pension > 0 && <DetailRow label="Pension" value={formatCurrency(year.pension)} />}
           {year.dividends > 0 && <DetailRow label="Dividends" value={formatCurrency(year.dividends)} />}
           {year.annuity > 0 && <DetailRow label="Annuity" value={formatCurrency(year.annuity)} />}
-          <DetailRow label="Total Income" value={formatCurrency(year.total_income)} highlight />
+          <DetailRow label="Total income" value={formatCurrency(year.total_income)} highlight />
         </div>
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)] mb-2">Withdrawals & Taxes</h4>
           <DetailRow label="Withdrawal" value={formatCurrency(year.withdrawal)} />
-          <DetailRow label="Federal Tax" value={formatCurrency(year.federal_tax)} />
-          <DetailRow label="State Tax" value={formatCurrency(year.state_tax)} />
-          <DetailRow label="Total Tax" value={formatCurrency(year.total_tax)} highlight />
-          <DetailRow label="Effective Rate" value={`${(year.effective_tax_rate * 100).toFixed(1)}%`} />
+          <DetailRow label="Federal tax" value={formatCurrency(year.federal_tax)} />
+          <DetailRow label="State tax" value={formatCurrency(year.state_tax)} />
+          <DetailRow label="Total tax" value={formatCurrency(year.total_tax)} highlight />
+          <DetailRow label="Effective rate" value={`${(year.effective_tax_rate * 100).toFixed(1)}%`} />
         </div>
       </div>
       <div className="mt-4 flex justify-between">
@@ -292,7 +292,7 @@ function OutcomeDistribution({ result }: { result: SimulationResult }) {
       <h3 className="text-lg font-semibold mb-4">Outcome distribution</h3>
       <div className="overflow-x-auto">
         <table className="w-full table-auto-style">
-          <thead><tr><th>Percentile</th><th>Final Portfolio</th><th>Interpretation</th></tr></thead>
+          <thead><tr><th>Percentile</th><th>Final portfolio</th><th>Interpretation</th></tr></thead>
           <tbody>
             <tr><td>5th (conservative)</td><td>{formatCurrency(result.percentiles.p5)}</td><td className="text-[var(--color-text-muted)]">95% of outcomes exceed this</td></tr>
             <tr><td>25th</td><td>{formatCurrency(result.percentiles.p25)}</td><td className="text-[var(--color-text-muted)]">75% of outcomes are better</td></tr>
@@ -312,9 +312,9 @@ function TaxSummary({ result, state }: { result: SimulationResult; state: string
       <h3 className="text-lg font-semibold mb-4">Tax summary (median)</h3>
       <div className="space-y-2">
         {[
-          ["Total Withdrawals", formatCurrency(result.total_withdrawn_median)],
-          ["Total Taxes Paid", formatCurrency(result.total_taxes_median)],
-          ["Net After-Tax Income", formatCurrency(result.total_withdrawn_median - result.total_taxes_median)],
+          ["Total withdrawals", formatCurrency(result.total_withdrawn_median)],
+          ["Total taxes paid", formatCurrency(result.total_taxes_median)],
+          ["Net after-tax income", formatCurrency(result.total_withdrawn_median - result.total_taxes_median)],
         ].map(([label, value]) => (
           <div key={label} className="flex justify-between py-1.5 text-sm">
             <span className="text-[var(--color-text-muted)]">{label}</span>

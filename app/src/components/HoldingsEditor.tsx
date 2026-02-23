@@ -35,7 +35,7 @@ const FUND_TYPE_LABELS: Record<FundType, string> = {
   vt: "VT (Total World)",
   sp500: "S&P 500",
   bnd: "BND (Total Bond)",
-  treasury: "Treasury Bonds",
+  treasury: "Treasury bonds",
 };
 
 export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
@@ -185,12 +185,12 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
         onClick={addHolding}
         aria-label="Add a new holding"
       >
-        + Add Holding
+        + Add holding
       </button>
 
       {holdings.length > 0 && (
         <div className="flex items-center justify-between rounded-[var(--radius-md)] bg-[var(--color-primary-50)] px-4 py-3" aria-live="polite">
-          <span className="text-sm font-medium text-[var(--color-text-muted)]">Total Portfolio:</span>
+          <span className="text-sm font-medium text-[var(--color-text-muted)]">Total portfolio:</span>
           <span className="text-lg font-bold text-[var(--color-primary)]">${totalValue.toLocaleString()}</span>
         </div>
       )}

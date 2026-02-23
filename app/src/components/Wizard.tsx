@@ -26,7 +26,7 @@ export function Wizard({
   steps,
   onComplete,
   isLoading = false,
-  completeButtonText = "Run Simulation",
+  completeButtonText = "Run simulation",
   loadingButtonText = "Running...",
   loadingContent,
   validationErrors = [],

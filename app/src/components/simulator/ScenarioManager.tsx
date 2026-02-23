@@ -31,7 +31,7 @@ export function ScenarioManager({
           onClick={() => setShowSaveDialog(true)}
           title="Save current scenario"
         >
-          Save Scenario
+          Save scenario
         </button>
         {savedScenarios.length > 0 && (
           <select
@@ -42,7 +42,7 @@ export function ScenarioManager({
               if (scenario) onLoad(scenario);
             }}
           >
-            <option value="" disabled>Load Saved...</option>
+            <option value="" disabled>Load saved...</option>
             {savedScenarios.map((s) => (
               <option key={s.name} value={s.name}>{s.name}</option>
             ))}

@@ -1,13 +1,8 @@
 /**
- * @deprecated This file is maintained for backward compatibility.
- * New code should use the vanilla-extract design system instead:
- *
- *   import { vars, lightThemeClass, darkThemeClass } from '../styles';
- *
- * The canonical token definitions now live in `src/styles/theme.css.ts`.
+ * EggNest design system tokens for use in JS/TSX (e.g. Plotly chart config).
+ * CSS custom properties are defined in globals.css; these mirror the values
+ * for contexts where CSS variables are not available.
  */
-
-/* EggNest Design System - TypeScript tokens for use in JS/TSX */
 
 export const colors = {
   // Primary - Golden Hour Amber

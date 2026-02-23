@@ -705,7 +705,7 @@ export async function calculateHousehold(
 export async function compareLifeEvent(
   before: HouseholdInput,
   after: HouseholdInput,
-  eventName: string = "Life Event",
+  eventName: string = "Life event",
   signal?: AbortSignal
 ): Promise<LifeEventComparison> {
   return apiFetch<LifeEventComparison>("/compare-life-event", {

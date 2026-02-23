@@ -23,19 +23,19 @@ uv run black .
 uv run ruff check .
 ```
 
-### Frontend (React/Vite) - Primary app
+### Frontend (Next.js 15 + Tailwind v4)
 ```bash
 cd app
-npm install
-npm run dev              # Runs on port 5174
-npm run build            # TypeScript compile + Vite build
-npm run lint
-npm run test             # Vitest watch mode
-npm run test:run         # Vitest single run
+bun install
+bun run dev              # Runs on port 5174
+bun run build            # Next.js build
+bun run lint             # ESLint via next lint
+bun run test             # Vitest watch mode
+bun run test:run         # Vitest single run
 ```
 
 ### Environment Setup
-Backend requires `api/.env` with Supabase credentials. Frontend uses `VITE_API_URL` to point to the API (defaults to `http://localhost:8000`).
+Backend requires `api/.env` with Supabase credentials. Frontend uses `NEXT_PUBLIC_API_URL` to point to the API (defaults to `http://localhost:8000`).
 
 ## Architecture
 
@@ -48,10 +48,11 @@ eggnest/
 │       ├── tax.py           # PolicyEngine-US integration
 │       ├── mortality.py     # SSA mortality tables
 │       └── models.py        # Pydantic request/response models
-├── app/                     # React frontend (primary)
+├── app/                     # Next.js 15 frontend (primary)
 │   └── src/
+│       ├── app/             # Next.js App Router pages
 │       ├── lib/api.ts       # API client with SSE streaming
-│       ├── pages/           # Page components
+│       ├── hooks/           # Custom React hooks
 │       └── components/      # UI components
 ├── web/                     # Alternate React frontend (legacy)
 └── supabase/                # Database migrations
@@ -84,6 +85,7 @@ eggnest/
 ## Conventions
 
 - Backend uses Pydantic v2 models with `Field()` validators
-- Frontend uses Vite with React 19 and TypeScript
+- Frontend uses Next.js 15 (App Router) with React 19, TypeScript, and Tailwind CSS v4
+- Styling uses Tailwind utility classes plus CSS custom properties defined in `globals.css`
 - Tests use pytest (backend) and Vitest (frontend)
-- `app/` is the active frontend; `web/` appears to be legacy
+- `app/` is the active frontend; `web/` is a legacy landing page

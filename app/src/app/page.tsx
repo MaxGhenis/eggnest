@@ -148,7 +148,7 @@ export default function SimulatorPage() {
             steps={wizardSteps}
             onComplete={handleSimulate}
             isLoading={simulation.isLoading}
-            completeButtonText="Run Simulation"
+            completeButtonText="Run simulation"
             loadingButtonText="Running simulation..."
             loadingContent={
               <SimulationProgress
@@ -225,9 +225,9 @@ export default function SimulatorPage() {
           <a href={HOME_URL} className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
             <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
           </a>
-          <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Financial Simulator</span>
+          <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Financial simulator</span>
           <Link href="/life-event" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">
-            Tax & Benefits Calculator
+            Tax & benefits calculator
           </Link>
         </div>
       </header>

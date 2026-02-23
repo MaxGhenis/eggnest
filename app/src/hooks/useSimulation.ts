@@ -8,8 +8,11 @@ import {
   type AnnuityInput,
   type Holding,
 } from "../lib/api";
-import type { AnnuityComparisonResult } from "../lib/simulatorUtils";
-import { buildUrlParams } from "../lib/simulatorUtils";
+import {
+  buildUrlParams,
+  buildFullParams,
+  type AnnuityComparisonResult,
+} from "../lib/simulatorUtils";
 import type { PortfolioMode, WithdrawalStrategy } from "./usePortfolio";
 
 export interface SimulationProgress {
@@ -52,24 +55,6 @@ export function useSimulation(): UseSimulationReturn {
   const [error, setError] = useState<unknown>(null);
   const [progress, setProgress] = useState<SimulationProgress>({ currentYear: 0, totalYears: 0 });
   const [selectedYearIndex, setSelectedYearIndex] = useState<number | null>(null);
-
-  const buildFullParams = useCallback((
-    params: SimulationInput,
-    spouse: SpouseInput | undefined,
-    annuity: AnnuityInput,
-    portfolioMode: PortfolioMode,
-    holdings: Holding[],
-    withdrawalStrategy: WithdrawalStrategy,
-  ): SimulationInput => {
-    return {
-      ...params,
-      spouse: params.has_spouse ? spouse : undefined,
-      annuity: params.has_annuity ? annuity : undefined,
-      holdings: portfolioMode === "detailed" && holdings.length > 0 ? holdings : undefined,
-      initial_capital: portfolioMode === "detailed" && holdings.length > 0 ? undefined : params.initial_capital,
-      withdrawal_strategy: portfolioMode === "detailed" && holdings.length > 0 ? withdrawalStrategy : undefined,
-    };
-  }, []);
 
   /** Stream simulation results, updating progress as events arrive. */
   const runStreaming = useCallback(async (fullParams: SimulationInput) => {
@@ -125,7 +110,7 @@ export function useSimulation(): UseSimulationReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [buildFullParams, runStreaming]);
+  }, [runStreaming]);
 
   const handleSimulateWithParams = useCallback(async (
     simParams: SimulationInput,
@@ -150,7 +135,7 @@ export function useSimulation(): UseSimulationReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [buildFullParams, runStreaming]);
+  }, [runStreaming]);
 
   return {
     result,

@@ -53,11 +53,11 @@ export function useWizardSteps({
 }: WizardStepsProps): WizardStep[] {
   return useMemo((): WizardStep[] => [
     {
-      id: "about", title: "About You", subtitle: "Let's start with some basic information",
+      id: "about", title: "About you", subtitle: "Let's start with some basic information",
       content: <AboutYouStep params={params} updateParam={updateParam} />,
     },
     {
-      id: "money", title: "Your Money", subtitle: "How much have you saved, and how much do you need?",
+      id: "money", title: "Your money", subtitle: "How much have you saved, and how much do you need?",
       content: (
         <MoneyStep params={params} updateParam={updateParam} portfolioMode={portfolioMode}
           setPortfolioMode={setPortfolioMode} holdings={holdings} setHoldings={setHoldings}
@@ -65,7 +65,7 @@ export function useWizardSteps({
       ),
     },
     {
-      id: "income", title: "Income Sources", subtitle: "What income sources do you have?",
+      id: "income", title: "Income sources", subtitle: "What income sources do you have?",
       content: <IncomeStep params={params} updateParam={updateParam} isReceivingSS={isReceivingSS} setIsReceivingSS={setIsReceivingSS} />,
     },
     {
@@ -103,13 +103,13 @@ function AboutYouStep({ params, updateParam }: {
     <div className="space-y-5">
       <div className={rowCls}>
         <div className={fieldCls}>
-          <label className={labelCls}>Current Age</label>
+          <label className={labelCls}>Current age</label>
           <input type="number" value={params.current_age}
             onChange={(e) => updateParam("current_age", Number(e.target.value))}
             min={18} max={100} className={inputCls} />
         </div>
         <div className={fieldCls}>
-          <label className={labelCls}>Planning To Age</label>
+          <label className={labelCls}>Planning to age</label>
           <input type="number" value={params.max_age}
             onChange={(e) => updateParam("max_age", Number(e.target.value))}
             min={params.current_age + 5} max={120} className={inputCls} />
@@ -137,13 +137,13 @@ function AboutYouStep({ params, updateParam }: {
         </div>
       </div>
       <div className={fieldCls}>
-        <label className={labelCls}>Filing Status</label>
+        <label className={labelCls}>Filing status</label>
         <select value={params.filing_status}
           onChange={(e) => updateParam("filing_status", e.target.value as SimulationInput["filing_status"])}
           className={selectCls}>
           <option value="single">Single</option>
-          <option value="married_filing_jointly">Married (Joint)</option>
-          <option value="head_of_household">Head of Household</option>
+          <option value="married_filing_jointly">Married (joint)</option>
+          <option value="head_of_household">Head of household</option>
         </select>
       </div>
     </div>
@@ -170,14 +170,14 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
     <div className="space-y-5">
       {/* Portfolio Mode Toggle */}
       <div className={fieldCls}>
-        <label className={labelCls}>Portfolio Entry Mode</label>
+        <label className={labelCls}>Portfolio entry mode</label>
         <div className="flex rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-gray-50)] p-1">
           <button type="button"
             className={`flex-1 rounded-[var(--radius-sm)] py-2 text-sm font-medium transition-all ${portfolioMode === "simple" ? "bg-white text-[var(--color-primary)] shadow-[var(--shadow-sm)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"}`}
             onClick={() => setPortfolioMode("simple")}>Simple</button>
           <button type="button"
             className={`flex-1 rounded-[var(--radius-sm)] py-2 text-sm font-medium transition-all ${portfolioMode === "detailed" ? "bg-white text-[var(--color-primary)] shadow-[var(--shadow-sm)]" : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"}`}
-            onClick={() => setPortfolioMode("detailed")}>By Account Type</button>
+            onClick={() => setPortfolioMode("detailed")}>By account type</button>
         </div>
         <div className={hintCls}>
           {portfolioMode === "simple" ? "Enter a single total value" : "Enter each account separately for tax-optimized withdrawals"}
@@ -187,7 +187,7 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
       {portfolioMode === "simple" ? (
         <>
           <div className={fieldCls}>
-            <label className={labelCls}>Current Portfolio Value</label>
+            <label className={labelCls}>Current portfolio value</label>
             <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
               <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
               <input type="number" value={params.initial_capital}
@@ -210,7 +210,7 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
       ) : (
         <>
           <div className={fieldCls}>
-            <label className={labelCls}>Your Holdings</label>
+            <label className={labelCls}>Your holdings</label>
             <div className="rounded-[var(--radius-md)] border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] p-3 text-sm">
               <p className="font-medium text-[var(--color-primary-dark)]">Track each account for tax-optimized withdrawals</p>
               <p className="mt-1 text-xs text-[var(--color-primary)]">RMDs automatically calculated for traditional accounts at age 73+</p>
@@ -218,14 +218,14 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
             <HoldingsEditor holdings={holdings} onChange={setHoldings} />
           </div>
           <div className={fieldCls}>
-            <label htmlFor="withdrawal-strategy" className={labelCls}>Withdrawal Strategy</label>
+            <label htmlFor="withdrawal-strategy" className={labelCls}>Withdrawal strategy</label>
             <select id="withdrawal-strategy" value={withdrawalStrategy}
               onChange={(e) => setWithdrawalStrategy(e.target.value as WithdrawalStrategy)}
               className={selectCls}>
-              <option value="taxable_first">Taxable First - Lets tax-advantaged accounts grow longer</option>
-              <option value="traditional_first">Traditional First - Reduces future RMDs</option>
-              <option value="roth_first">Roth First - Preserves tax-deferred growth</option>
-              <option value="pro_rata">Pro Rata - Withdraw proportionally from all accounts</option>
+              <option value="taxable_first">Taxable first - Lets tax-advantaged accounts grow longer</option>
+              <option value="traditional_first">Traditional first - Reduces future RMDs</option>
+              <option value="roth_first">Roth first - Preserves tax-deferred growth</option>
+              <option value="pro_rata">Pro rata - Withdraw proportionally from all accounts</option>
             </select>
             <div className={hintCls}>Controls which accounts are withdrawn from first</div>
           </div>
@@ -233,7 +233,7 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
       )}
 
       <div className={fieldCls}>
-        <label className={labelCls}>Home Equity</label>
+        <label className={labelCls}>Home equity</label>
         <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.home_value}
@@ -245,7 +245,7 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
       </div>
 
       <div className={fieldCls}>
-        <label className={labelCls}>Annual Spending Need</label>
+        <label className={labelCls}>Annual spending need</label>
         <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.annual_spending}
@@ -275,7 +275,7 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
   return (
     <div className="space-y-5">
       <div className={fieldCls}>
-        <label className={labelCls}>Monthly Social Security</label>
+        <label className={labelCls}>Monthly Social Security benefit</label>
         <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.social_security_monthly}
@@ -297,7 +297,7 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
       )}
       {params.social_security_monthly > 0 && !isReceivingSS && (
         <div className={fieldCls}>
-          <label className={labelCls}>Planned Start Age</label>
+          <label className={labelCls}>Planned start age</label>
           <select value={params.social_security_start_age}
             onChange={(e) => updateParam("social_security_start_age", Number(e.target.value))}
             className={selectCls}>
@@ -315,7 +315,7 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
         </div>
       )}
       <div className={fieldCls}>
-        <label className={labelCls}>Annual Pension</label>
+        <label className={labelCls}>Annual pension</label>
         <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.pension_annual}
@@ -326,7 +326,7 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
         <div className={hintCls}>Enter 0 if you don't have a pension</div>
       </div>
       <div className={fieldCls}>
-        <label className={labelCls}>Current Employment Income</label>
+        <label className={labelCls}>Current employment income</label>
         <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.employment_income}
@@ -338,7 +338,7 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
       </div>
       {params.employment_income > 0 && (
         <div className={fieldCls}>
-          <label className={labelCls}>Retirement Age</label>
+          <label className={labelCls}>Retirement age</label>
           <input type="number" value={params.retirement_age}
             onChange={(e) => updateParam("retirement_age", Number(e.target.value))}
             min={params.current_age} max={80} className={inputCls} />
@@ -364,7 +364,7 @@ function SpouseStep({ params, updateParam, spouse, setSpouse, isSpouseReceivingS
           onChange={(e) => updateParam("has_spouse", e.target.checked)}
           className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
         <div>
-          <div className="text-sm font-semibold text-[var(--color-text)]">Include Spouse</div>
+          <div className="text-sm font-semibold text-[var(--color-text)]">Include spouse</div>
           <div className="text-xs text-[var(--color-text-muted)]">Model finances for both of you together</div>
         </div>
       </label>
@@ -373,13 +373,13 @@ function SpouseStep({ params, updateParam, spouse, setSpouse, isSpouseReceivingS
         <div className="space-y-5 pt-2">
           <div className={rowCls}>
             <div className={fieldCls}>
-              <label className={labelCls}>Spouse Age</label>
+              <label className={labelCls}>Spouse age</label>
               <input type="number" value={spouse.age}
                 onChange={(e) => setSpouse({ ...spouse, age: Number(e.target.value) })}
                 min={18} max={100} className={inputCls} />
             </div>
             <div className={fieldCls}>
-              <label className={labelCls}>Spouse Gender</label>
+              <label className={labelCls}>Spouse gender</label>
               <select value={spouse.gender}
                 onChange={(e) => setSpouse({ ...spouse, gender: e.target.value as "male" | "female" })}
                 className={selectCls}>
@@ -389,7 +389,7 @@ function SpouseStep({ params, updateParam, spouse, setSpouse, isSpouseReceivingS
             </div>
           </div>
           <div className={fieldCls}>
-            <label className={labelCls}>Spouse Monthly Social Security</label>
+            <label className={labelCls}>Spouse monthly Social Security</label>
             <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
               <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
               <input type="number" value={spouse.social_security_monthly}
@@ -408,7 +408,7 @@ function SpouseStep({ params, updateParam, spouse, setSpouse, isSpouseReceivingS
           )}
           {spouse.social_security_monthly > 0 && !isSpouseReceivingSS && (
             <div className={fieldCls}>
-              <label className={labelCls}>Planned Start Age</label>
+              <label className={labelCls}>Planned start age</label>
               <select value={spouse.social_security_start_age}
                 onChange={(e) => setSpouse({ ...spouse, social_security_start_age: Number(e.target.value) })}
                 className={selectCls}>
@@ -419,7 +419,7 @@ function SpouseStep({ params, updateParam, spouse, setSpouse, isSpouseReceivingS
             </div>
           )}
           <div className={fieldCls}>
-            <label className={labelCls}>Spouse Annual Pension</label>
+            <label className={labelCls}>Spouse annual pension</label>
             <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
               <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
               <input type="number" value={spouse.pension_annual}
@@ -447,7 +447,7 @@ function AnnuityStep({ params, updateParam, annuity, setAnnuity }: {
           onChange={(e) => updateParam("has_annuity", e.target.checked)}
           className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
         <div>
-          <div className="text-sm font-semibold text-[var(--color-text)]">Compare to Annuity</div>
+          <div className="text-sm font-semibold text-[var(--color-text)]">Compare to annuity</div>
           <div className="text-xs text-[var(--color-text-muted)]">See if buying an annuity might be better than investing</div>
         </div>
       </label>
@@ -455,7 +455,7 @@ function AnnuityStep({ params, updateParam, annuity, setAnnuity }: {
       {params.has_annuity && (
         <div className="space-y-5 pt-2">
           <div className={fieldCls}>
-            <label className={labelCls}>Monthly Annuity Payment</label>
+            <label className={labelCls}>Monthly annuity payment</label>
             <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
               <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
               <input type="number" value={annuity.monthly_payment}
@@ -466,18 +466,18 @@ function AnnuityStep({ params, updateParam, annuity, setAnnuity }: {
             <div className={hintCls}>Get a quote from an insurance company</div>
           </div>
           <div className={fieldCls}>
-            <label className={labelCls}>Annuity Type</label>
+            <label className={labelCls}>Annuity type</label>
             <select value={annuity.annuity_type}
               onChange={(e) => setAnnuity({ ...annuity, annuity_type: e.target.value as AnnuityInput["annuity_type"] })}
               className={selectCls}>
-              <option value="life_with_guarantee">Life with Guarantee</option>
-              <option value="fixed_period">Fixed Period</option>
-              <option value="life_only">Life Only</option>
+              <option value="life_with_guarantee">Life with guarantee</option>
+              <option value="fixed_period">Fixed period</option>
+              <option value="life_only">Life only</option>
             </select>
           </div>
           {annuity.annuity_type !== "life_only" && (
             <div className={fieldCls}>
-              <label className={labelCls}>Guarantee Period (years)</label>
+              <label className={labelCls}>Guarantee period (years)</label>
               <input type="number" value={annuity.guarantee_years}
                 onChange={(e) => setAnnuity({ ...annuity, guarantee_years: Number(e.target.value) })}
                 min={1} max={30} className={inputCls} />
@@ -506,8 +506,8 @@ function ReviewStep({ params, spouse, annuity, portfolioMode, holdings, error }:
     <div className="space-y-5">
       <div className="space-y-4 divide-y divide-[var(--color-border-light)]">
         <div className="space-y-1">
-          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)]">About You</div>
-          <ReviewRow label="Age Range" value={`${params.current_age} to ${params.max_age}`} />
+          <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)]">About you</div>
+          <ReviewRow label="Age range" value={`${params.current_age} to ${params.max_age}`} />
           <ReviewRow label="Location" value={`${params.state}, ${params.filing_status.replace(/_/g, " ")}`} />
         </div>
         <div className="space-y-1 pt-4">
@@ -523,7 +523,7 @@ function ReviewStep({ params, spouse, annuity, portfolioMode, holdings, error }:
           ) : (
             <ReviewRow label="Portfolio" value={formatCurrency(params.initial_capital ?? 0)} />
           )}
-          <ReviewRow label="Annual Spending" value={formatCurrency(params.annual_spending)} />
+          <ReviewRow label="Annual spending" value={formatCurrency(params.annual_spending)} />
           <ReviewRow label="Social Security" value={`$${params.social_security_monthly.toLocaleString()}/mo @ age ${params.social_security_start_age}`} />
           {params.pension_annual > 0 && <ReviewRow label="Pension" value={`${formatCurrency(params.pension_annual)}/yr`} />}
         </div>
@@ -536,8 +536,8 @@ function ReviewStep({ params, spouse, annuity, portfolioMode, holdings, error }:
         )}
         {params.has_annuity && (
           <div className="space-y-1 pt-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Annuity Comparison</div>
-            <ReviewRow label="Monthly Payment" value={`$${annuity.monthly_payment.toLocaleString()}`} />
+            <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Annuity comparison</div>
+            <ReviewRow label="Monthly payment" value={`$${annuity.monthly_payment.toLocaleString()}`} />
           </div>
         )}
       </div>
