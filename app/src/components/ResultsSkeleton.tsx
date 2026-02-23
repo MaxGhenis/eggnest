@@ -1,98 +1,84 @@
+"use client";
+
 import { Skeleton } from "./Skeleton";
 import { SimulationProgress } from "./SimulationProgress";
-import "../styles/Skeleton.css";
 
 interface ResultsSkeletonProps {
   currentYear: number;
   totalYears: number;
 }
 
-/**
- * Skeleton loading state for the simulation results view.
- * Matches the layout of the actual results to provide visual continuity.
- */
 export function ResultsSkeleton({
   currentYear,
   totalYears,
 }: ResultsSkeletonProps) {
   return (
-    <div className="skeleton-results">
+    <div className="relative space-y-6">
       {/* Back button skeleton */}
-      <Skeleton variant="rect" className="skeleton-back-btn" />
+      <Skeleton variant="rect" width={120} height={36} />
 
-      {/* Success interpretation banner skeleton */}
-      <Skeleton variant="rect" className="skeleton-interpretation" />
+      {/* Success banner skeleton */}
+      <Skeleton variant="rect" width="100%" height={80} />
 
       {/* Metrics grid skeleton */}
-      <div className="skeleton-metrics-grid">
-        <Skeleton variant="rect" className="skeleton-metric-card primary" />
-        <Skeleton variant="rect" className="skeleton-metric-card" />
-        <Skeleton variant="rect" className="skeleton-metric-card" />
-        <Skeleton variant="rect" className="skeleton-metric-card" />
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <Skeleton variant="rect" height={100} className="!bg-[var(--color-primary-50)]" />
+        <Skeleton variant="rect" height={100} />
+        <Skeleton variant="rect" height={100} />
+        <Skeleton variant="rect" height={100} />
       </div>
 
       {/* Chart skeleton */}
-      <div className="skeleton-chart">
-        <Skeleton variant="text" className="skeleton-chart-title" />
-        <Skeleton variant="rect" className="skeleton-chart-area" />
+      <div className="space-y-3">
+        <Skeleton variant="text" width={200} />
+        <Skeleton variant="rect" height={420} />
       </div>
 
-      {/* Outcome distribution table skeleton */}
-      <div className="skeleton-summary">
-        <Skeleton variant="text" className="skeleton-summary-title" />
-        <div className="skeleton-table">
-          <div className="skeleton-table-header">
-            <Skeleton variant="text" className="skeleton-table-header-cell" />
-            <Skeleton variant="text" className="skeleton-table-header-cell" />
-            <Skeleton variant="text" className="skeleton-table-header-cell" />
+      {/* Table skeleton */}
+      <div className="space-y-3">
+        <Skeleton variant="text" width={200} />
+        <div className="space-y-2">
+          <div className="flex gap-4">
+            <Skeleton variant="text" width="30%" />
+            <Skeleton variant="text" width="30%" />
+            <Skeleton variant="text" width="30%" />
           </div>
           {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="skeleton-table-row">
-              <Skeleton variant="text" className="skeleton-table-cell medium" />
-              <Skeleton variant="text" className="skeleton-table-cell short" />
-              <Skeleton variant="text" className="skeleton-table-cell" />
+            <div key={i} className="flex gap-4">
+              <Skeleton variant="text" width="30%" />
+              <Skeleton variant="text" width="20%" />
+              <Skeleton variant="text" width="40%" />
             </div>
           ))}
         </div>
       </div>
 
       {/* Tax summary skeleton */}
-      <div className="skeleton-summary">
-        <Skeleton variant="text" className="skeleton-summary-title" />
-        <div className="skeleton-tax-info">
-          <div className="skeleton-tax-row">
-            <Skeleton variant="text" className="skeleton-tax-label" />
-            <Skeleton variant="text" className="skeleton-tax-value" />
-          </div>
-          <div className="skeleton-tax-row">
-            <Skeleton variant="text" className="skeleton-tax-label" />
-            <Skeleton variant="text" className="skeleton-tax-value" />
-          </div>
-          <div className="skeleton-tax-row">
-            <Skeleton variant="text" className="skeleton-tax-label" />
-            <Skeleton variant="text" className="skeleton-tax-value" />
-          </div>
-        </div>
-        <div className="skeleton-tax-note">
-          <Skeleton variant="text" className="skeleton-tax-note-line" />
-          <Skeleton variant="text" className="skeleton-tax-note-line" />
+      <div className="space-y-3">
+        <Skeleton variant="text" width={180} />
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex justify-between">
+              <Skeleton variant="text" width="40%" />
+              <Skeleton variant="text" width="20%" />
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* What-if scenarios skeleton */}
-      <div className="skeleton-what-if">
-        <Skeleton variant="text" className="skeleton-what-if-title" />
-        <Skeleton variant="text" className="skeleton-what-if-desc" />
-        <div className="skeleton-what-if-buttons">
-          <Skeleton variant="rect" className="skeleton-what-if-btn" />
-          <Skeleton variant="rect" className="skeleton-what-if-btn" />
-          <Skeleton variant="rect" className="skeleton-what-if-btn" />
-          <Skeleton variant="rect" className="skeleton-what-if-btn" />
+      {/* What-if skeleton */}
+      <div className="space-y-3">
+        <Skeleton variant="text" width={160} />
+        <Skeleton variant="text" width={280} />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} variant="rect" height={72} />
+          ))}
         </div>
       </div>
 
       {/* Progress overlay */}
-      <div className="skeleton-progress-overlay">
+      <div className="absolute inset-0 flex items-center justify-center rounded-[var(--radius-lg)] bg-white/80 backdrop-blur-sm">
         <SimulationProgress
           currentYear={currentYear}
           totalYears={totalYears}

@@ -41,6 +41,7 @@ export function useScenarios(deps: ScenarioDeps): UseScenariosReturn {
   } = deps;
 
   const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>(() => {
+    if (typeof window === "undefined") return [];
     try {
       const stored = localStorage.getItem(SCENARIOS_STORAGE_KEY);
       if (stored) {

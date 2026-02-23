@@ -1,5 +1,7 @@
+"use client";
+
 import { useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import Link from "next/link";
 import { Wizard } from "../components/Wizard";
 import { SimulationProgress } from "../components/SimulationProgress";
 import { ResultsSkeleton } from "../components/ResultsSkeleton";
@@ -26,16 +28,11 @@ import {
   parseUrlParams,
   type Persona,
 } from "../lib/simulatorUtils";
-import "../styles/Simulator.css";
-import "../styles/Wizard.css";
-import "../styles/Skeleton.css";
 
-export function SimulatorPage() {
-  // Parse URL params once at init to merge with defaults
+export default function SimulatorPage() {
   const [urlData] = useState(() => parseUrlParams());
   const hasUrlParams = Object.keys(urlData.params).length > 0;
 
-  // Core input state (merge URL params into defaults)
   const [params, setParams] = useState<SimulationInput>(() =>
     hasUrlParams ? { ...DEFAULT_PARAMS, ...urlData.params } : DEFAULT_PARAMS
   );
@@ -46,21 +43,16 @@ export function SimulatorPage() {
   );
   const [annuity, setAnnuity] = useState(DEFAULT_ANNUITY);
 
-  // UI navigation state
   const [showWizard, setShowWizard] = useState(true);
   const [showPersonaPicker, setShowPersonaPicker] = useState(!hasUrlParams);
 
-  // SS receiving status (for users already receiving benefits)
   const [isReceivingSS, setIsReceivingSS] = useState(false);
   const [isSpouseReceivingSS, setIsSpouseReceivingSS] = useState(false);
 
-  // Custom hooks
   const portfolio = usePortfolio();
   const simulation = useSimulation();
   const comparisons = useComparisons({
-    params,
-    spouse,
-    annuity,
+    params, spouse, annuity,
     portfolioMode: portfolio.portfolioMode,
     holdings: portfolio.holdings,
     withdrawalStrategy: portfolio.withdrawalStrategy,
@@ -68,30 +60,21 @@ export function SimulatorPage() {
     setError: simulation.setError,
   });
   const scenarios = useScenarios({
-    params,
-    spouse,
-    annuity,
+    params, spouse, annuity,
     portfolioMode: portfolio.portfolioMode,
     holdings: portfolio.holdings,
     withdrawalStrategy: portfolio.withdrawalStrategy,
-    setParams,
-    setSpouse,
-    setAnnuity,
+    setParams, setSpouse, setAnnuity,
     setPortfolioMode: portfolio.setPortfolioMode,
     setHoldings: portfolio.setHoldings,
     setWithdrawalStrategy: portfolio.setWithdrawalStrategy,
     setShowPersonaPicker,
   });
 
-  // Param updater
-  const updateParam = useCallback(<K extends keyof SimulationInput>(
-    key: K,
-    value: SimulationInput[K]
-  ) => {
+  const updateParam = useCallback(<K extends keyof SimulationInput>(key: K, value: SimulationInput[K]) => {
     setParams((prev) => ({ ...prev, [key]: value }));
   }, []);
 
-  // Handlers
   const handleSimulate = useCallback(async () => {
     await simulation.handleSimulate(
       params, spouse, annuity,
@@ -100,10 +83,7 @@ export function SimulatorPage() {
     setShowWizard(false);
   }, [params, spouse, annuity, portfolio.portfolioMode, portfolio.holdings, portfolio.withdrawalStrategy, simulation]);
 
-  const handleSimulateWithParams = useCallback(async (
-    simParams: SimulationInput,
-    simSpouse?: SpouseInput,
-  ) => {
+  const handleSimulateWithParams = useCallback(async (simParams: SimulationInput, simSpouse?: SpouseInput) => {
     await simulation.handleSimulateWithParams(
       simParams, simSpouse, annuity,
       portfolio.portfolioMode, portfolio.holdings, portfolio.withdrawalStrategy,
@@ -111,44 +91,30 @@ export function SimulatorPage() {
     setShowWizard(false);
   }, [annuity, portfolio.portfolioMode, portfolio.holdings, portfolio.withdrawalStrategy, simulation]);
 
-  // Load a persona and optionally run simulation immediately
   const loadPersona = useCallback((persona: Persona, runImmediately: boolean = false) => {
     setParams(persona.params);
-    if (persona.spouse) {
-      setSpouse(persona.spouse);
-    }
+    if (persona.spouse) setSpouse(persona.spouse);
     setShowPersonaPicker(false);
     if (runImmediately) {
-      setTimeout(() => {
-        handleSimulateWithParams(persona.params, persona.spouse);
-      }, 0);
+      setTimeout(() => handleSimulateWithParams(persona.params, persona.spouse), 0);
     }
   }, [handleSimulateWithParams]);
 
-  // What-if scenario helper
   const runWhatIfScenario = useCallback((modifier: Partial<SimulationInput>) => {
     setParams((prev) => ({ ...prev, ...modifier }));
     setShowWizard(true);
   }, []);
 
-  // Wizard steps
   const wizardSteps = useWizardSteps({
-    params,
-    updateParam,
-    spouse,
-    setSpouse,
-    annuity,
-    setAnnuity,
+    params, updateParam, spouse, setSpouse, annuity, setAnnuity,
     portfolioMode: portfolio.portfolioMode,
     setPortfolioMode: portfolio.setPortfolioMode,
     holdings: portfolio.holdings,
     setHoldings: portfolio.setHoldings,
     withdrawalStrategy: portfolio.withdrawalStrategy,
     setWithdrawalStrategy: portfolio.setWithdrawalStrategy,
-    isReceivingSS,
-    setIsReceivingSS,
-    isSpouseReceivingSS,
-    setIsSpouseReceivingSS,
+    isReceivingSS, setIsReceivingSS,
+    isSpouseReceivingSS, setIsSpouseReceivingSS,
     error: simulation.error,
   });
 
@@ -208,14 +174,8 @@ export function SimulatorPage() {
       return (
         <ErrorState
           error={simulation.error}
-          onRetry={() => {
-            simulation.setError(null);
-            handleSimulate();
-          }}
-          onEditInputs={() => {
-            simulation.setError(null);
-            setShowWizard(true);
-          }}
+          onRetry={() => { simulation.setError(null); handleSimulate(); }}
+          onEditInputs={() => { simulation.setError(null); setShowWizard(true); }}
         />
       );
     }
@@ -233,17 +193,12 @@ export function SimulatorPage() {
           onCopyLink={scenarios.copyLinkToClipboard}
           onEditInputs={() => setShowWizard(true)}
           onWhatIf={runWhatIfScenario}
-          // State comparison
           stateComparisonResult={comparisons.stateComparisonResult}
           isComparingStates={comparisons.isComparingStates}
           selectedCompareStates={comparisons.selectedCompareStates}
           onCompareStates={comparisons.handleCompareStates}
           onToggleCompareState={comparisons.toggleCompareState}
-          onResetStateComparison={() => {
-            comparisons.setStateComparisonResult(null);
-            comparisons.setSelectedCompareStates([]);
-          }}
-          // SS timing
+          onResetStateComparison={() => { comparisons.setStateComparisonResult(null); comparisons.setSelectedCompareStates([]); }}
           ssTimingResult={comparisons.ssTimingResult}
           isComparingSSTiming={comparisons.isComparingSSTiming}
           birthYear={comparisons.birthYear}
@@ -252,7 +207,6 @@ export function SimulatorPage() {
           setPiaMonthly={comparisons.setPiaMonthly}
           onCompareSSTimings={comparisons.handleCompareSSTimings}
           onResetSSTimings={() => comparisons.setSSTimingResult(null)}
-          // Allocation
           allocationResult={comparisons.allocationResult}
           isComparingAllocations={comparisons.isComparingAllocations}
           onCompareAllocations={comparisons.handleCompareAllocations}
@@ -265,18 +219,20 @@ export function SimulatorPage() {
   }
 
   return (
-    <div className="simulator">
-      <header className="sim-header">
-        <a href={HOME_URL} className="sim-logo">
-          <img src="/logo.svg" alt="EggNest" height="28" />
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-50 flex items-center justify-between border-b border-[var(--color-border-light)] bg-white/90 px-4 py-3 backdrop-blur-md md:px-6">
+        <a href={HOME_URL} className="flex items-center gap-2">
+          <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
         </a>
-        <span className="sim-title">Financial Simulator</span>
-        <Link to="/life-event" className="sim-nav-link">Tax & Benefits Calculator</Link>
+        <span className="text-sm font-semibold text-[var(--color-text)]">Financial Simulator</span>
+        <Link href="/life-event" className="text-sm font-medium text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-dark)]">
+          Tax & Benefits Calculator
+        </Link>
       </header>
 
-      <div className="sim-content">
+      <main className="mx-auto max-w-4xl px-4 py-8 md:px-6">
         {renderContent()}
-      </div>
+      </main>
     </div>
   );
 }

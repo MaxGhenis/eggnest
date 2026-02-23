@@ -1,4 +1,4 @@
-import "../styles/SimulationProgress.css";
+"use client";
 
 interface SimulationProgressProps {
   currentYear: number;
@@ -6,27 +6,31 @@ interface SimulationProgressProps {
 }
 
 export function SimulationProgress({ currentYear, totalYears }: SimulationProgressProps) {
-  const percentage = Math.round((currentYear / totalYears) * 100);
+  const percentage = totalYears > 0 ? Math.round((currentYear / totalYears) * 100) : 0;
 
   return (
-    <div className="simulation-progress">
-      <div className="progress-header">
-        <span className="progress-label">Calculating taxes with PolicyEngine...</span>
-        <span className="progress-percent">{percentage}%</span>
+    <div className="mx-auto max-w-md space-y-3 py-4">
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-[var(--color-text-muted)]">
+          Calculating taxes with PolicyEngine...
+        </span>
+        <span className="font-semibold text-[var(--color-primary)]">
+          {percentage}%
+        </span>
       </div>
       <div
-        className="progress-bar"
+        className="h-2 w-full overflow-hidden rounded-full bg-[var(--color-gray-200)]"
         role="progressbar"
         aria-valuenow={percentage}
         aria-valuemin={0}
         aria-valuemax={100}
       >
         <div
-          className="progress-fill"
+          className="h-full rounded-full bg-gradient-golden progress-fill-transition"
           style={{ width: `${percentage}%` }}
         />
       </div>
-      <div className="progress-detail">
+      <div className="text-center text-xs text-[var(--color-text-light)]">
         Year {currentYear} of {totalYears}
       </div>
     </div>

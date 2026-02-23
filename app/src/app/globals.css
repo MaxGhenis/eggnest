@@ -1,16 +1,17 @@
-/* EggNest Design System - Golden Hour Edition */
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+@import "tailwindcss";
 
-:root {
+/* EggNest Design System - Golden Hour Edition */
+/* Fraunces (display serif) + DM Sans (body sans) */
+
+@theme {
   /* Typography */
-  --font-display: 'Fraunces', Georgia, serif;
-  --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
 
   /* Primary - Golden Hour Amber */
   --color-primary: #c2410c;
   --color-primary-light: #ea580c;
   --color-primary-dark: #9a3412;
-  --color-primary-glow: rgba(234, 88, 12, 0.15);
   --color-primary-50: #fff7ed;
   --color-primary-100: #ffedd5;
   --color-primary-200: #fed7aa;
@@ -20,7 +21,7 @@
   --color-gold-light: #fbbf24;
   --color-gold-pale: #fef3c7;
 
-  /* Accent - Sage (for success states) */
+  /* Sage accent */
   --color-sage: #65a30d;
   --color-sage-light: #84cc16;
   --color-sage-pale: #ecfccb;
@@ -33,7 +34,7 @@
   --color-danger: #dc2626;
   --color-danger-light: #fee2e2;
 
-  /* Neutrals - Warm tinted */
+  /* Neutrals - Warm tinted (stone) */
   --color-gray-50: #fafaf9;
   --color-gray-100: #f5f5f4;
   --color-gray-200: #e7e5e4;
@@ -45,22 +46,15 @@
   --color-gray-800: #292524;
   --color-gray-900: #1c1917;
 
-  /* Text */
+  /* Semantic aliases */
   --color-text: #292524;
   --color-text-muted: #78716c;
   --color-text-light: #a8a29e;
-
-  /* Backgrounds */
   --color-bg: #fffbf5;
   --color-bg-alt: #fef7ed;
   --color-bg-card: #ffffff;
-
-  /* Borders */
   --color-border: #e7e5e4;
   --color-border-light: #f5f5f4;
-
-  /* Focus ring */
-  --focus-ring: 0 0 0 3px rgba(234, 88, 12, 0.2);
 
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.04);
@@ -68,39 +62,25 @@
   --shadow-lg: 0 12px 32px rgba(28, 25, 23, 0.08), 0 4px 12px rgba(28, 25, 23, 0.04);
   --shadow-glow: 0 0 40px rgba(234, 88, 12, 0.12);
 
-  /* Gradients */
-  --gradient-sunrise: linear-gradient(135deg, #fef3c7 0%, #fed7aa 50%, #fdba74 100%);
-  --gradient-golden: linear-gradient(135deg, #d97706 0%, #ea580c 100%);
-  --gradient-warm: linear-gradient(180deg, #fffbf5 0%, #fef7ed 100%);
-  --gradient-card: linear-gradient(180deg, #ffffff 0%, #fefcf9 100%);
-
   /* Border Radius */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 20px;
   --radius-xl: 28px;
-  --radius-full: 9999px;
-
-  /* Spacing */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.25rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
-  --space-10: 2.5rem;
-  --space-12: 3rem;
 
   /* Transitions */
   --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-spring: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Base Styles */
-*, *::before, *::after {
+/* ============================================
+   Base Styles
+   ============================================ */
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -124,21 +104,93 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: -0.02em;
 }
 
-/* Selection */
 ::selection {
   background: var(--color-primary-100);
   color: var(--color-primary-dark);
 }
 
-/* Focus visible */
 :focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
-/* Smooth scrolling */
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
   }
+}
+
+/* ============================================
+   Utility Classes (things Tailwind can't do)
+   ============================================ */
+
+/* Gradient backgrounds */
+.bg-gradient-sunrise {
+  background: linear-gradient(135deg, #fef3c7 0%, #fed7aa 50%, #fdba74 100%);
+}
+.bg-gradient-golden {
+  background: linear-gradient(135deg, #d97706 0%, #ea580c 100%);
+}
+.bg-gradient-warm {
+  background: linear-gradient(180deg, #fffbf5 0%, #fef7ed 100%);
+}
+.bg-gradient-card {
+  background: linear-gradient(180deg, #ffffff 0%, #fefcf9 100%);
+}
+
+/* Focus ring shorthand */
+.focus-ring {
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.2);
+}
+
+/* Skeleton pulse animation */
+@keyframes skeleton-pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+.animate-skeleton {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* Spinner animation */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin 1.2s linear infinite;
+}
+
+/* Progress bar fill transition */
+.progress-fill-transition {
+  transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Table styles */
+.table-auto-style th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid var(--color-border);
+}
+
+.table-auto-style td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border-light);
+  font-size: 0.875rem;
+}
+
+.table-auto-style tbody tr:hover {
+  background: var(--color-gray-50);
+}
+
+/* Plotly chart container */
+.plotly-chart-wrapper .js-plotly-plot {
+  width: 100% !important;
 }
