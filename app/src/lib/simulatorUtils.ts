@@ -390,6 +390,7 @@ export function getErrorInfo(error: unknown): ErrorInfo {
 // ============================================
 
 export function parseUrlParams(): { params: Partial<SimulationInput>; spouse: Partial<SpouseInput> } {
+  if (typeof window === "undefined") return { params: {}, spouse: {} };
   const urlParams = new URLSearchParams(window.location.search);
   const params: Partial<SimulationInput> = {};
   const spouse: Partial<SpouseInput> = {};

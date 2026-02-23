@@ -1,4 +1,4 @@
-import "../styles/Skeleton.css";
+"use client";
 
 export type SkeletonVariant = "text" | "circle" | "rect";
 
@@ -10,16 +10,6 @@ interface SkeletonProps {
   style?: React.CSSProperties;
 }
 
-/**
- * Reusable Skeleton component with pulse animation.
- * Use for loading states to show content placeholders.
- *
- * @param variant - "text" (default, rounded), "circle" (circular), "rect" (rectangular)
- * @param width - Width of the skeleton (CSS value or number for px)
- * @param height - Height of the skeleton (CSS value or number for px)
- * @param className - Additional CSS classes
- * @param style - Additional inline styles
- */
 export function Skeleton({
   variant = "text",
   width,
@@ -27,7 +17,11 @@ export function Skeleton({
   className = "",
   style = {},
 }: SkeletonProps) {
-  const variantClass = `skeleton-${variant}`;
+  const variantClasses: Record<SkeletonVariant, string> = {
+    text: "rounded-[var(--radius-sm)] h-4",
+    circle: "rounded-full",
+    rect: "rounded-[var(--radius-md)]",
+  };
 
   const computedStyle: React.CSSProperties = {
     ...style,
@@ -41,7 +35,7 @@ export function Skeleton({
 
   return (
     <div
-      className={`skeleton ${variantClass} ${className}`.trim()}
+      className={`animate-skeleton bg-[var(--color-gray-200)] ${variantClasses[variant]} ${className}`.trim()}
       style={computedStyle}
       aria-hidden="true"
     />

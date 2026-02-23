@@ -1,0 +1,348 @@
+@import "tailwindcss";
+
+/* EggNest Design System - Refined Wealth Advisory */
+/* Fraunces (display serif) + DM Sans (body sans) */
+
+@theme {
+  /* Typography */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Primary - Golden Hour Amber */
+  --color-primary: #c2410c;
+  --color-primary-light: #ea580c;
+  --color-primary-dark: #9a3412;
+  --color-primary-50: #fff7ed;
+  --color-primary-100: #ffedd5;
+  --color-primary-200: #fed7aa;
+
+  /* Secondary - Warm Gold */
+  --color-gold: #d97706;
+  --color-gold-light: #fbbf24;
+  --color-gold-pale: #fef3c7;
+
+  /* Sage accent */
+  --color-sage: #65a30d;
+  --color-sage-light: #84cc16;
+  --color-sage-pale: #ecfccb;
+
+  /* Semantic */
+  --color-success: #16a34a;
+  --color-success-light: #dcfce7;
+  --color-warning: #ca8a04;
+  --color-warning-light: #fef9c3;
+  --color-danger: #dc2626;
+  --color-danger-light: #fee2e2;
+
+  /* Neutrals - Warm tinted (stone) */
+  --color-gray-50: #fafaf9;
+  --color-gray-100: #f5f5f4;
+  --color-gray-200: #e7e5e4;
+  --color-gray-300: #d6d3d1;
+  --color-gray-400: #a8a29e;
+  --color-gray-500: #78716c;
+  --color-gray-600: #57534e;
+  --color-gray-700: #44403c;
+  --color-gray-800: #292524;
+  --color-gray-900: #1c1917;
+
+  /* Semantic aliases */
+  --color-text: #292524;
+  --color-text-muted: #78716c;
+  --color-text-light: #a8a29e;
+  --color-bg: #fffbf5;
+  --color-bg-alt: #fef7ed;
+  --color-bg-card: #ffffff;
+  --color-border: #e7e5e4;
+  --color-border-light: #f5f5f4;
+
+  /* Shadows - layered for realism */
+  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.04), 0 0 0 1px rgba(28, 25, 23, 0.02);
+  --shadow-md: 0 4px 16px rgba(28, 25, 23, 0.06), 0 1px 4px rgba(28, 25, 23, 0.04), 0 0 0 1px rgba(28, 25, 23, 0.01);
+  --shadow-lg: 0 16px 40px rgba(28, 25, 23, 0.08), 0 6px 16px rgba(28, 25, 23, 0.04), 0 0 0 1px rgba(28, 25, 23, 0.01);
+  --shadow-xl: 0 24px 56px rgba(28, 25, 23, 0.1), 0 8px 24px rgba(28, 25, 23, 0.05);
+  --shadow-glow: 0 0 40px rgba(234, 88, 12, 0.12);
+  --shadow-glow-sm: 0 0 20px rgba(234, 88, 12, 0.08);
+
+  /* Border Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  line-height: 1.65;
+  margin: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+::selection {
+  background: var(--color-primary-100);
+  color: var(--color-primary-dark);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* ============================================
+   Utility Classes (things Tailwind can't do)
+   ============================================ */
+
+/* Gradient backgrounds */
+.bg-gradient-sunrise {
+  background: linear-gradient(135deg, #fef3c7 0%, #fed7aa 50%, #fdba74 100%);
+}
+.bg-gradient-golden {
+  background: linear-gradient(135deg, #d97706 0%, #ea580c 100%);
+}
+.bg-gradient-golden-refined {
+  background: linear-gradient(135deg, #d97706 0%, #c2410c 40%, #9a3412 100%);
+}
+.bg-gradient-warm {
+  background: linear-gradient(180deg, #fffbf5 0%, #fef7ed 100%);
+}
+.bg-gradient-card {
+  background: linear-gradient(180deg, #ffffff 0%, #fefcf9 100%);
+}
+.bg-gradient-page {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(254, 243, 199, 0.35) 0%, transparent 70%),
+    linear-gradient(180deg, #fffbf5 0%, #faf8f5 40%, #f7f5f2 100%);
+}
+
+/* Header glass effect */
+.header-glass {
+  background: rgba(255, 253, 250, 0.85);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+}
+
+/* Focus ring shorthand */
+.focus-ring {
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.2);
+}
+
+/* Skeleton pulse animation */
+@keyframes skeleton-pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+
+.animate-skeleton {
+  animation: skeleton-pulse 1.8s ease-in-out infinite;
+}
+
+/* Spinner animation */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin 1.2s linear infinite;
+}
+
+/* Progress bar fill transition */
+.progress-fill-transition {
+  transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Progress bar shimmer */
+@keyframes progress-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.progress-bar-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-bar-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 100%
+  );
+  animation: progress-shimmer 1.8s ease-in-out infinite;
+}
+
+/* Pulse glow for active progress */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(217, 119, 6, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(217, 119, 6, 0.4); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Fade-in-up animation for staggered reveals */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  opacity: 0;
+}
+
+/* Table styles */
+.table-auto-style {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-auto-style th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  padding: 0.875rem 1rem;
+  border-bottom: 2px solid var(--color-border);
+  background: var(--color-gray-50);
+}
+
+.table-auto-style th:first-child {
+  border-radius: var(--radius-sm) 0 0 0;
+}
+
+.table-auto-style th:last-child {
+  border-radius: 0 var(--radius-sm) 0 0;
+}
+
+.table-auto-style td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border-light);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-auto-style tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+.table-auto-style tbody tr:hover {
+  background: var(--color-gray-50);
+}
+
+.table-auto-style tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Plotly chart container */
+.plotly-chart-wrapper {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.plotly-chart-wrapper .js-plotly-plot {
+  width: 100% !important;
+}
+
+/* Card section base -- reusable elevated section */
+.section-card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.section-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* Metric card with top accent bar */
+.metric-card {
+  position: relative;
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-light);
+  overflow: hidden;
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.metric-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.metric-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-gold) 0%, var(--color-gold-light) 100%);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.metric-card:hover::before {
+  opacity: 1;
+}
+
+.metric-card-primary::before {
+  opacity: 1;
+}
+
+/* Subtle divider with fade */
+.divider-fade {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-border), transparent);
+}

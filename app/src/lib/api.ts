@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /** Default timeout for API requests (30 seconds) */
 const DEFAULT_TIMEOUT_MS = 30_000;
