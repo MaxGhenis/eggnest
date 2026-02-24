@@ -15,7 +15,7 @@ import {
   getFieldError,
   type ValidationError,
 } from "../../lib/validation";
-import { US_STATES, HOME_URL } from "../../lib/constants";
+import { US_STATES } from "../../lib/constants";
 
 type FilingStatus = "single" | "married_filing_jointly" | "married_filing_separately" | "head_of_household";
 
@@ -388,11 +388,11 @@ export default function LifeEventPage() {
     <div className="min-h-screen">
       <header className="header-glass sticky top-0 z-50 border-b border-[var(--color-border-light)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
-          <a href={HOME_URL} className="flex items-center gap-2.5 transition-opacity hover:opacity-80" aria-label="EggNest home">
+          <Link href="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80" aria-label="EggNest home">
             <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
-          </a>
+          </Link>
           <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Tax & benefits calculator</span>
-          <Link href="/" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">
+          <Link href="/simulator" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">
             Retirement simulator
           </Link>
         </div>

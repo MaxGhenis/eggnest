@@ -2,32 +2,31 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
-import { Wizard } from "../components/Wizard";
-import { SimulationProgress } from "../components/SimulationProgress";
-import { ResultsSkeleton } from "../components/ResultsSkeleton";
+import { Wizard } from "../../components/Wizard";
+import { SimulationProgress } from "../../components/SimulationProgress";
+import { ResultsSkeleton } from "../../components/ResultsSkeleton";
 import {
   PersonaPicker,
   ResultsPanel,
   ErrorState,
   ScenarioManager,
   useWizardSteps,
-} from "../components/simulator";
-import { useSimulation } from "../hooks/useSimulation";
-import { useComparisons } from "../hooks/useComparisons";
-import { useScenarios } from "../hooks/useScenarios";
-import { usePortfolio } from "../hooks/usePortfolio";
-import type { SimulationInput, SpouseInput } from "../lib/api";
+} from "../../components/simulator";
+import { useSimulation } from "../../hooks/useSimulation";
+import { useComparisons } from "../../hooks/useComparisons";
+import { useScenarios } from "../../hooks/useScenarios";
+import { usePortfolio } from "../../hooks/usePortfolio";
+import type { SimulationInput, SpouseInput } from "../../lib/api";
 import {
   DEFAULT_PARAMS,
   DEFAULT_SPOUSE,
   DEFAULT_ANNUITY,
-  HOME_URL,
-} from "../lib/constants";
+} from "../../lib/constants";
 import {
   EXAMPLE_PERSONAS,
   parseUrlParams,
   type Persona,
-} from "../lib/simulatorUtils";
+} from "../../lib/simulatorUtils";
 
 export default function SimulatorPage() {
   const [urlData] = useState(() => parseUrlParams());
@@ -222,9 +221,9 @@ export default function SimulatorPage() {
     <div className="min-h-screen">
       <header className="header-glass sticky top-0 z-50 border-b border-[var(--color-border-light)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
-          <a href={HOME_URL} className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
+          <Link href="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
             <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
-          </a>
+          </Link>
           <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Financial simulator</span>
           <Link href="/life-event" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">
             Tax & benefits calculator

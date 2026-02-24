@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-EggNest is a retirement and financial planning simulator that uses Monte Carlo simulation with real tax calculations via PolicyEngine-US. The project follows a subdomain architecture with separate frontend and backend services.
+EggNest is a retirement and financial planning simulator that uses Monte Carlo simulation with real tax calculations via PolicyEngine-US. The project uses a unified Next.js frontend with a Python FastAPI backend.
 
 ## Development Commands
 
@@ -48,13 +48,15 @@ eggnest/
 │       ├── tax.py           # PolicyEngine-US integration
 │       ├── mortality.py     # SSA mortality tables
 │       └── models.py        # Pydantic request/response models
-├── app/                     # Next.js 15 frontend (primary)
+├── app/                     # Next.js 15 frontend (unified)
 │   └── src/
 │       ├── app/             # Next.js App Router pages
+│       │   ├── (marketing)/ # Landing page & thesis (route group)
+│       │   ├── simulator/   # Monte Carlo simulator
+│       │   └── life-event/  # Tax & benefits calculator
 │       ├── lib/api.ts       # API client with SSE streaming
 │       ├── hooks/           # Custom React hooks
 │       └── components/      # UI components
-├── web/                     # Alternate React frontend (legacy)
 └── supabase/                # Database migrations
 ```
 
@@ -88,4 +90,4 @@ eggnest/
 - Frontend uses Next.js 15 (App Router) with React 19, TypeScript, and Tailwind CSS v4
 - Styling uses Tailwind utility classes plus CSS custom properties defined in `globals.css`
 - Tests use pytest (backend) and Vitest (frontend)
-- `app/` is the active frontend; `web/` is a legacy landing page
+- `app/` is the unified frontend (marketing pages, simulator, and tools)
