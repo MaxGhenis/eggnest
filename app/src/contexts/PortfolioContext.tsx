@@ -5,7 +5,7 @@ import { usePortfolio, type UsePortfolioReturn } from "../hooks/usePortfolio";
 
 const PortfolioContext = createContext<UsePortfolioReturn | null>(null);
 
-export function usePortfolioContext() {
+export function usePortfolioContext(): UsePortfolioReturn {
   const ctx = useContext(PortfolioContext);
   if (!ctx) throw new Error("usePortfolioContext must be used within PortfolioProvider");
   return ctx;

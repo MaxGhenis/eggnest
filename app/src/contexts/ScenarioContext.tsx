@@ -7,7 +7,7 @@ import { usePortfolioContext } from "./PortfolioContext";
 
 const ScenarioContext = createContext<UseScenariosReturn | null>(null);
 
-export function useScenarioContext() {
+export function useScenarioContext(): UseScenariosReturn {
   const ctx = useContext(ScenarioContext);
   if (!ctx) throw new Error("useScenarioContext must be used within ScenarioProvider");
   return ctx;

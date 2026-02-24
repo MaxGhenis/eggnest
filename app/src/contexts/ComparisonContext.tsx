@@ -7,7 +7,7 @@ import { usePortfolioContext } from "./PortfolioContext";
 
 const ComparisonContext = createContext<UseComparisonsReturn | null>(null);
 
-export function useComparisonContext() {
+export function useComparisonContext(): UseComparisonsReturn {
   const ctx = useContext(ComparisonContext);
   if (!ctx) throw new Error("useComparisonContext must be used within ComparisonProvider");
   return ctx;

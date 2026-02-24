@@ -97,11 +97,6 @@ class MonteCarloSimulator:
                 bond_index=p.bond_index,
                 rng=self._rng,
             )
-        else:
-            # Placeholder for legacy code paths
-            price_growth = None
-            div_yields = None
-
         # Generate mortality masks
         if p.include_mortality:
             if p.has_spouse and p.spouse:

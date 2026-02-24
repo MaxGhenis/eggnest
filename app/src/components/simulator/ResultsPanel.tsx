@@ -38,7 +38,11 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
   const { annuityResult, selectedYearIndex, setSelectedYearIndex } = simulation;
 
   const interpretation = useMemo(() => getSuccessRateInterpretation(result.success_rate), [result.success_rate]);
-  const successColor = useMemo(() => result.success_rate >= 0.9 ? "#10b981" : result.success_rate >= 0.75 ? "#f59e0b" : "#ef4444", [result.success_rate]);
+  const successColor = useMemo(() => {
+    if (result.success_rate >= 0.9) return "#10b981";
+    if (result.success_rate >= 0.75) return "#f59e0b";
+    return "#ef4444";
+  }, [result.success_rate]);
   const ages = useMemo(() => result.percentile_paths.p50.map((_, i) => params.current_age + i), [result.percentile_paths.p50, params.current_age]);
 
   return (
@@ -108,7 +112,7 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
       <OutcomeDistribution result={result} />
       <TaxSummary result={result} state={params.state} />
 
-      {result.year_breakdown && result.year_breakdown.length > 0 && <YearBreakdownTable result={result} />}
+      {result.year_breakdown.length > 0 && <YearBreakdownTable result={result} />}
 
       {annuityResult && <AnnuityComparison annuityResult={annuityResult} guaranteeYears={annuity.guarantee_years} />}
 

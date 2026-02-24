@@ -530,7 +530,6 @@ class HouseholdInput(BaseModel):
 
     def model_post_init(self, __context) -> None:
         """Auto-infer filing status from household composition."""
-        _heads = sum(1 for p in self.people if p.is_tax_unit_head)
         spouses = sum(1 for p in self.people if p.is_tax_unit_spouse)
         dependents = sum(1 for p in self.people if p.is_tax_unit_dependent)
 
