@@ -2,21 +2,16 @@
 
 import { useMemo } from "react";
 import dynamic from "next/dynamic";
-import type {
-  SimulationInput,
-  SimulationResult,
-  AnnuityInput,
-  StateComparisonResult,
-  SSTimingComparisonResult,
-  AllocationComparisonResult,
-} from "../../lib/api";
+import type { SimulationInput, SimulationResult } from "../../lib/api";
 import { colors, chartColors } from "../../lib/design-tokens";
 import {
   formatCurrency,
   formatPercent,
   getSuccessRateInterpretation,
-  type AnnuityComparisonResult,
 } from "../../lib/simulatorUtils";
+import { useSimulationContext } from "../../contexts/SimulationContext";
+import { useComparisonContext } from "../../contexts/ComparisonContext";
+import { useScenarioContext } from "../../contexts/ScenarioContext";
 import {
   AnnuityComparison,
   StateComparison,
@@ -28,47 +23,20 @@ import {
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
 interface ResultsPanelProps {
-  result: SimulationResult;
-  params: SimulationInput;
-  annuity: AnnuityInput;
-  annuityResult: AnnuityComparisonResult | null;
-  selectedYearIndex: number | null;
-  setSelectedYearIndex: (index: number | null) => void;
-  linkCopied: boolean;
-  onCopyLink: () => void;
   onEditInputs: () => void;
   onWhatIf: (modifier: Partial<SimulationInput>) => void;
-  stateComparisonResult: StateComparisonResult | null;
-  isComparingStates: boolean;
-  selectedCompareStates: string[];
-  onCompareStates: (states?: string[]) => void;
-  onToggleCompareState: (state: string) => void;
-  onResetStateComparison: () => void;
-  ssTimingResult: SSTimingComparisonResult | null;
-  isComparingSSTiming: boolean;
-  birthYear: number;
-  setBirthYear: (year: number) => void;
-  piaMonthly: number;
-  setPiaMonthly: (pia: number) => void;
-  onCompareSSTimings: () => void;
-  onResetSSTimings: () => void;
-  allocationResult: AllocationComparisonResult | null;
-  isComparingAllocations: boolean;
-  onCompareAllocations: () => void;
-  onResetAllocations: () => void;
 }
 
 const sectionCls = "section-card";
 
-export function ResultsPanel({
-  result, params, annuity, annuityResult,
-  selectedYearIndex, setSelectedYearIndex, linkCopied, onCopyLink, onEditInputs, onWhatIf,
-  stateComparisonResult, isComparingStates, selectedCompareStates,
-  onCompareStates, onToggleCompareState, onResetStateComparison,
-  ssTimingResult, isComparingSSTiming, birthYear, setBirthYear, piaMonthly, setPiaMonthly,
-  onCompareSSTimings, onResetSSTimings,
-  allocationResult, isComparingAllocations, onCompareAllocations, onResetAllocations,
-}: ResultsPanelProps) {
+export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
+  const { params, annuity, simulation } = useSimulationContext();
+  const comparisons = useComparisonContext();
+  const scenarios = useScenarioContext();
+
+  const result = simulation.result!;
+  const { annuityResult, selectedYearIndex, setSelectedYearIndex } = simulation;
+
   const interpretation = useMemo(() => getSuccessRateInterpretation(result.success_rate), [result.success_rate]);
   const successColor = useMemo(() => result.success_rate >= 0.9 ? "#10b981" : result.success_rate >= 0.75 ? "#f59e0b" : "#ef4444", [result.success_rate]);
   const ages = useMemo(() => result.percentile_paths.p50.map((_, i) => params.current_age + i), [result.percentile_paths.p50, params.current_age]);
@@ -81,12 +49,12 @@ export function ResultsPanel({
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
           Edit inputs
         </button>
-        <button className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-text-muted)] shadow-[var(--shadow-sm)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)] hover:shadow-[var(--shadow-md)]" onClick={onCopyLink}>
+        <button className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-text-muted)] shadow-[var(--shadow-sm)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)] hover:shadow-[var(--shadow-md)]" onClick={scenarios.copyLinkToClipboard}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
           </svg>
-          {linkCopied ? "Link copied!" : "Copy link"}
+          {scenarios.linkCopied ? "Link copied!" : "Copy link"}
         </button>
       </div>
 
@@ -144,17 +112,17 @@ export function ResultsPanel({
 
       {annuityResult && <AnnuityComparison annuityResult={annuityResult} guaranteeYears={annuity.guarantee_years} />}
 
-      <StateComparison params={params} stateComparisonResult={stateComparisonResult}
-        isComparingStates={isComparingStates} selectedCompareStates={selectedCompareStates}
-        onCompareStates={onCompareStates} onToggleCompareState={onToggleCompareState}
-        onResetComparison={onResetStateComparison} />
+      <StateComparison params={params} stateComparisonResult={comparisons.stateComparisonResult}
+        isComparingStates={comparisons.isComparingStates} selectedCompareStates={comparisons.selectedCompareStates}
+        onCompareStates={comparisons.handleCompareStates} onToggleCompareState={comparisons.toggleCompareState}
+        onResetComparison={() => { comparisons.setStateComparisonResult(null); comparisons.setSelectedCompareStates([]); }} />
 
-      <SSTimingComparison ssTimingResult={ssTimingResult} isComparingSSTiming={isComparingSSTiming}
-        birthYear={birthYear} setBirthYear={setBirthYear} piaMonthly={piaMonthly} setPiaMonthly={setPiaMonthly}
-        onCompare={onCompareSSTimings} onReset={onResetSSTimings} />
+      <SSTimingComparison ssTimingResult={comparisons.ssTimingResult} isComparingSSTiming={comparisons.isComparingSSTiming}
+        birthYear={comparisons.birthYear} setBirthYear={comparisons.setBirthYear} piaMonthly={comparisons.piaMonthly} setPiaMonthly={comparisons.setPiaMonthly}
+        onCompare={comparisons.handleCompareSSTimings} onReset={() => comparisons.setSSTimingResult(null)} />
 
-      <AllocationComparison allocationResult={allocationResult} isComparingAllocations={isComparingAllocations}
-        onCompare={onCompareAllocations} onReset={onResetAllocations} />
+      <AllocationComparison allocationResult={comparisons.allocationResult} isComparingAllocations={comparisons.isComparingAllocations}
+        onCompare={comparisons.handleCompareAllocations} onReset={() => comparisons.setAllocationResult(null)} />
 
       {result.median_depletion_age && (
         <div className="flex gap-3 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">

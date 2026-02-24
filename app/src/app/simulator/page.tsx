@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useCallback } from "react";
 import Link from "next/link";
 import { Wizard } from "../../components/Wizard";
 import { SimulationProgress } from "../../components/SimulationProgress";
@@ -12,147 +11,77 @@ import {
   ScenarioManager,
   useWizardSteps,
 } from "../../components/simulator";
-import { useSimulation } from "../../hooks/useSimulation";
-import { useComparisons } from "../../hooks/useComparisons";
-import { useScenarios } from "../../hooks/useScenarios";
-import { usePortfolio } from "../../hooks/usePortfolio";
-import type { SimulationInput, SpouseInput } from "../../lib/api";
-import {
-  DEFAULT_PARAMS,
-  DEFAULT_SPOUSE,
-  DEFAULT_ANNUITY,
-} from "../../lib/constants";
-import {
-  EXAMPLE_PERSONAS,
-  parseUrlParams,
-  type Persona,
-} from "../../lib/simulatorUtils";
+import { PortfolioProvider, usePortfolioContext } from "../../contexts/PortfolioContext";
+import { SimulationProvider, useSimulationContext } from "../../contexts/SimulationContext";
+import { ComparisonProvider } from "../../contexts/ComparisonContext";
+import { ScenarioProvider } from "../../contexts/ScenarioContext";
+import { EXAMPLE_PERSONAS } from "../../lib/simulatorUtils";
 
 export default function SimulatorPage() {
-  const [urlData] = useState(() => parseUrlParams());
-  const hasUrlParams = Object.keys(urlData.params).length > 0;
-
-  const [params, setParams] = useState<SimulationInput>(() =>
-    hasUrlParams ? { ...DEFAULT_PARAMS, ...urlData.params } : DEFAULT_PARAMS
+  return (
+    <PortfolioProvider>
+      <SimulatorWithPortfolio />
+    </PortfolioProvider>
   );
-  const [spouse, setSpouse] = useState<SpouseInput>(() =>
-    Object.keys(urlData.spouse).length > 0
-      ? { ...DEFAULT_SPOUSE, ...urlData.spouse }
-      : DEFAULT_SPOUSE
+}
+
+function SimulatorWithPortfolio() {
+  const { portfolioMode, holdings, withdrawalStrategy } = usePortfolioContext();
+
+  return (
+    <SimulationProvider portfolioMode={portfolioMode} holdings={holdings} withdrawalStrategy={withdrawalStrategy}>
+      <ComparisonProvider>
+        <ScenarioProvider>
+          <SimulatorShell />
+        </ScenarioProvider>
+      </ComparisonProvider>
+    </SimulationProvider>
   );
-  const [annuity, setAnnuity] = useState(DEFAULT_ANNUITY);
+}
 
-  const [showWizard, setShowWizard] = useState(true);
-  const [showPersonaPicker, setShowPersonaPicker] = useState(!hasUrlParams);
-
-  const [isReceivingSS, setIsReceivingSS] = useState(false);
-  const [isSpouseReceivingSS, setIsSpouseReceivingSS] = useState(false);
-
-  const portfolio = usePortfolio();
-  const simulation = useSimulation();
-  const comparisons = useComparisons({
-    params, spouse, annuity,
-    portfolioMode: portfolio.portfolioMode,
-    holdings: portfolio.holdings,
-    withdrawalStrategy: portfolio.withdrawalStrategy,
-    result: simulation.result,
-    setError: simulation.setError,
-  });
-  const scenarios = useScenarios({
-    params, spouse, annuity,
-    portfolioMode: portfolio.portfolioMode,
-    holdings: portfolio.holdings,
-    withdrawalStrategy: portfolio.withdrawalStrategy,
-    setParams, setSpouse, setAnnuity,
-    setPortfolioMode: portfolio.setPortfolioMode,
-    setHoldings: portfolio.setHoldings,
-    setWithdrawalStrategy: portfolio.setWithdrawalStrategy,
-    setShowPersonaPicker,
-  });
-
-  const updateParam = useCallback(<K extends keyof SimulationInput>(key: K, value: SimulationInput[K]) => {
-    setParams((prev) => ({ ...prev, [key]: value }));
-  }, []);
-
-  const handleSimulate = useCallback(async () => {
-    await simulation.handleSimulate(
-      params, spouse, annuity,
-      portfolio.portfolioMode, portfolio.holdings, portfolio.withdrawalStrategy,
-    );
-    setShowWizard(false);
-  }, [params, spouse, annuity, portfolio.portfolioMode, portfolio.holdings, portfolio.withdrawalStrategy, simulation]);
-
-  const handleSimulateWithParams = useCallback(async (simParams: SimulationInput, simSpouse?: SpouseInput) => {
-    await simulation.handleSimulateWithParams(
-      simParams, simSpouse, annuity,
-      portfolio.portfolioMode, portfolio.holdings, portfolio.withdrawalStrategy,
-    );
-    setShowWizard(false);
-  }, [annuity, portfolio.portfolioMode, portfolio.holdings, portfolio.withdrawalStrategy, simulation]);
-
-  const loadPersona = useCallback((persona: Persona, runImmediately: boolean = false) => {
-    setParams(persona.params);
-    if (persona.spouse) setSpouse(persona.spouse);
-    setShowPersonaPicker(false);
-    if (runImmediately) {
-      setTimeout(() => handleSimulateWithParams(persona.params, persona.spouse), 0);
-    }
-  }, [handleSimulateWithParams]);
-
-  const runWhatIfScenario = useCallback((modifier: Partial<SimulationInput>) => {
-    setParams((prev) => ({ ...prev, ...modifier }));
-    setShowWizard(true);
-  }, []);
+function SimulatorShell() {
+  const sim = useSimulationContext();
+  const portfolio = usePortfolioContext();
 
   const wizardSteps = useWizardSteps({
-    params, updateParam, spouse, setSpouse, annuity, setAnnuity,
-    portfolioMode: portfolio.portfolioMode,
-    setPortfolioMode: portfolio.setPortfolioMode,
-    holdings: portfolio.holdings,
-    setHoldings: portfolio.setHoldings,
-    withdrawalStrategy: portfolio.withdrawalStrategy,
-    setWithdrawalStrategy: portfolio.setWithdrawalStrategy,
-    isReceivingSS, setIsReceivingSS,
-    isSpouseReceivingSS, setIsSpouseReceivingSS,
-    error: simulation.error,
+    params: sim.params, updateParam: sim.updateParam,
+    spouse: sim.spouse, setSpouse: sim.setSpouse,
+    annuity: sim.annuity, setAnnuity: sim.setAnnuity,
+    portfolioMode: portfolio.portfolioMode, setPortfolioMode: portfolio.setPortfolioMode,
+    holdings: portfolio.holdings, setHoldings: portfolio.setHoldings,
+    withdrawalStrategy: portfolio.withdrawalStrategy, setWithdrawalStrategy: portfolio.setWithdrawalStrategy,
+    isReceivingSS: sim.isReceivingSS, setIsReceivingSS: sim.setIsReceivingSS,
+    isSpouseReceivingSS: sim.isSpouseReceivingSS, setIsSpouseReceivingSS: sim.setIsSpouseReceivingSS,
+    error: sim.simulation.error,
   });
 
   function renderContent() {
-    if (showPersonaPicker && showWizard && !simulation.result) {
+    if (sim.showPersonaPicker && sim.showWizard && !sim.simulation.result) {
       return (
         <PersonaPicker
           personas={EXAMPLE_PERSONAS}
-          isLoading={simulation.isLoading}
-          progress={simulation.progress}
-          onLoadPersona={loadPersona}
-          onStartFromScratch={() => setShowPersonaPicker(false)}
+          isLoading={sim.simulation.isLoading}
+          progress={sim.simulation.progress}
+          onLoadPersona={sim.loadPersona}
+          onStartFromScratch={() => sim.setShowPersonaPicker(false)}
         />
       );
     }
 
-    if (showWizard) {
+    if (sim.showWizard) {
       return (
         <>
-          <ScenarioManager
-            savedScenarios={scenarios.savedScenarios}
-            scenarioName={scenarios.scenarioName}
-            setScenarioName={scenarios.setScenarioName}
-            showSaveDialog={scenarios.showSaveDialog}
-            setShowSaveDialog={scenarios.setShowSaveDialog}
-            onSave={scenarios.saveScenario}
-            onLoad={scenarios.loadSavedScenario}
-            onDelete={scenarios.deleteScenario}
-          />
+          <ScenarioManager />
           <Wizard
             steps={wizardSteps}
-            onComplete={handleSimulate}
-            isLoading={simulation.isLoading}
+            onComplete={sim.handleSimulate}
+            isLoading={sim.simulation.isLoading}
             completeButtonText="Run simulation"
             loadingButtonText="Running simulation..."
             loadingContent={
               <SimulationProgress
-                currentYear={simulation.progress.currentYear}
-                totalYears={simulation.progress.totalYears}
+                currentYear={sim.simulation.progress.currentYear}
+                totalYears={sim.simulation.progress.totalYears}
               />
             }
           />
@@ -160,56 +89,30 @@ export default function SimulatorPage() {
       );
     }
 
-    if (simulation.isLoading && !simulation.result) {
+    if (sim.simulation.isLoading && !sim.simulation.result) {
       return (
         <ResultsSkeleton
-          currentYear={simulation.progress.currentYear}
-          totalYears={simulation.progress.totalYears}
+          currentYear={sim.simulation.progress.currentYear}
+          totalYears={sim.simulation.progress.totalYears}
         />
       );
     }
 
-    if (simulation.error && !simulation.result) {
+    if (sim.simulation.error && !sim.simulation.result) {
       return (
         <ErrorState
-          error={simulation.error}
-          onRetry={() => { simulation.setError(null); handleSimulate(); }}
-          onEditInputs={() => { simulation.setError(null); setShowWizard(true); }}
+          error={sim.simulation.error}
+          onRetry={() => { sim.simulation.setError(null); sim.handleSimulate(); }}
+          onEditInputs={() => { sim.simulation.setError(null); sim.setShowWizard(true); }}
         />
       );
     }
 
-    if (simulation.result) {
+    if (sim.simulation.result) {
       return (
         <ResultsPanel
-          result={simulation.result}
-          params={params}
-          annuity={annuity}
-          annuityResult={simulation.annuityResult}
-          selectedYearIndex={simulation.selectedYearIndex}
-          setSelectedYearIndex={simulation.setSelectedYearIndex}
-          linkCopied={scenarios.linkCopied}
-          onCopyLink={scenarios.copyLinkToClipboard}
-          onEditInputs={() => setShowWizard(true)}
-          onWhatIf={runWhatIfScenario}
-          stateComparisonResult={comparisons.stateComparisonResult}
-          isComparingStates={comparisons.isComparingStates}
-          selectedCompareStates={comparisons.selectedCompareStates}
-          onCompareStates={comparisons.handleCompareStates}
-          onToggleCompareState={comparisons.toggleCompareState}
-          onResetStateComparison={() => { comparisons.setStateComparisonResult(null); comparisons.setSelectedCompareStates([]); }}
-          ssTimingResult={comparisons.ssTimingResult}
-          isComparingSSTiming={comparisons.isComparingSSTiming}
-          birthYear={comparisons.birthYear}
-          setBirthYear={comparisons.setBirthYear}
-          piaMonthly={comparisons.piaMonthly}
-          setPiaMonthly={comparisons.setPiaMonthly}
-          onCompareSSTimings={comparisons.handleCompareSSTimings}
-          onResetSSTimings={() => comparisons.setSSTimingResult(null)}
-          allocationResult={comparisons.allocationResult}
-          isComparingAllocations={comparisons.isComparingAllocations}
-          onCompareAllocations={comparisons.handleCompareAllocations}
-          onResetAllocations={() => comparisons.setAllocationResult(null)}
+          onEditInputs={() => sim.setShowWizard(true)}
+          onWhatIf={sim.runWhatIfScenario}
         />
       );
     }

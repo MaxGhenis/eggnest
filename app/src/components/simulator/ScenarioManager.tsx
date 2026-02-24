@@ -1,28 +1,19 @@
 "use client";
 
-import type { SavedScenario } from "../../lib/simulatorUtils";
+import { useScenarioContext } from "../../contexts/ScenarioContext";
 
-interface ScenarioManagerProps {
-  savedScenarios: SavedScenario[];
-  scenarioName: string;
-  setScenarioName: (name: string) => void;
-  showSaveDialog: boolean;
-  setShowSaveDialog: (show: boolean) => void;
-  onSave: (name: string) => void;
-  onLoad: (scenario: SavedScenario) => void;
-  onDelete: (name: string) => void;
-}
+export function ScenarioManager() {
+  const {
+    savedScenarios,
+    scenarioName,
+    setScenarioName,
+    showSaveDialog,
+    setShowSaveDialog,
+    saveScenario,
+    loadSavedScenario: onLoad,
+    deleteScenario: onDelete,
+  } = useScenarioContext();
 
-export function ScenarioManager({
-  savedScenarios,
-  scenarioName,
-  setScenarioName,
-  showSaveDialog,
-  setShowSaveDialog,
-  onSave,
-  onLoad,
-  onDelete,
-}: ScenarioManagerProps) {
   return (
     <div className="mb-4 space-y-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -60,7 +51,7 @@ export function ScenarioManager({
             onChange={(e) => setScenarioName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && scenarioName.trim()) {
-                onSave(scenarioName.trim());
+                saveScenario(scenarioName.trim());
               } else if (e.key === "Escape") {
                 setShowSaveDialog(false);
                 setScenarioName("");
@@ -71,7 +62,7 @@ export function ScenarioManager({
           />
           <button
             className="rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-all hover:brightness-110 disabled:opacity-40"
-            onClick={() => scenarioName.trim() && onSave(scenarioName.trim())}
+            onClick={() => scenarioName.trim() && saveScenario(scenarioName.trim())}
             disabled={!scenarioName.trim()}
           >
             Save
