@@ -103,11 +103,6 @@ class SimulationInput(BaseModel):
         default="male", description="Gender for mortality tables"
     )
 
-    # Backward compatibility
-    target_monthly_income: float | None = Field(
-        default=None, description="DEPRECATED: Use annual_spending instead"
-    )
-
     # Income sources
     social_security_monthly: float = Field(
         default=0, ge=0, description="Monthly Social Security benefits"
@@ -187,12 +182,6 @@ class SimulationInput(BaseModel):
         default="bnd",
         description="Bond index: 'treasury' (10-Year, 1928-2024) or 'bnd' (Total Bond Market, 2007-2024)",
     )
-
-    def model_post_init(self, __context) -> None:
-        """Handle backward compatibility."""
-        # Convert target_monthly_income to annual_spending if provided
-        if self.target_monthly_income is not None and self.annual_spending is None:
-            object.__setattr__(self, "annual_spending", self.target_monthly_income * 12)
 
     @property
     def total_capital(self) -> float:

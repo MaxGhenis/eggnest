@@ -7,6 +7,8 @@ import numpy as np
 from policyengine_core.data import Dataset
 from policyengine_us import Microsimulation
 
+from eggnest.constants import FILING_STATUS_PE_DATASET, STATE_FIPS
+
 
 class MonteCarloDataset(Dataset):
     """Custom dataset for Monte Carlo simulations."""
@@ -61,75 +63,11 @@ class MonteCarloDataset(Dataset):
 
         weights = np.ones(self.n_scenarios)
 
-        filing_status_map = {
-            "SINGLE": 1,
-            "single": 1,
-            "JOINT": 2,
-            "married_filing_jointly": 2,
-            "SEPARATE": 3,
-            "married_filing_separately": 3,
-            "HEAD_OF_HOUSEHOLD": 4,
-            "head_of_household": 4,
-            "WIDOW": 5,
-        }
         filing_status_values = np.full(
-            self.n_scenarios, filing_status_map.get(self.filing_status, 1)
+            self.n_scenarios, FILING_STATUS_PE_DATASET.get(self.filing_status, 1)
         )
 
-        state_fips_map = {
-            "AL": 1,
-            "AK": 2,
-            "AZ": 4,
-            "AR": 5,
-            "CA": 6,
-            "CO": 8,
-            "CT": 9,
-            "DE": 10,
-            "DC": 11,
-            "FL": 12,
-            "GA": 13,
-            "HI": 15,
-            "ID": 16,
-            "IL": 17,
-            "IN": 18,
-            "IA": 19,
-            "KS": 20,
-            "KY": 21,
-            "LA": 22,
-            "ME": 23,
-            "MD": 24,
-            "MA": 25,
-            "MI": 26,
-            "MN": 27,
-            "MS": 28,
-            "MO": 29,
-            "MT": 30,
-            "NE": 31,
-            "NV": 32,
-            "NH": 33,
-            "NJ": 34,
-            "NM": 35,
-            "NY": 36,
-            "NC": 37,
-            "ND": 38,
-            "OH": 39,
-            "OK": 40,
-            "OR": 41,
-            "PA": 42,
-            "RI": 44,
-            "SC": 45,
-            "SD": 46,
-            "TN": 47,
-            "TX": 48,
-            "UT": 49,
-            "VT": 50,
-            "VA": 51,
-            "WA": 53,
-            "WV": 54,
-            "WI": 55,
-            "WY": 56,
-        }
-        state_code = state_fips_map.get(self.state, 6)
+        state_code = STATE_FIPS.get(self.state, 6)
 
         data = {
             "person_id": {self.year: person_ids},

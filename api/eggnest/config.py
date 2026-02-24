@@ -22,18 +22,8 @@ class Settings(BaseSettings):
     default_n_simulations: int = 10_000
     max_n_simulations: int = 100_000
 
-    # CORS
+    # CORS — production origins only; localhost is handled via regex in main.py
     cors_origins: list[str] = [
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:5175",
-        "http://localhost:5176",
-        "http://localhost:5177",
-        "http://localhost:5178",
-        "http://localhost:5179",
-        "http://localhost:5180",
-        "http://localhost:5181",
-        "http://localhost:5182",
         "https://app.eggnest.co",
         "https://eggnest.co",
     ]

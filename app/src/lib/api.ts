@@ -359,7 +359,6 @@ export interface SimulationInput {
   bond_index?: "treasury" | "bnd";  // bnd = Vanguard Total Bond Market (default)
 
   // Legacy fields for backward compatibility
-  target_monthly_income?: number;
   n_years?: number;
   inflation_rate?: number;
 }
