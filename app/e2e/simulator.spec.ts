@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Simulator Wizard', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/simulator');
     // Dismiss the PersonaPicker by clicking "Start from scratch"
     await page.click('button:has-text("Start from scratch")');
     // Wait for wizard to appear
@@ -12,7 +12,7 @@ test.describe('Simulator Wizard', () => {
   test('loads the simulator page', async ({ page }) => {
     // Check header elements
     await expect(page.locator('header')).toBeVisible();
-    await expect(page.getByText('Financial Simulator')).toBeVisible();
+    await expect(page.getByText('Financial simulator', { exact: false })).toBeVisible();
 
     // Check wizard is visible
     await expect(page.locator('[role="form"][aria-label="Simulation setup wizard"]')).toBeVisible();
@@ -28,8 +28,8 @@ test.describe('Simulator Wizard', () => {
   });
 
   test('navigates through wizard steps', async ({ page }) => {
-    // Step 1: About You
-    await expect(page.getByRole('heading', { level: 2, name: 'About You' })).toBeVisible();
+    // Step 1: About you
+    await expect(page.getByRole('heading', { level: 2, name: 'About you' })).toBeVisible();
 
     // Check default values are present
     const currentAgeInput = page.locator('input[type="number"]').first();
@@ -38,14 +38,14 @@ test.describe('Simulator Wizard', () => {
     // Click Next
     await page.getByRole('button', { name: 'Go to next step' }).click();
 
-    // Step 2: Your Money
-    await expect(page.getByRole('heading', { level: 2, name: 'Your Money' })).toBeVisible();
+    // Step 2: Your money
+    await expect(page.getByRole('heading', { level: 2, name: 'Your money' })).toBeVisible();
 
     // Click Next
     await page.getByRole('button', { name: 'Go to next step' }).click();
 
-    // Step 3: Income Sources
-    await expect(page.getByRole('heading', { level: 2, name: 'Income Sources' })).toBeVisible();
+    // Step 3: Income sources
+    await expect(page.getByRole('heading', { level: 2, name: 'Income sources' })).toBeVisible();
 
     // Click Next
     await page.getByRole('button', { name: 'Go to next step' }).click();
@@ -69,11 +69,11 @@ test.describe('Simulator Wizard', () => {
   test('can navigate back through steps', async ({ page }) => {
     // Go to step 2
     await page.getByRole('button', { name: 'Go to next step' }).click();
-    await expect(page.getByRole('heading', { level: 2, name: 'Your Money' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Your money' })).toBeVisible();
 
     // Go back to step 1
     await page.getByRole('button', { name: 'Go to previous step' }).click();
-    await expect(page.getByRole('heading', { level: 2, name: 'About You' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'About you' })).toBeVisible();
 
     // Back button should be disabled on first step
     await expect(page.getByRole('button', { name: 'Go to previous step' })).toBeDisabled();
@@ -95,13 +95,13 @@ test.describe('Simulator Wizard', () => {
 
     // Click back to step 1 using indicator
     await page.getByRole('button', { name: /Step 1:.*completed/i }).click();
-    await expect(page.getByRole('heading', { level: 2, name: 'About You' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'About you' })).toBeVisible();
   });
 
   test('updates portfolio value input', async ({ page }) => {
-    // Go to "Your Money" step
+    // Go to "Your money" step
     await page.getByRole('button', { name: 'Go to next step' }).click();
-    await expect(page.getByRole('heading', { level: 2, name: 'Your Money' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'Your money' })).toBeVisible();
 
     // Find portfolio input
     const portfolioInput = page.locator('input[type="number"]').first();
@@ -126,8 +126,8 @@ test.describe('Simulator Wizard', () => {
     await expect(checkbox).toBeChecked();
 
     // Spouse fields should now be visible
-    await expect(page.getByText('Spouse Age')).toBeVisible();
-    await expect(page.getByText('Spouse Monthly Social Security')).toBeVisible();
+    await expect(page.getByText('Spouse age')).toBeVisible();
+    await expect(page.getByText('Spouse monthly Social Security')).toBeVisible();
   });
 
   test('can enable annuity comparison option', async ({ page }) => {
@@ -146,8 +146,8 @@ test.describe('Simulator Wizard', () => {
     await expect(checkbox).toBeChecked();
 
     // Annuity fields should now be visible
-    await expect(page.getByText('Monthly Annuity Payment')).toBeVisible();
-    await expect(page.getByText('Annuity Type')).toBeVisible();
+    await expect(page.getByText('Monthly annuity payment')).toBeVisible();
+    await expect(page.getByText('Annuity type')).toBeVisible();
   });
 
   test('review step shows summary of inputs', async ({ page }) => {
@@ -173,8 +173,8 @@ test.describe('Simulator Wizard', () => {
 
     await expect(page.getByRole('heading', { level: 2, name: 'Review' })).toBeVisible();
 
-    // Button should say "Run Simulation"
-    await expect(page.getByRole('button', { name: 'Run Simulation' })).toBeVisible();
+    // Button should say "Run simulation"
+    await expect(page.getByRole('button', { name: 'Run simulation' })).toBeVisible();
   });
 
   test('state dropdown has all US states', async ({ page }) => {
