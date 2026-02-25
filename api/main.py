@@ -81,6 +81,7 @@ settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=r"^(http://localhost:\d+|https://[\w-]+\.vercel\.app)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -205,6 +206,8 @@ async def compare_annuity_endpoint(comparison: AnnuityComparison):
         annuity_monthly_payment=comparison.annuity_monthly_payment,
         annuity_guarantee_years=comparison.annuity_guarantee_years,
         n_years=n_years,
+        total_withdrawn=simulator._total_withdrawn,
+        total_taxes=simulator._total_taxes,
     )
 
     return AnnuityComparisonResult(

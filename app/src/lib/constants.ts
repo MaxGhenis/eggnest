@@ -72,11 +72,6 @@ export const DEFAULT_ANNUITY: AnnuityInput = {
 
 export const SCENARIOS_STORAGE_KEY = "eggnest_scenarios";
 
-// In production, this is eggnest.co
-export const HOME_URL = process.env.NODE_ENV === "production"
-  ? "https://eggnest.co"
-  : "http://localhost:5173";
-
 // URL parameter mapping (short names for readability)
 export const URL_PARAM_MAP = {
   cap: "initial_capital",

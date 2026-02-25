@@ -1,0 +1,54 @@
+.scrollNav {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  z-index: 40;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.scrollNavBtn {
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--color-text-muted);
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-body);
+}
+
+.scrollNavBtn:hover {
+  color: var(--color-text);
+  background: var(--color-gray-100);
+}
+
+.scrollNavBtnActive {
+  background: var(--color-primary);
+  color: white;
+}
+
+@media (max-width: 768px) {
+  .scrollNav {
+    top: auto;
+    bottom: 20px;
+    padding: 4px;
+    max-width: 95%;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .scrollNavBtn {
+    padding: 6px 10px;
+    font-size: 0.7rem;
+  }
+}

@@ -67,10 +67,7 @@ class MonteCarloSimulator:
         n_years = p.max_age - p.current_age
         n_sims = p.n_simulations
 
-        # Handle backward compatibility
         annual_spending = p.annual_spending
-        if annual_spending is None and p.target_monthly_income is not None:
-            annual_spending = p.target_monthly_income * 12
 
         # Initialize paths
         paths = np.zeros((n_sims, n_years + 1))
@@ -100,11 +97,6 @@ class MonteCarloSimulator:
                 bond_index=p.bond_index,
                 rng=self._rng,
             )
-        else:
-            # Placeholder for legacy code paths
-            price_growth = None
-            div_yields = None
-
         # Generate mortality masks
         if p.include_mortality:
             if p.has_spouse and p.spouse:
@@ -379,6 +371,10 @@ class MonteCarloSimulator:
             # Yield progress after each year
             yield ("progress", year + 1, n_years)
 
+        # Store per-path arrays for downstream use (e.g., annuity comparison)
+        self._total_withdrawn = total_withdrawn
+        self._total_taxes = total_taxes
+
         # Calculate results
         final_values = paths[:, -1]
 
@@ -513,8 +509,17 @@ def compare_to_annuity(
     annuity_monthly_payment: float,
     annuity_guarantee_years: int,
     n_years: int,
+    total_withdrawn: np.ndarray | None = None,
+    total_taxes: np.ndarray | None = None,
 ) -> dict:
-    """Compare simulation results to an annuity option."""
+    """Compare simulation results to an annuity option.
+
+    Args:
+        total_withdrawn: Per-path total withdrawal amounts from the simulator.
+        total_taxes: Per-path total tax amounts from the simulator.
+            When provided, the actual fraction of paths beating the annuity
+            is computed instead of a heuristic estimate.
+    """
     annuity_total = annuity_monthly_payment * 12 * annuity_guarantee_years
 
     # Simulation total income (withdrawals minus taxes)
@@ -522,13 +527,13 @@ def compare_to_annuity(
         simulation_result.total_withdrawn_median - simulation_result.total_taxes_median
     )
 
-    # Probability calculation based on success rate and percentiles
-    if simulation_result.success_rate > 0.9 and sim_total > annuity_total:
-        prob_beats = 0.7
-    elif simulation_result.success_rate > 0.8:
-        prob_beats = 0.5
+    # Compute real probability from path-level data
+    if total_withdrawn is not None and total_taxes is not None:
+        net_income_per_path = total_withdrawn - total_taxes
+        prob_beats = float(np.mean(net_income_per_path > annuity_total))
     else:
-        prob_beats = 0.3
+        # Fallback: simple estimate from median
+        prob_beats = float(sim_total > annuity_total) * 0.5 + 0.25
 
     # Generate recommendation
     if simulation_result.success_rate > 0.9 and prob_beats > 0.6:
