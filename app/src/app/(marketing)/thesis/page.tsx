@@ -426,7 +426,7 @@ export default function ThesisPage() {
           The simulation engine for life decisions
         </h1>
         <p className="mt-6 max-w-lg text-xl text-[var(--color-text-muted)]">
-          Starting with retirement. Expanding to every major financial choice.
+          Starting with retirement and life events. Expanding to every major financial choice.
         </p>
       </section>
 
@@ -619,9 +619,9 @@ export default function ThesisPage() {
             <strong className="text-[var(--color-text)]">
               real tax and benefit math
             </strong>
-            &mdash;not estimates. We start with retirement simulation, but the
-            real opportunity is immediate decisions: job offers, relocations, and
-            benefit cliff navigation.
+            &mdash;not estimates. We start with household simulation for people,
+            but the same engine naturally powers work decisions: job offers,
+            relocations, benefit cliffs, and employer-side package design.
           </p>
 
           <div className="space-y-0.5">
@@ -630,12 +630,12 @@ export default function ThesisPage() {
                 color: "border-l-[var(--color-success)]",
                 label: "Model",
                 value:
-                  "B2B2C via HR/relocation platforms, freemium consumer tier",
+                  "Consumer decision tool plus employer/platform package intelligence built on the same engine",
               },
               {
                 color: "border-l-[var(--color-primary)]",
                 label: "Wedge",
-                value: "Job offer comparison with real after-tax math",
+                value: "Job offers and life changes with real after-tax math",
               },
               {
                 color: "border-l-[var(--color-primary-dark)]",
@@ -671,8 +671,40 @@ export default function ThesisPage() {
               is underserved&mdash;they want to see the numbers themselves, like
               Robinhood showed with investing. We&rsquo;re building the
               Robinhood for financial planning: real probabilistic tools, real
-              tax math, no salespeople.
+              tax math, no salespeople. The same engine can also power the
+              employer side: what a package costs, where it sits in market, and
+              what it means for a worker after tax.
             </p>
+          </div>
+
+          <div className="mt-8 rounded-r-[var(--radius-sm)] border-l-4 border-[var(--color-success)] bg-[var(--color-success-light)] p-6">
+            <h3 className="mb-3 text-lg font-semibold text-[var(--color-success)]">
+              One engine, two views
+            </h3>
+            <ul className="space-y-2 text-sm text-[var(--color-text-muted)]">
+              {[
+                [
+                  "Consumer view:",
+                  "Should I take this offer, move, retire, or change my spending?",
+                ],
+                [
+                  "Employer view:",
+                  "What does this package cost us, where does it sit in market, and what does it mean for employees after tax?",
+                ],
+                [
+                  "Shared moat:",
+                  "Real tax-and-benefit logic plus explainable package math, not static spreadsheet heuristics.",
+                ],
+              ].map(([bold, rest]) => (
+                <li key={bold} className="flex gap-2">
+                  <span className="text-[var(--color-success)]">&rarr;</span>
+                  <span>
+                    <strong className="text-[var(--color-text)]">{bold}</strong>{" "}
+                    {rest}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       </section>
@@ -691,8 +723,8 @@ export default function ThesisPage() {
               {
                 badge: "Now",
                 highlight: true,
-                title: "Phase 1: Retirement simulator",
-                desc: "Build credibility with FIRE community. Prove the tax engine works.",
+                title: "Phase 1: Retirement wedge",
+                desc: "Ship the first high-intensity workflow. Prove the tax-aware simulation engine works.",
                 items: [
                   "Monte Carlo simulation",
                   "Real federal + state taxes via PolicyEngine",
@@ -702,12 +734,13 @@ export default function ThesisPage() {
               },
               {
                 badge: "6 months",
-                title: "Phase 2: Job offer comparison",
-                desc: "Higher urgency, less competition, clearer value prop.",
+                title: "Phase 2: Work decisions",
+                desc: "Higher urgency, less competition, and a clear split between employee decisions and employer package design.",
                 items: [
                   'Compare offers: "TX vs CA, which pays more after taxes?"',
-                  "Total comp: Salary + bonus + equity + benefits",
-                  "B2B2C: Partner with Levels.fyi, recruiters, HR platforms",
+                  "Total comp: salary + bonus + equity + benefits + taxes",
+                  "Employer view: package cost, employee net resources, and market position",
+                  "B2B2C: partner with Levels.fyi, recruiters, HR, and relocation platforms",
                 ],
               },
               {
@@ -1173,10 +1206,10 @@ export default function ThesisPage() {
                 primary: true,
               },
               {
-                title: "B2B2C partnerships",
-                desc: "Embed in HR platforms, salary sites, benefits navigators. Reach people at decision moments.",
+                title: "Employer + platform tools",
+                desc: "Employer-facing package design and offer intelligence, plus embeds in HR platforms, salary sites, and benefits navigators.",
                 metric:
-                  "Target: $1-5/user or $10K-50K/year enterprise",
+                  "Target: $1-5/user embeds or $10K-50K/year employer/platform contracts",
               },
               {
                 title: "Open source ecosystem",
@@ -1232,7 +1265,8 @@ export default function ThesisPage() {
               {
                 title: "Phase 3: B2B partnerships (year 2)",
                 items: [
-                  "Embed in HR platforms, benefits navigators\u2014reach people at decision moments",
+                  "Pilot employer-side package tools with HR, recruiting, and relocation partners",
+                  "Embed in HR platforms and benefits navigators\u2014reach people at decision moments",
                   "Partner with fee-only advisor directories (as alternative, not tool for advisors)",
                   "Target nonprofits helping low-income navigate benefit cliffs",
                 ],
@@ -1440,7 +1474,7 @@ export default function ThesisPage() {
       <section className="bg-[var(--color-gray-900)] px-6 py-24 text-center text-white">
         <h2 className="text-3xl font-bold">Try the simulator</h2>
         <p className="mt-3 text-lg text-[var(--color-gray-400)]">
-          See your retirement projections in 30 seconds.
+          See your financial scenarios in 30 seconds.
         </p>
         <div className="mt-8 flex justify-center gap-4">
           <Link

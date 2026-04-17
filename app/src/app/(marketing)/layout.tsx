@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export default function MarketingLayout({
@@ -9,9 +10,28 @@ export default function MarketingLayout({
     <>
       <nav className="sticky top-0 z-50 flex items-center justify-between border-b border-[var(--color-border-light)] bg-white/95 px-5 py-3 backdrop-blur-md md:px-10">
         <Link href="/" className="flex items-center gap-2">
-          <img src="/logo.svg" alt="EggNest" height="32" className="h-8" />
+          <Image
+            src="/logo.svg"
+            alt="EggNest"
+            width={160}
+            height={32}
+            className="block"
+            priority
+          />
         </Link>
         <div className="flex items-center gap-6">
+          <Link
+            href="/simulator"
+            className="hidden text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)] sm:block"
+          >
+            Simulator
+          </Link>
+          <Link
+            href="/employer"
+            className="hidden text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)] sm:block"
+          >
+            Employer
+          </Link>
           <Link
             href="/thesis"
             className="hidden text-sm font-medium text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)] sm:block"
@@ -22,7 +42,7 @@ export default function MarketingLayout({
             href="/simulator"
             className="rounded-full bg-gradient-golden px-5 py-2 text-sm font-semibold text-white shadow-[var(--shadow-md)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-lg)]"
           >
-            Launch app
+            Open simulator
           </Link>
         </div>
       </nav>
@@ -34,7 +54,7 @@ export default function MarketingLayout({
           <div>
             <span className="text-lg font-semibold text-white">EggNest</span>
             <p className="mt-2 max-w-xs text-sm leading-relaxed">
-              Monte Carlo financial planning with real tax calculations.
+              Tax-aware scenario calculators for households and employers.
             </p>
           </div>
           <div className="flex gap-12">
@@ -47,6 +67,12 @@ export default function MarketingLayout({
                 className="block text-sm transition-colors hover:text-white"
               >
                 Simulator
+              </Link>
+              <Link
+                href="/employer"
+                className="block text-sm transition-colors hover:text-white"
+              >
+                Employer
               </Link>
               <Link
                 href="/thesis"
@@ -82,9 +108,8 @@ export default function MarketingLayout({
             </a>
           </p>
           <p className="mx-auto mt-2 max-w-lg text-xs opacity-60">
-            EggNest provides educational projections only and is not financial
-            advice. Consult a qualified financial advisor for personalized
-            recommendations.
+            EggNest provides modeled outputs and scenario comparisons only. It
+            does not provide financial, tax, legal, or compensation advice.
           </p>
         </div>
       </footer>

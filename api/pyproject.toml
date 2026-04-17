@@ -20,6 +20,7 @@ keywords = ["finance", "simulation", "monte-carlo", "retirement", "planning", "c
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
+    "mcp[cli]>=1.0.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
     "numpy>=1.24.0",
@@ -36,6 +37,7 @@ dependencies = [
 
 [project.scripts]
 eggnest = "eggnest.cli:main"
+eggnest-mcp = "eggnest.mcp_server:main"
 
 [project.optional-dependencies]
 dev = [
@@ -59,7 +61,9 @@ enhanced = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
-asyncio_mode = "auto"
+markers = [
+    "montecarlo_smoke: real Monte Carlo-backed API smoke tests",
+]
 
 [tool.black]
 line-length = 88
@@ -72,3 +76,6 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "C4", "UP"]
 ignore = ["E501"]
+
+[tool.uv.sources]
+policyengine-us = { path = "../../worktrees/policyengine-us-eggnest-part-d", editable = true }

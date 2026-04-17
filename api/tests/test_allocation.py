@@ -161,10 +161,10 @@ class TestBlendedReturns:
         assert price_ret.shape == (100, 20)
         assert div_ret.shape == (100, 20)
 
-        # Mean should be between bond and stock returns
-        mean_return = np.mean(price_ret)
-        # 80% * 7% + 20% * 2% = 6% (but this is price return, so a bit lower)
-        assert 0.02 <= mean_return <= 0.10
+        # Total return should be between bond and stock expected returns.
+        mean_total_return = np.mean(price_ret + div_ret)
+        # 80% * 7% + 20% * 2% = 6% expected total return.
+        assert 0.02 <= mean_total_return <= 0.10
 
 
 class TestHistoricalData:

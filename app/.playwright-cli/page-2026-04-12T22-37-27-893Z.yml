@@ -1,0 +1,70 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - link "EggNest" [ref=e5] [cursor=pointer]:
+          - /url: /
+          - img "EggNest" [ref=e6]
+        - generic [ref=e7]: Simulator
+        - link "Life-event calculator" [ref=e8] [cursor=pointer]:
+          - /url: /life-event
+    - main [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - generic [ref=e12]: Monte Carlo simulation
+          - heading "See your financial outlook in seconds" [level=2] [ref=e13]:
+            - text: See your financial
+            - text: outlook in seconds
+          - paragraph [ref=e14]: Choose a profile similar to yours, then review or customize the inputs before running
+        - generic [ref=e15]:
+          - generic [ref=e16]:
+            - generic [ref=e17]:
+              - generic [ref=e18]: 🏖️
+              - generic [ref=e19]:
+                - heading "Early retiree" [level=3] [ref=e20]
+                - paragraph [ref=e21]: 55-year-old leaving tech with $1.5M saved
+            - generic [ref=e22]:
+              - generic [ref=e23]: $1.5M saved
+              - generic [ref=e24]: $80K/yr spending
+            - generic [ref=e25]:
+              - button "Quick review" [ref=e26]
+              - button "Customize" [ref=e27]
+          - generic [ref=e28]:
+            - generic [ref=e29]:
+              - generic [ref=e30]: 👫
+              - generic [ref=e31]:
+                - heading "Retiring couple" [level=3] [ref=e32]
+                - paragraph [ref=e33]: Both 62, $800K saved, ready to retire
+            - generic [ref=e34]:
+              - generic [ref=e35]: $800K saved
+              - generic [ref=e36]: $70K/yr spending
+            - generic [ref=e37]:
+              - button "Quick review" [ref=e38]
+              - button "Customize" [ref=e39]
+          - generic [ref=e40]:
+            - generic [ref=e41]:
+              - generic [ref=e42]: 🏦
+              - generic [ref=e43]:
+                - heading "Conservative saver" [level=3] [ref=e44]
+                - paragraph [ref=e45]: 67-year-old with pension and modest savings
+            - generic [ref=e46]:
+              - generic [ref=e47]: $400K saved
+              - generic [ref=e48]: $50K/yr spending
+            - generic [ref=e49]:
+              - button "Quick review" [ref=e50]
+              - button "Customize" [ref=e51]
+          - generic [ref=e52]:
+            - generic [ref=e53]:
+              - generic [ref=e54]: 💼
+              - generic [ref=e55]:
+                - heading "High earner" [level=3] [ref=e56]
+                - paragraph [ref=e57]: 50-year-old still working, $2M saved
+            - generic [ref=e58]:
+              - generic [ref=e59]: $2.0M saved
+              - generic [ref=e60]: $120K/yr spending
+            - generic [ref=e61]:
+              - button "Quick review" [ref=e62]
+              - button "Customize" [ref=e63]
+        - generic [ref=e66]: or
+        - button "Start from scratch with your own numbers" [ref=e69]
+  - alert [ref=e70]

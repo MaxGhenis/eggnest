@@ -22,7 +22,7 @@ describe('HoldingsEditor', () => {
   it('should display existing holdings', () => {
     const holdings: Holding[] = [
       { account_type: 'traditional_401k', fund: 'vt', balance: 300000 },
-      { account_type: 'roth_ira', fund: 'sp500', balance: 100000 },
+      { account_type: 'taxable', fund: 'sp500', balance: 100000, cost_basis: 70000 },
     ];
     const onChange = vi.fn();
 
@@ -30,6 +30,7 @@ describe('HoldingsEditor', () => {
 
     expect(screen.getByDisplayValue('300000')).toBeInTheDocument();
     expect(screen.getByDisplayValue('100000')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('70000')).toBeInTheDocument();
   });
 
   it('should call onChange when adding a holding', () => {
@@ -42,7 +43,7 @@ describe('HoldingsEditor', () => {
     expect(onChange).toHaveBeenCalledWith([
       {
         account_type: 'traditional_401k',
-        fund: 'vt',
+        fund: 'sp500',
         balance: 0,
       },
     ]);
@@ -113,6 +114,38 @@ describe('HoldingsEditor', () => {
     ]);
   });
 
+  it('should call onChange when updating taxable cost basis', () => {
+    const holdings: Holding[] = [
+      { account_type: 'taxable', fund: 'vt', balance: 300000, cost_basis: 200000 },
+    ];
+    const onChange = vi.fn();
+
+    render(<HoldingsEditor holdings={holdings} onChange={onChange} />);
+
+    const input = screen.getByDisplayValue('200000');
+    fireEvent.change(input, { target: { value: '225000' } });
+
+    expect(onChange).toHaveBeenCalledWith([
+      { account_type: 'taxable', fund: 'vt', balance: 300000, cost_basis: 225000 },
+    ]);
+  });
+
+  it('should clear cost basis when account type changes away from taxable', () => {
+    const holdings: Holding[] = [
+      { account_type: 'taxable', fund: 'vt', balance: 300000, cost_basis: 200000 },
+    ];
+    const onChange = vi.fn();
+
+    render(<HoldingsEditor holdings={holdings} onChange={onChange} />);
+
+    const select = screen.getByLabelText(/account type/i);
+    fireEvent.change(select, { target: { value: 'roth_ira' } });
+
+    expect(onChange).toHaveBeenCalledWith([
+      { account_type: 'roth_ira', fund: 'vt', balance: 300000 },
+    ]);
+  });
+
   it('should display total portfolio value', () => {
     const holdings: Holding[] = [
       { account_type: 'traditional_401k', fund: 'vt', balance: 300000 },
@@ -159,9 +192,9 @@ describe('HoldingsEditor', () => {
     render(<HoldingsEditor holdings={holdings} onChange={onChange} />);
 
     // All fund types should be present in the select options (checking for at least one)
-    expect(screen.getAllByText('VT (Total World)').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('S&P 500').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('BND (Total Bond)').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Treasury bonds').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('VT (Total World, 2008+)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('S&P 500 (1928+)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('BND (Total Bond, 2007+)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Treasury bonds (1928+)').length).toBeGreaterThan(0);
   });
 });

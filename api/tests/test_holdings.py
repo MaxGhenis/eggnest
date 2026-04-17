@@ -1,10 +1,13 @@
 """Tests for holdings-based portfolio model and RMD calculations."""
 
 import numpy as np
+import pytest
 
 from eggnest.holdings import HoldingsTracker, create_holdings_tracker
 from eggnest.models import Holding, SimulationInput
+from eggnest.returns import generate_blended_returns
 from eggnest.rmd import RMD_START_AGE, calculate_rmd, get_rmd_factor
+from eggnest.withdrawal_policies import resolve_withdrawal_policy
 
 
 class TestHoldingModel:
@@ -16,6 +19,35 @@ class TestHoldingModel:
         assert h.account_type == "traditional_401k"
         assert h.fund == "vt"
         assert h.balance == 100_000
+        assert h.cost_basis is None
+
+    def test_taxable_holding_accepts_cost_basis(self):
+        """Taxable holdings may optionally include tax basis."""
+        h = Holding(
+            account_type="taxable",
+            fund="vt",
+            balance=100_000,
+            cost_basis=80_000,
+        )
+        assert h.cost_basis == 80_000
+
+    def test_cost_basis_validation(self):
+        """Cost basis must be valid and only apply to taxable holdings."""
+        with pytest.raises(ValueError, match="cost_basis cannot exceed"):
+            Holding(
+                account_type="taxable",
+                fund="vt",
+                balance=100_000,
+                cost_basis=120_000,
+            )
+
+        with pytest.raises(ValueError, match="cost_basis is only valid"):
+            Holding(
+                account_type="roth_ira",
+                fund="vt",
+                balance=100_000,
+                cost_basis=50_000,
+            )
 
     def test_holding_account_types(self):
         """Test all account types are valid."""
@@ -92,7 +124,6 @@ class TestSimulationInputWithHoldings:
             current_age=60,
         )
         assert inp.has_roth_accounts is True
-
     def test_get_balance_by_account_type(self):
         """Test getting balance by account type."""
         inp = SimulationInput(
@@ -116,6 +147,45 @@ class TestSimulationInputWithHoldings:
             current_age=60,
         )
         assert inp.withdrawal_strategy == "taxable_first"
+
+    def test_return_index_defaults_use_long_history_baseline(self):
+        """Simple-mode defaults should use the long-history proxy indexes."""
+        inp = SimulationInput(
+            initial_capital=100_000,
+            annual_spending=60_000,
+            current_age=60,
+        )
+        assert inp.stock_index == "sp500"
+        assert inp.bond_index == "treasury"
+
+
+class TestWithdrawalPolicies:
+    """Test withdrawal policy resolution and behavior."""
+
+    def test_resolve_unknown_strategy_defaults_to_taxable_first(self):
+        """Unknown strategies should fall back to the default policy."""
+        policy = resolve_withdrawal_policy("unknown_strategy")
+        assert policy.name == "taxable_first"
+
+    def test_pro_rata_policy_withdraws_proportionally(self):
+        """Pro-rata policy should spread withdrawals across account types."""
+        holdings = [
+            Holding(account_type="traditional_401k", fund="vt", balance=100_000),
+            Holding(account_type="roth_ira", fund="vt", balance=100_000),
+            Holding(account_type="taxable", fund="vt", balance=100_000),
+        ]
+        tracker = HoldingsTracker(
+            holdings=holdings,
+            n_simulations=10,
+            n_years=5,
+            withdrawal_strategy="pro_rata",
+        )
+
+        result = tracker.withdraw(np.full(10, 30_000), age=60, include_rmd=False)
+
+        assert np.allclose(result["traditional"], 10_000)
+        assert np.allclose(result["roth"], 10_000)
+        assert np.allclose(result["taxable"], 10_000)
 
 
 class TestRMD:
@@ -188,7 +258,23 @@ class TestHoldingsTracker:
         )
         assert np.all(tracker.traditional_balance == 300_000)
         assert np.all(tracker.roth_balance == 50_000)
-        assert np.all(tracker.taxable_balance == 25_000)
+
+    def test_convert_traditional_to_roth_preserves_total_balance(self):
+        """Roth conversions should move assets between tax buckets, not out of the portfolio."""
+        tracker = HoldingsTracker(
+            holdings=[
+                Holding(account_type="traditional_401k", fund="vt", balance=100_000),
+            ],
+            n_simulations=10,
+            n_years=5,
+        )
+
+        converted = tracker.convert_traditional_to_roth(np.full(10, 25_000.0))
+
+        assert np.allclose(converted, 25_000.0)
+        assert np.allclose(tracker.traditional_balance, 75_000.0)
+        assert np.allclose(tracker.roth_balance, 25_000.0)
+        assert np.allclose(tracker.total_balance, 100_000.0)
 
     def test_apply_growth(self):
         """Test applying growth to holdings."""
@@ -206,6 +292,43 @@ class TestHoldingsTracker:
         tracker.apply_growth(year=0)
         # Balances should have changed (some up, some down)
         assert not np.allclose(tracker.total_balance, initial)
+
+    @pytest.mark.parametrize("return_method", ["bootstrap", "block_bootstrap"])
+    def test_returns_preserve_cross_asset_pairing(self, return_method):
+        """Holdings mode should preserve same-year stock/bond pairings."""
+        holdings = [
+            Holding(account_type="taxable", fund="sp500", balance=600_000),
+            Holding(account_type="taxable", fund="treasury", balance=400_000),
+        ]
+
+        tracker = HoldingsTracker(
+            holdings=holdings,
+            n_simulations=25,
+            n_years=12,
+            return_method=return_method,
+            rng=np.random.default_rng(42),
+        )
+        blended_price, blended_div = generate_blended_returns(
+            n_simulations=25,
+            n_years=12,
+            stock_allocation=0.6,
+            method=return_method,
+            stock_index="sp500",
+            bond_index="treasury",
+            rng=np.random.default_rng(42),
+        )
+
+        tracker_price = (
+            0.6 * tracker._fund_returns["sp500"][0]
+            + 0.4 * tracker._fund_returns["treasury"][0]
+        )
+        tracker_div = (
+            0.6 * tracker._fund_returns["sp500"][1]
+            + 0.4 * tracker._fund_returns["treasury"][1]
+        )
+
+        assert np.allclose(tracker_price, blended_price)
+        assert np.allclose(tracker_div, blended_div)
 
     def test_get_dividends_by_category(self):
         """Test getting dividends by account category."""
@@ -284,6 +407,50 @@ class TestHoldingsTracker:
         assert np.all(result["traditional_rmd"] > 10_000)
         # No additional taxable withdrawal needed since RMD covers spending
         assert np.allclose(result["taxable"], 0)
+
+    def test_taxable_cash_is_withdrawn_before_taxable_holdings(self):
+        """Excess RMD cash should be spendable without realizing new capital gains."""
+        holdings = [
+            Holding(account_type="taxable", fund="vt", balance=20_000),
+        ]
+        tracker = HoldingsTracker(
+            holdings=holdings,
+            n_simulations=10,
+            n_years=5,
+            withdrawal_strategy="taxable_first",
+        )
+        tracker.deposit_to_taxable(np.full(10, 5_000))
+
+        result = tracker.withdraw(np.full(10, 7_000), age=60, include_rmd=False)
+
+        assert np.allclose(result["taxable_cash"], 5_000)
+        assert np.allclose(result["taxable"], 2_000)
+        assert np.allclose(tracker.cash_balance, 0)
+        assert np.allclose(tracker.taxable_balance, 18_000)
+
+    def test_taxable_withdrawal_realizes_only_embedded_gain(self):
+        """Taxable sales should realize gains based on proportional cost basis."""
+        holdings = [
+            Holding(
+                account_type="taxable",
+                fund="vt",
+                balance=100_000,
+                cost_basis=80_000,
+            ),
+        ]
+        tracker = HoldingsTracker(
+            holdings=holdings,
+            n_simulations=10,
+            n_years=5,
+            withdrawal_strategy="taxable_first",
+        )
+
+        result = tracker.withdraw(np.full(10, 50_000), age=60, include_rmd=False)
+
+        assert np.allclose(result["taxable"], 50_000)
+        assert np.allclose(result["taxable_capital_gains"], 10_000)
+        assert np.allclose(tracker.holdings[0].balance, 50_000)
+        assert np.allclose(tracker.holdings[0].cost_basis, 40_000)
 
 
 class TestCreateHoldingsTracker:

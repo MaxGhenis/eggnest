@@ -1,12 +1,20 @@
 """EggNest API - Main FastAPI application."""
 
+import asyncio
+import atexit
+import hashlib
 import json
+from collections import OrderedDict
+from concurrent.futures import ProcessPoolExecutor
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+from eggnest.backtest import run_historical_backtest
+from eggnest.compensation import analyze_compensation, list_market_benchmarks
 from eggnest.config import get_settings
+from eggnest.engine import get_engine
 from eggnest.household import HouseholdCalculator
 from eggnest.models import (
     AllocationComparisonResult,
@@ -14,11 +22,19 @@ from eggnest.models import (
     AllocationResult,
     AnnuityComparison,
     AnnuityComparisonResult,
+    CompensationAnalysisInput,
+    CompensationAnalysisResult,
+    CompensationBenchmark,
+    HistoricalBacktestInput,
+    HistoricalBacktestResult,
+    HistoricalStrategySummary,
     HouseholdInput,
     HouseholdResult,
     LifeEventComparison,
     LifeEventComparisonInput,
     MortalityRates,
+    RothOptimizationInput,
+    RothOptimizationResult,
     SavedSimulation,
     SimulationInput,
     SimulationResult,
@@ -28,6 +44,10 @@ from eggnest.models import (
     StateComparisonInput,
     StateComparisonResult,
     StateResult,
+    StrategyComparisonInput,
+    StrategyComparisonItem,
+    StrategyComparisonResult,
+    StrategyScenarioSummary,
 )
 from eggnest.mortality import calculate_survival_curve, get_mortality_rates
 from eggnest.returns import get_historical_stats
@@ -76,6 +96,15 @@ print(f"Success rate: {result['success_rate']:.1%}")
 )
 
 settings = get_settings()
+COMPARISON_SIMULATION_PARALLELISM = 4
+SIMULATION_SUMMARY_CACHE_SIZE = 128
+_simulation_process_pool: ProcessPoolExecutor | None = None
+_simulation_summary_cache: OrderedDict[
+    str, dict[str, float | dict[str, float]]
+] = OrderedDict()
+_historical_backtest_summary_cache: OrderedDict[str, dict[str, float | int]] = (
+    OrderedDict()
+)
 
 # CORS
 app.add_middleware(
@@ -107,6 +136,243 @@ async def require_user(
     return user
 
 
+def _run_simulation_summary(
+    params_payload: dict,
+) -> dict[str, float | dict[str, float]]:
+    """Run a single simulation scenario and return the fields comparison endpoints need."""
+    params = SimulationInput.model_validate(params_payload)
+    result = MonteCarloSimulator(params).run()
+    return {
+        "success_rate": result.success_rate,
+        "median_final_value": result.median_final_value,
+        "median_final_value_real": result.median_final_value_real,
+        "total_taxes_median": result.total_taxes_median,
+        "total_withdrawn_median": result.total_withdrawn_median,
+        "percentiles": result.percentiles,
+    }
+
+
+def _run_historical_backtest_summary(params_payload: dict) -> dict[str, float | int]:
+    """Run one historical backtest scenario and return comparison fields."""
+    params = SimulationInput.model_validate(params_payload)
+    result = run_historical_backtest(params)
+    worst_cohort = min(
+        result.results,
+        key=lambda cohort: (cohort.final_value_real, cohort.start_year),
+    )
+    return {
+        "success_rate": result.success_rate,
+        "median_final_value": result.median_final_value,
+        "median_final_value_real": result.median_final_value_real,
+        "total_taxes_median": result.total_taxes_median,
+        "total_withdrawn_median": result.total_withdrawn_median,
+        "cohort_count": len(result.start_years),
+        "strongest_start_year": result.strongest_start_year,
+        "weakest_start_year": result.weakest_start_year,
+        "worst_final_value_real": worst_cohort.final_value_real,
+    }
+
+
+def _derive_comparison_seed(namespace: str, payload: dict) -> int:
+    """Generate a stable seed for comparison scenarios when the caller did not supply one."""
+    digest = hashlib.sha256(
+        json.dumps({"namespace": namespace, "payload": payload}, sort_keys=True).encode(
+            "utf-8"
+        )
+    ).digest()
+    return int.from_bytes(digest[:8], "big")
+
+
+def _resolve_comparison_seed(
+    base_input: SimulationInput, *, namespace: str, payload: dict
+) -> int:
+    """Use the caller-provided seed when present, otherwise derive a stable comparison seed."""
+    if base_input.random_seed is not None:
+        return base_input.random_seed
+    return _derive_comparison_seed(namespace, payload)
+
+
+def _simulation_cache_key(params: SimulationInput) -> str:
+    """Serialize a simulation input for summary-result caching."""
+    return json.dumps(params.model_dump(mode="json"), sort_keys=True)
+
+
+def _get_cached_simulation_summary(
+    cache_key: str,
+) -> dict[str, float | dict[str, float]] | None:
+    """Fetch a cached comparison summary and refresh its LRU position."""
+    cached = _simulation_summary_cache.get(cache_key)
+    if cached is not None:
+        _simulation_summary_cache.move_to_end(cache_key)
+    return cached
+
+
+def _store_cached_simulation_summary(
+    cache_key: str, summary: dict[str, float | dict[str, float]]
+) -> None:
+    """Store a comparison summary in the bounded LRU cache."""
+    _simulation_summary_cache[cache_key] = summary
+    _simulation_summary_cache.move_to_end(cache_key)
+    while len(_simulation_summary_cache) > SIMULATION_SUMMARY_CACHE_SIZE:
+        _simulation_summary_cache.popitem(last=False)
+
+
+def _get_cached_historical_backtest_summary(
+    cache_key: str,
+) -> dict[str, float | int] | None:
+    """Fetch a cached historical backtest summary and refresh its LRU position."""
+    cached = _historical_backtest_summary_cache.get(cache_key)
+    if cached is not None:
+        _historical_backtest_summary_cache.move_to_end(cache_key)
+    return cached
+
+
+def _store_cached_historical_backtest_summary(
+    cache_key: str, summary: dict[str, float | int]
+) -> None:
+    """Store a historical backtest summary in the bounded LRU cache."""
+    _historical_backtest_summary_cache[cache_key] = summary
+    _historical_backtest_summary_cache.move_to_end(cache_key)
+    while len(_historical_backtest_summary_cache) > SIMULATION_SUMMARY_CACHE_SIZE:
+        _historical_backtest_summary_cache.popitem(last=False)
+
+
+def _get_simulation_process_pool() -> ProcessPoolExecutor:
+    """Create the comparison process pool lazily in the main process only."""
+    global _simulation_process_pool
+    if _simulation_process_pool is None:
+        _simulation_process_pool = ProcessPoolExecutor(
+            max_workers=COMPARISON_SIMULATION_PARALLELISM
+        )
+    return _simulation_process_pool
+
+
+def _shutdown_simulation_process_pool() -> None:
+    """Release comparison worker processes on shutdown."""
+    global _simulation_process_pool
+    if _simulation_process_pool is not None:
+        _simulation_process_pool.shutdown(cancel_futures=True)
+        _simulation_process_pool = None
+
+
+async def _run_simulation_batch(
+    inputs: list[SimulationInput],
+) -> list[dict[str, float | dict[str, float]]]:
+    """Run comparison scenarios with bounded concurrency."""
+    if not inputs:
+        return []
+    results: list[dict[str, float | dict[str, float]] | None] = [None] * len(inputs)
+    missing_positions: list[int] = []
+    missing_keys: list[str] = []
+    missing_payloads: list[dict] = []
+
+    for index, params in enumerate(inputs):
+        cache_key = _simulation_cache_key(params)
+        cached = _get_cached_simulation_summary(cache_key)
+        if cached is not None:
+            results[index] = cached
+            continue
+        missing_positions.append(index)
+        missing_keys.append(cache_key)
+        missing_payloads.append(params.model_dump(mode="python"))
+
+    if not missing_payloads:
+        return [result for result in results if result is not None]
+
+    if len(missing_payloads) == 1:
+        computed_summaries = [_run_simulation_summary(missing_payloads[0])]
+    else:
+        loop = asyncio.get_running_loop()
+        process_pool = _get_simulation_process_pool()
+        computed_summaries = await asyncio.gather(
+            *(
+                loop.run_in_executor(process_pool, _run_simulation_summary, payload)
+                for payload in missing_payloads
+            )
+        )
+
+    for index, cache_key, summary in zip(
+        missing_positions, missing_keys, computed_summaries, strict=True
+    ):
+        _store_cached_simulation_summary(cache_key, summary)
+        results[index] = summary
+
+    return [result for result in results if result is not None]
+
+
+async def _run_historical_backtest_batch(
+    inputs: list[SimulationInput],
+) -> list[dict[str, float | int]]:
+    """Run historical comparison scenarios with bounded concurrency."""
+    if not inputs:
+        return []
+    results: list[dict[str, float | int] | None] = [None] * len(inputs)
+    missing_positions: list[int] = []
+    missing_keys: list[str] = []
+    missing_payloads: list[dict] = []
+
+    for index, params in enumerate(inputs):
+        cache_key = _simulation_cache_key(params)
+        cached = _get_cached_historical_backtest_summary(cache_key)
+        if cached is not None:
+            results[index] = cached
+            continue
+        missing_positions.append(index)
+        missing_keys.append(cache_key)
+        missing_payloads.append(params.model_dump(mode="python"))
+
+    if not missing_payloads:
+        return [result for result in results if result is not None]
+
+    if len(missing_payloads) == 1:
+        computed_summaries = [_run_historical_backtest_summary(missing_payloads[0])]
+    else:
+        loop = asyncio.get_running_loop()
+        process_pool = _get_simulation_process_pool()
+        computed_summaries = await asyncio.gather(
+            *(
+                loop.run_in_executor(
+                    process_pool, _run_historical_backtest_summary, payload
+                )
+                for payload in missing_payloads
+            )
+        )
+
+    for index, cache_key, summary in zip(
+        missing_positions, missing_keys, computed_summaries, strict=True
+    ):
+        _store_cached_historical_backtest_summary(cache_key, summary)
+        results[index] = summary
+
+    return [result for result in results if result is not None]
+
+
+def _normalize_metric(values: list[float], *, higher_is_better: bool) -> list[float]:
+    """Scale a metric into 0-1 scores for blended ranking."""
+    if not values:
+        return []
+    lower = min(values)
+    upper = max(values)
+    if abs(upper - lower) < 1e-12:
+        return [0.5] * len(values)
+    if higher_is_better:
+        return [(value - lower) / (upper - lower) for value in values]
+    return [(upper - value) / (upper - lower) for value in values]
+
+
+def _strategy_label(strategy: str) -> str:
+    """Humanize a withdrawal strategy enum."""
+    return strategy.replace("_", " ").title()
+
+
+atexit.register(_shutdown_simulation_process_pool)
+
+
+def _run_roth_optimization(payload: dict) -> dict:
+    """Run Roth optimization off the request thread and return JSON-safe data."""
+    return get_engine().optimize_roth_conversions(payload).model_dump(mode="json")
+
+
 @app.get("/")
 async def root():
     """Health check endpoint."""
@@ -117,6 +383,22 @@ async def root():
         "docs": "/docs",
         "redoc": "/redoc",
     }
+
+
+@app.get("/compensation/benchmarks", response_model=list[CompensationBenchmark])
+async def get_compensation_benchmarks():
+    """List benchmark rows available for employer-side package analysis."""
+    return list_market_benchmarks()
+
+
+@app.post("/compensation/analyze", response_model=list[CompensationAnalysisResult])
+async def analyze_compensation_endpoint(input_data: CompensationAnalysisInput):
+    """
+    Analyze employer packages against market benchmarks and after-tax employee value.
+
+    Returns market position, employer cost, and employee-side net-resources estimates.
+    """
+    return analyze_compensation(input_data)
 
 
 @app.post("/simulate", response_model=SimulationResult)
@@ -135,6 +417,56 @@ async def run_simulation(params: SimulationInput):
 
     simulator = MonteCarloSimulator(params)
     return simulator.run()
+
+
+@app.post("/backtest/historical", response_model=HistoricalBacktestResult)
+async def run_historical_backtest_endpoint(input_data: HistoricalBacktestInput):
+    """
+    Replay the current simulation engine over exact historical return cohorts.
+
+    Mortality is disabled so each cohort is deterministic and directly comparable.
+    """
+    return run_historical_backtest(input_data)
+
+
+@app.post("/simulate-uk", response_model=None)
+async def run_uk_simulation_endpoint(params: dict):
+    """Run a UK Monte Carlo retirement simulation (ISA/SIPP/GIA + State Pension)."""
+    from eggnest.models_uk import UKSimulationInput
+    from eggnest.simulation_uk import run_uk_simulation
+
+    parsed = UKSimulationInput.model_validate(params)
+    if parsed.n_simulations > settings.max_n_simulations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"n_simulations cannot exceed {settings.max_n_simulations}",
+        )
+    result = run_uk_simulation(parsed)
+    return result.model_dump()
+
+
+@app.post("/simulate-uk/stream")
+async def run_uk_simulation_stream(params: dict):
+    """UK simulation with SSE progress streaming."""
+    from eggnest.models_uk import UKSimulationInput
+    from eggnest.simulation_uk import run_uk_simulation_with_progress
+
+    parsed = UKSimulationInput.model_validate(params)
+    if parsed.n_simulations > settings.max_n_simulations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"n_simulations cannot exceed {settings.max_n_simulations}",
+        )
+
+    def generate():
+        for event in run_uk_simulation_with_progress(parsed):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
 
 
 @app.post("/simulate/stream")
@@ -193,7 +525,7 @@ async def compare_annuity_endpoint(comparison: AnnuityComparison):
     """
     Compare a simulation to an annuity option.
 
-    Returns comparison metrics and a recommendation.
+    Returns comparison metrics and a neutral summary.
     """
     simulator = MonteCarloSimulator(comparison.simulation_input)
     sim_result = simulator.run()
@@ -208,6 +540,7 @@ async def compare_annuity_endpoint(comparison: AnnuityComparison):
         n_years=n_years,
         total_withdrawn=simulator._total_withdrawn,
         total_taxes=simulator._total_taxes,
+        total_medicare_premiums=getattr(simulator, "_total_medicare_premiums", None),
     )
 
     return AnnuityComparisonResult(
@@ -219,8 +552,186 @@ async def compare_annuity_endpoint(comparison: AnnuityComparison):
         simulation_median_total_income=annuity_comparison[
             "simulation_median_total_income"
         ],
-        recommendation=annuity_comparison["recommendation"],
+        summary=annuity_comparison["summary"],
     )
+
+
+@app.post(
+    "/compare-withdrawal-strategies", response_model=StrategyComparisonResult
+)
+async def compare_withdrawal_strategies_endpoint(
+    comparison: StrategyComparisonInput,
+):
+    """
+    Compare tax-aware withdrawal strategies on the same household assumptions.
+
+    Runs both Monte Carlo and deterministic historical cohort replay for each
+    strategy, then ranks them on success, resilience, and tax efficiency.
+    """
+    if not comparison.base_input.holdings:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Withdrawal strategy comparison requires detailed holdings. "
+                "Add account-level holdings first."
+            ),
+        )
+
+    strategies = list(dict.fromkeys(comparison.strategies))
+    comparison_seed = _resolve_comparison_seed(
+        comparison.base_input,
+        namespace="compare-withdrawal-strategies",
+        payload={
+            "base_input": comparison.base_input.model_dump(mode="json"),
+            "strategies": strategies,
+        },
+    )
+
+    strategy_inputs = [
+        comparison.base_input.model_copy(
+            update={"withdrawal_strategy": strategy, "random_seed": comparison_seed}
+        )
+        for strategy in strategies
+    ]
+    monte_carlo_summaries = await _run_simulation_batch(strategy_inputs)
+    historical_summaries = await _run_historical_backtest_batch(strategy_inputs)
+
+    mc_success_scores = _normalize_metric(
+        [float(summary["success_rate"]) for summary in monte_carlo_summaries],
+        higher_is_better=True,
+    )
+    historical_success_scores = _normalize_metric(
+        [float(summary["success_rate"]) for summary in historical_summaries],
+        higher_is_better=True,
+    )
+    worst_cohort_scores = _normalize_metric(
+        [float(summary["worst_final_value_real"]) for summary in historical_summaries],
+        higher_is_better=True,
+    )
+    mc_real_wealth_scores = _normalize_metric(
+        [float(summary["median_final_value_real"]) for summary in monte_carlo_summaries],
+        higher_is_better=True,
+    )
+    tax_efficiency_scores = _normalize_metric(
+        [float(summary["total_taxes_median"]) for summary in monte_carlo_summaries],
+        higher_is_better=False,
+    )
+
+    strategy_results: list[StrategyComparisonItem] = []
+    for index, (strategy, monte_carlo, historical) in enumerate(
+        zip(strategies, monte_carlo_summaries, historical_summaries, strict=True)
+    ):
+        blended_score = round(
+            100
+            * (
+                mc_success_scores[index] * 0.35
+                + historical_success_scores[index] * 0.35
+                + worst_cohort_scores[index] * 0.15
+                + mc_real_wealth_scores[index] * 0.10
+                + tax_efficiency_scores[index] * 0.05
+            ),
+            1,
+        )
+        strategy_results.append(
+            StrategyComparisonItem(
+                strategy=strategy,
+                monte_carlo=StrategyScenarioSummary(
+                    success_rate=monte_carlo["success_rate"],
+                    median_final_value=monte_carlo["median_final_value"],
+                    median_final_value_real=monte_carlo["median_final_value_real"],
+                    total_taxes_median=monte_carlo["total_taxes_median"],
+                    total_withdrawn_median=monte_carlo["total_withdrawn_median"],
+                ),
+                historical=HistoricalStrategySummary(
+                    success_rate=historical["success_rate"],
+                    median_final_value=historical["median_final_value"],
+                    median_final_value_real=historical["median_final_value_real"],
+                    total_taxes_median=historical["total_taxes_median"],
+                    total_withdrawn_median=historical["total_withdrawn_median"],
+                    cohort_count=historical["cohort_count"],
+                    strongest_start_year=historical["strongest_start_year"],
+                    weakest_start_year=historical["weakest_start_year"],
+                    worst_final_value_real=historical["worst_final_value_real"],
+                ),
+                blended_score=blended_score,
+            )
+        )
+
+    top_scoring = max(
+        strategy_results,
+        key=lambda result: (
+            result.blended_score,
+            result.historical.success_rate,
+            result.monte_carlo.success_rate,
+            result.historical.worst_final_value_real,
+        ),
+    )
+    lowest_modeled_tax = min(
+        strategy_results,
+        key=lambda result: (
+            result.monte_carlo.total_taxes_median,
+            -result.monte_carlo.success_rate,
+        ),
+    )
+    strongest_historical = max(
+        strategy_results,
+        key=lambda result: (
+            result.historical.success_rate,
+            result.historical.worst_final_value_real,
+            result.historical.median_final_value_real,
+        ),
+    )
+
+    top_scoring_label = _strategy_label(top_scoring.strategy)
+    summary_parts = [
+        f"{top_scoring_label} leads this scorecard after weighting Monte Carlo success at 35%, historical success at 35%, weakest historical cohort at 15%, median real ending wealth at 10%, and lower modeled taxes at 5%."
+    ]
+    if lowest_modeled_tax.strategy != top_scoring.strategy:
+        summary_parts.append(
+            f"{_strategy_label(lowest_modeled_tax.strategy)} posts the lowest modeled median taxes."
+        )
+    if strongest_historical.strategy != top_scoring.strategy:
+        summary_parts.append(
+            f"{_strategy_label(strongest_historical.strategy)} leads on historical resilience."
+        )
+
+    strategy_results.sort(key=lambda result: result.blended_score, reverse=True)
+
+    return StrategyComparisonResult(
+        results=strategy_results,
+        top_scoring_strategy=top_scoring.strategy,
+        lowest_modeled_tax_strategy=lowest_modeled_tax.strategy,
+        strongest_historical_strategy=strongest_historical.strategy,
+        summary=" ".join(summary_parts),
+    )
+
+
+@app.post("/optimize-roth-conversions", response_model=RothOptimizationResult)
+async def optimize_roth_conversions_endpoint(
+    optimization: RothOptimizationInput,
+):
+    """
+    Search bounded Roth conversion windows and sizing rules on one plan.
+
+    Returns a scored scenario set along with tax, Medicare, and real-wealth
+    leaders so clients can inspect modeled trade-offs without hand-picking
+    every candidate scenario up front.
+    """
+    if optimization.base_input.n_simulations > settings.max_n_simulations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"n_simulations cannot exceed {settings.max_n_simulations}",
+        )
+
+    try:
+        result = await asyncio.to_thread(
+            _run_roth_optimization,
+            optimization.model_dump(mode="python"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return RothOptimizationResult.model_validate(result)
 
 
 @app.post("/compare-states", response_model=StateComparisonResult)
@@ -235,32 +746,42 @@ async def compare_states_endpoint(comparison: StateComparisonInput):
     all_states = [base_state] + [
         s for s in comparison.compare_states if s != base_state
     ]
+    comparison_seed = _resolve_comparison_seed(
+        comparison.base_input,
+        namespace="compare-states",
+        payload={
+            "base_input": comparison.base_input.model_dump(mode="json"),
+            "states": all_states,
+        },
+    )
+    state_inputs = [
+        comparison.base_input.model_copy(
+            update={"state": state, "random_seed": comparison_seed}
+        )
+        for state in all_states
+    ]
+    sim_results = await _run_simulation_batch(state_inputs)
 
     results: list[StateResult] = []
     base_taxes = 0.0
 
-    for state in all_states:
-        # Create a copy of input with the new state
-        state_input = comparison.base_input.model_copy(update={"state": state})
-        simulator = MonteCarloSimulator(state_input)
-        sim_result = simulator.run()
-
+    for state, sim_result in zip(all_states, sim_results, strict=True):
         net_after_tax = (
-            sim_result.total_withdrawn_median - sim_result.total_taxes_median
+            sim_result["total_withdrawn_median"] - sim_result["total_taxes_median"]
         )
 
         result = StateResult(
             state=state,
-            success_rate=sim_result.success_rate,
-            median_final_value=sim_result.median_final_value,
-            total_taxes_median=sim_result.total_taxes_median,
-            total_withdrawn_median=sim_result.total_withdrawn_median,
+            success_rate=sim_result["success_rate"],
+            median_final_value=sim_result["median_final_value"],
+            total_taxes_median=sim_result["total_taxes_median"],
+            total_withdrawn_median=sim_result["total_withdrawn_median"],
             net_after_tax_median=net_after_tax,
         )
         results.append(result)
 
         if state == base_state:
-            base_taxes = sim_result.total_taxes_median
+            base_taxes = sim_result["total_taxes_median"]
 
     # Calculate tax savings vs base state
     tax_savings = {r.state: base_taxes - r.total_taxes_median for r in results}
@@ -278,13 +799,23 @@ async def compare_ss_timing_endpoint(timing_input: SSTimingInput):
     Compare Social Security claiming strategies at different ages.
 
     Adjusts benefits for early/delayed claiming and runs simulations
-    to compare outcomes. Helps users decide when to claim SS benefits.
+    to compare outcomes under the same household assumptions.
     """
     birth_year = timing_input.birth_year
     pia_monthly = timing_input.pia_monthly
     fra = get_full_retirement_age(birth_year)
+    comparison_seed = _resolve_comparison_seed(
+        timing_input.base_input,
+        namespace="compare-ss-timing",
+        payload={
+            "base_input": timing_input.base_input.model_dump(mode="json"),
+            "birth_year": birth_year,
+            "pia_monthly": pia_monthly,
+            "claiming_ages": sorted(timing_input.claiming_ages),
+        },
+    )
 
-    results: list[SSTimingResult] = []
+    claim_inputs: list[tuple[int, float, float, float, SimulationInput]] = []
     result_62_ss_income = 0.0  # For breakeven calculation
 
     for claiming_age in sorted(timing_input.claiming_ages):
@@ -302,13 +833,31 @@ async def compare_ss_timing_endpoint(timing_input: SSTimingInput):
             update={
                 "social_security_monthly": monthly_benefit,
                 "social_security_start_age": claiming_age,
+                "random_seed": comparison_seed,
             }
         )
+        claim_inputs.append(
+            (
+                claiming_age,
+                monthly_benefit,
+                annual_benefit,
+                adjustment_factor,
+                sim_input,
+            )
+        )
 
-        # Run simulation
-        simulator = MonteCarloSimulator(sim_input)
-        sim_result = simulator.run()
+    sim_results = await _run_simulation_batch(
+        [sim_input for *_, sim_input in claim_inputs]
+    )
 
+    results: list[SSTimingResult] = []
+    for (
+        claiming_age,
+        monthly_benefit,
+        annual_benefit,
+        adjustment_factor,
+        _sim_input,
+    ), sim_result in zip(claim_inputs, sim_results, strict=True):
         # Calculate total SS income over lifetime (simplified)
         # Years receiving SS = max_age - claiming_age
         years_receiving_ss = max(0, timing_input.base_input.max_age - claiming_age)
@@ -343,28 +892,27 @@ async def compare_ss_timing_endpoint(timing_input: SSTimingInput):
             monthly_benefit=round(monthly_benefit, 2),
             annual_benefit=round(annual_benefit, 2),
             adjustment_factor=round(adjustment_factor, 4),
-            success_rate=sim_result.success_rate,
-            median_final_value=sim_result.median_final_value,
+            success_rate=sim_result["success_rate"],
+            median_final_value=sim_result["median_final_value"],
             total_ss_income_median=round(total_ss_income, 2),
-            total_taxes_median=sim_result.total_taxes_median,
+            total_taxes_median=sim_result["total_taxes_median"],
             breakeven_vs_62=breakeven_vs_62,
         )
         results.append(result)
 
-    # Determine optimal claiming ages
-    # Highest success rate
-    optimal_success = max(results, key=lambda r: r.success_rate)
+    # Determine summary claiming ages
+    highest_success = max(results, key=lambda r: r.success_rate)
 
-    # Optimal for longevity (highest total SS income, favors delay)
-    optimal_longevity = max(results, key=lambda r: r.total_ss_income_median)
+    # Highest lifetime SS income, which tends to favor delay
+    highest_lifetime_income = max(results, key=lambda r: r.total_ss_income_median)
 
     return SSTimingComparisonResult(
         birth_year=birth_year,
         full_retirement_age=fra,
         pia_monthly=pia_monthly,
         results=results,
-        optimal_claiming_age=optimal_success.claiming_age,
-        optimal_for_longevity=optimal_longevity.claiming_age,
+        highest_success_claiming_age=highest_success.claiming_age,
+        highest_lifetime_income_claiming_age=highest_lifetime_income.claiming_age,
     )
 
 
@@ -375,20 +923,29 @@ async def compare_allocations_endpoint(allocation_input: AllocationInput):
 
     Runs the same simulation for each stock/bond allocation and compares
     success rates, volatility, and final values. Helps users decide on
-    optimal portfolio allocation for their risk tolerance.
+    a portfolio mix under the modeled trade-offs.
     """
     results: list[AllocationResult] = []
     historical_stats = get_historical_stats()
-
-    for stock_alloc in sorted(allocation_input.allocations):
-        bond_alloc = 1.0 - stock_alloc
-
-        # Create a copy of input with this allocation
-        alloc_input = allocation_input.base_input.model_copy(
-            update={"stock_allocation": stock_alloc}
+    allocations = sorted(allocation_input.allocations)
+    comparison_seed = _resolve_comparison_seed(
+        allocation_input.base_input,
+        namespace="compare-allocations",
+        payload={
+            "base_input": allocation_input.base_input.model_dump(mode="json"),
+            "allocations": allocations,
+        },
+    )
+    alloc_inputs = [
+        allocation_input.base_input.model_copy(
+            update={"stock_allocation": stock_alloc, "random_seed": comparison_seed}
         )
-        simulator = MonteCarloSimulator(alloc_input)
-        sim_result = simulator.run()
+        for stock_alloc in allocations
+    ]
+    sim_results = await _run_simulation_batch(alloc_inputs)
+
+    for stock_alloc, sim_result in zip(allocations, sim_results, strict=True):
+        bond_alloc = 1.0 - stock_alloc
 
         # Calculate blended expected return and volatility
         expected_return = (
@@ -405,43 +962,43 @@ async def compare_allocations_endpoint(allocation_input: AllocationInput):
         result = AllocationResult(
             stock_allocation=stock_alloc,
             bond_allocation=bond_alloc,
-            success_rate=sim_result.success_rate,
-            median_final_value=sim_result.median_final_value,
-            percentile_5_final_value=sim_result.percentiles["p5"],
-            percentile_95_final_value=sim_result.percentiles["p95"],
+            success_rate=sim_result["success_rate"],
+            median_final_value=sim_result["median_final_value"],
+            percentile_5_final_value=sim_result["percentiles"]["p5"],
+            percentile_95_final_value=sim_result["percentiles"]["p95"],
             volatility=round(volatility, 4),
             expected_return=round(expected_return, 4),
         )
         results.append(result)
 
-    # Find optimal allocations
+    # Identify comparison leaders
     # Highest success rate
-    optimal_success = max(results, key=lambda r: r.success_rate)
+    highest_success = max(results, key=lambda r: r.success_rate)
 
-    # Optimal for safety: lowest volatility among allocations with success rate >= 80%
+    # Highest safety: lowest volatility among allocations with success rate >= 80%
     high_success_results = [r for r in results if r.success_rate >= 0.8]
     if high_success_results:
-        optimal_safety = min(high_success_results, key=lambda r: r.volatility)
+        highest_safety = min(high_success_results, key=lambda r: r.volatility)
     else:
         # If no allocation reaches 80%, pick lowest volatility overall
-        optimal_safety = min(results, key=lambda r: r.volatility)
+        highest_safety = min(results, key=lambda r: r.volatility)
 
-    # Generate recommendation
-    if optimal_success.success_rate >= 0.9:
-        if optimal_success.stock_allocation == optimal_safety.stock_allocation:
-            recommendation = f"A {int(optimal_success.stock_allocation * 100)}% stock allocation provides both the highest success rate ({optimal_success.success_rate:.0%}) and acceptable risk."
+    # Generate neutral summary
+    if highest_success.success_rate >= 0.9:
+        if highest_success.stock_allocation == highest_safety.stock_allocation:
+            summary = f"{int(highest_success.stock_allocation * 100)}% stocks delivers both the highest modeled success rate ({highest_success.success_rate:.0%}) and the strongest safety profile in this comparison set."
         else:
-            recommendation = f"For maximum success ({optimal_success.success_rate:.0%}), consider {int(optimal_success.stock_allocation * 100)}% stocks. For lower volatility with good success ({optimal_safety.success_rate:.0%}), consider {int(optimal_safety.stock_allocation * 100)}% stocks."
-    elif optimal_success.success_rate >= 0.8:
-        recommendation = f"A {int(optimal_success.stock_allocation * 100)}% stock allocation achieves {optimal_success.success_rate:.0%} success. Consider increasing savings or reducing spending to improve odds."
+            summary = f"{int(highest_success.stock_allocation * 100)}% stocks delivers the highest modeled success ({highest_success.success_rate:.0%}), while {int(highest_safety.stock_allocation * 100)}% stocks shows the lowest volatility among the stronger outcomes."
+    elif highest_success.success_rate >= 0.8:
+        summary = f"{int(highest_success.stock_allocation * 100)}% stocks produces the highest modeled success rate in this comparison set at {highest_success.success_rate:.0%}."
     else:
-        recommendation = "Success rates are below target across all allocations. Consider increasing savings, reducing spending, or delaying retirement to improve outcomes."
+        summary = "All tested allocations produce lower modeled success rates in this comparison set."
 
     return AllocationComparisonResult(
         results=results,
-        optimal_for_success=optimal_success.stock_allocation,
-        optimal_for_safety=optimal_safety.stock_allocation,
-        recommendation=recommendation,
+        highest_success_allocation=highest_success.stock_allocation,
+        highest_safety_allocation=highest_safety.stock_allocation,
+        summary=summary,
     )
 
 

@@ -1,0 +1,80 @@
+{
+  "reference": {
+    "age": 55,
+    "retirement_age": 65,
+    "max_age": 95,
+    "gender": "male",
+    "state": "CA",
+    "filing_status": "single",
+    "initial_capital": 1000000,
+    "traditional_401k": 600000,
+    "roth_ira": 200000,
+    "taxable": 200000,
+    "taxable_cost_basis": 0,
+    "annual_spending": 50000,
+    "social_security_monthly": 2500,
+    "social_security_start_age": 67
+  },
+  "strategies": {
+    "taxable_first": {
+      "strategy": "Taxable First",
+      "success_rate": 0.98,
+      "median_final": 2798082.58288901,
+      "total_taxes_median": 182439.4954071045,
+      "p5_final": 249662.90084711413,
+      "p95_final": 20469917.407134414,
+      "median_final_real": 974287.0054779812
+    },
+    "traditional_first": {
+      "strategy": "Traditional First",
+      "success_rate": 1.0,
+      "median_final": 3202147.5723548345,
+      "total_taxes_median": 199276.94160842896,
+      "p5_final": 801452.1427343903,
+      "p95_final": 22420961.167325664,
+      "median_final_real": 947439.1252383197
+    },
+    "roth_first": {
+      "strategy": "Roth First",
+      "success_rate": 0.99,
+      "median_final": 3472085.017940942,
+      "total_taxes_median": 241380.13299560547,
+      "p5_final": 510074.2825954393,
+      "p95_final": 14752500.909280501,
+      "median_final_real": 1199535.7896128
+    },
+    "pro_rata": {
+      "strategy": "Pro Rata",
+      "success_rate": 0.99,
+      "median_final": 3008552.723077994,
+      "total_taxes_median": 228783.20138549805,
+      "p5_final": 725730.673689126,
+      "p95_final": 19780533.73796299,
+      "median_final_real": 890515.7888994004
+    }
+  },
+  "bracket_inflation": {
+    "income": 100000,
+    "tax_2025": 16931.97998046875,
+    "tax_2035": 14852.055419921875,
+    "tax_2045": 11640.002197265625
+  },
+  "rmd_example": {
+    "age": 75,
+    "traditional_balance": 300000,
+    "divisor": 24.6,
+    "rmd_amount": 12195.121951219511
+  },
+  "mortality": {
+    "male_life_expectancy_65": 18.2,
+    "female_life_expectancy_65": 20.8,
+    "male_prob_survive_85": 0.45,
+    "female_prob_survive_85": 0.58
+  },
+  "n_simulations": 100,
+  "random_seed": 20260321,
+  "stock_mean_return": 0.07,
+  "stock_std": 0.18,
+  "bond_mean_return": 0.03,
+  "bond_std": 0.06
+}

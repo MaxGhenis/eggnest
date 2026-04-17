@@ -1,0 +1,142 @@
+{
+  "holdings_selected_cohorts": {
+    "horizon_years": 5,
+    "median_final_value": 464786.63,
+    "median_final_value_real": 397363.42,
+    "median_path": [
+      650000.0,
+      552134.5,
+      533506.9,
+      531900.47,
+      472163.55,
+      464786.63
+    ],
+    "median_path_real": [
+      650000.0,
+      526701.75,
+      503902.38,
+      491022.71,
+      417362.84,
+      397363.42
+    ],
+    "results": [
+      {
+        "failure_age": null,
+        "final_value": 480406.21,
+        "final_value_real": 383827.08,
+        "start_year": 1966,
+        "success": true,
+        "total_taxes": 0.0,
+        "total_withdrawn": 165081.24
+      },
+      {
+        "failure_age": null,
+        "final_value": 1026057.72,
+        "final_value_real": 810147.22,
+        "start_year": 1981,
+        "success": true,
+        "total_taxes": 12795.6,
+        "total_withdrawn": 44314.6
+      },
+      {
+        "failure_age": null,
+        "final_value": 394482.27,
+        "final_value_real": 348845.27,
+        "start_year": 2000,
+        "success": true,
+        "total_taxes": 0.0,
+        "total_withdrawn": 210164.08
+      },
+      {
+        "failure_age": null,
+        "final_value": 449167.05,
+        "final_value_real": 410899.76,
+        "start_year": 2008,
+        "success": true,
+        "total_taxes": 0.0,
+        "total_withdrawn": 203216.21
+      }
+    ],
+    "start_years": [
+      1966,
+      1981,
+      2000,
+      2008
+    ],
+    "strongest_start_year": 1981,
+    "success_rate": 1.0,
+    "total_taxes_median": 0.0,
+    "total_withdrawn_median": 184148.72,
+    "weakest_start_year": 2000
+  },
+  "legacy_selected_cohorts": {
+    "horizon_years": 5,
+    "median_final_value": 1010545.41,
+    "median_final_value_real": 851512.96,
+    "median_path": [
+      1000000.0,
+      903160.01,
+      895451.06,
+      934683.45,
+      1000311.99,
+      1010545.41
+    ],
+    "median_path_real": [
+      1000000.0,
+      858439.69,
+      861778.38,
+      850433.79,
+      838276.96,
+      851512.96
+    ],
+    "results": [
+      {
+        "failure_age": null,
+        "final_value": 987114.21,
+        "final_value_real": 788668.34,
+        "start_year": 1966,
+        "success": true,
+        "total_taxes": 21307.79,
+        "total_withdrawn": 25455.67
+      },
+      {
+        "failure_age": null,
+        "final_value": 980303.2,
+        "final_value_real": 670875.69,
+        "start_year": 1973,
+        "success": true,
+        "total_taxes": 28935.71,
+        "total_withdrawn": 20525.9
+      },
+      {
+        "failure_age": null,
+        "final_value": 1033976.61,
+        "final_value_real": 914357.58,
+        "start_year": 2000,
+        "success": true,
+        "total_taxes": 6957.1,
+        "total_withdrawn": 49753.13
+      },
+      {
+        "failure_age": null,
+        "final_value": 1124038.54,
+        "final_value_real": 1028274.8,
+        "start_year": 2008,
+        "success": true,
+        "total_taxes": 4820.5,
+        "total_withdrawn": 60196.34
+      }
+    ],
+    "start_years": [
+      1966,
+      1973,
+      2000,
+      2008
+    ],
+    "strongest_start_year": 2008,
+    "success_rate": 1.0,
+    "total_taxes_median": 14132.44,
+    "total_withdrawn_median": 37604.4,
+    "weakest_start_year": 1973
+  }
+}

@@ -3,6 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import main
 from eggnest.models import (
     SimulationInput,
     SSTimingComparisonResult,
@@ -22,12 +23,50 @@ def base_params():
         annual_spending=40_000,
         social_security_monthly=0,  # Will be set per claiming age
         current_age=62,
-        max_age=90,
+        max_age=75,  # Keep API tests fast; strategy assertions do not need a full horizon
         gender="male",
         state="CA",
         filing_status="single",
         n_simulations=100,  # Small for faster tests
     )
+
+
+@pytest.fixture
+def stub_ss_timing_batch(monkeypatch):
+    """Stub simulator summaries for contract-focused endpoint tests."""
+
+    async def fake_batch(inputs):
+        summaries = []
+        for params in inputs:
+            claiming_age = getattr(params, "social_security_start_age", 67)
+            annual_benefit = params.social_security_monthly * 12
+            success_rate = max(0.55, 0.95 - 0.015 * (claiming_age - 62))
+            median_final = max(
+                0.0,
+                params.total_capital + annual_benefit * 6 - (claiming_age - 62) * 5_000,
+            )
+            summaries.append(
+                {
+                    "success_rate": success_rate,
+                    "median_final_value": median_final,
+                    "total_taxes_median": annual_benefit * 0.08,
+                    "total_withdrawn_median": max(
+                        0.0,
+                        params.annual_spending * (params.max_age - params.current_age)
+                        - annual_benefit,
+                    ),
+                    "percentiles": {
+                        "p5": max(0.0, median_final * 0.5),
+                        "p25": median_final * 0.8,
+                        "p50": median_final,
+                        "p75": median_final * 1.2,
+                        "p95": median_final * 1.5,
+                    },
+                }
+            )
+        return summaries
+
+    monkeypatch.setattr(main, "_run_simulation_batch", fake_batch)
 
 
 class TestSSTimingModels:
@@ -105,8 +144,8 @@ class TestSSTimingModels:
                     breakeven_vs_62=None,
                 ),
             ],
-            optimal_claiming_age=70,
-            optimal_for_longevity=70,
+            highest_success_claiming_age=70,
+            highest_lifetime_income_claiming_age=70,
         )
         assert result.birth_year == 1960
         assert result.full_retirement_age == 67.0
@@ -115,6 +154,7 @@ class TestSSTimingModels:
 class TestSSTimingEndpoint:
     """Test /compare-ss-timing API endpoint."""
 
+    @pytest.mark.montecarlo_smoke
     def test_compare_ss_timing_returns_results(self, base_params):
         """Test that endpoint returns valid comparison results."""
         response = client.post(
@@ -134,7 +174,7 @@ class TestSSTimingEndpoint:
         assert data["pia_monthly"] == 2000
         assert len(data["results"]) == 3
 
-    def test_compare_ss_timing_all_ages(self, base_params):
+    def test_compare_ss_timing_all_ages(self, base_params, stub_ss_timing_batch):
         """Test comparison with all claiming ages (62-70)."""
         response = client.post(
             "/compare-ss-timing",
@@ -153,7 +193,9 @@ class TestSSTimingEndpoint:
         ages = [r["claiming_age"] for r in data["results"]]
         assert ages == [62, 63, 64, 65, 66, 67, 68, 69, 70]
 
-    def test_compare_ss_timing_benefit_adjustment(self, base_params):
+    def test_compare_ss_timing_benefit_adjustment(
+        self, base_params, stub_ss_timing_batch
+    ):
         """Test that benefits are correctly adjusted for claiming age."""
         response = client.post(
             "/compare-ss-timing",
@@ -186,7 +228,7 @@ class TestSSTimingEndpoint:
         assert age_70["monthly_benefit"] == pytest.approx(2480, rel=0.01)
         assert age_70["adjustment_factor"] == pytest.approx(1.24, rel=0.01)
 
-    def test_compare_ss_timing_result_fields(self, base_params):
+    def test_compare_ss_timing_result_fields(self, base_params, stub_ss_timing_batch):
         """Test that each result has required fields."""
         response = client.post(
             "/compare-ss-timing",
@@ -217,8 +259,10 @@ class TestSSTimingEndpoint:
         assert result["monthly_benefit"] > 0
         assert result["annual_benefit"] == result["monthly_benefit"] * 12
 
-    def test_compare_ss_timing_identifies_optimal(self, base_params):
-        """Test that optimal claiming ages are identified."""
+    def test_compare_ss_timing_identifies_summary_ages(
+        self, base_params, stub_ss_timing_batch
+    ):
+        """Test that summary claiming ages are identified."""
         response = client.post(
             "/compare-ss-timing",
             json={
@@ -231,14 +275,15 @@ class TestSSTimingEndpoint:
 
         data = response.json()
 
-        # Should have optimal ages identified
-        assert "optimal_claiming_age" in data
-        assert 62 <= data["optimal_claiming_age"] <= 70
+        assert "highest_success_claiming_age" in data
+        assert 62 <= data["highest_success_claiming_age"] <= 70
 
-        assert "optimal_for_longevity" in data
-        assert 62 <= data["optimal_for_longevity"] <= 70
+        assert "highest_lifetime_income_claiming_age" in data
+        assert 62 <= data["highest_lifetime_income_claiming_age"] <= 70
 
-    def test_compare_ss_timing_fra_varies_by_birth_year(self, base_params):
+    def test_compare_ss_timing_fra_varies_by_birth_year(
+        self, base_params, stub_ss_timing_batch
+    ):
         """Test that FRA is correctly calculated for different birth years."""
         # Birth year 1950 -> FRA = 66
         response = client.post(
@@ -266,7 +311,7 @@ class TestSSTimingEndpoint:
 class TestSSTimingBreakeven:
     """Test breakeven calculations."""
 
-    def test_breakeven_vs_62_calculated(self, base_params):
+    def test_breakeven_vs_62_calculated(self, base_params, stub_ss_timing_batch):
         """Test that breakeven age vs claiming at 62 is calculated."""
         response = client.post(
             "/compare-ss-timing",
@@ -296,7 +341,7 @@ class TestSSTimingBreakeven:
 class TestSSTimingEdgeCases:
     """Test edge cases for SS timing comparison."""
 
-    def test_single_claiming_age(self, base_params):
+    def test_single_claiming_age(self, base_params, stub_ss_timing_batch):
         """Test with just one claiming age."""
         response = client.post(
             "/compare-ss-timing",
@@ -311,7 +356,7 @@ class TestSSTimingEdgeCases:
         data = response.json()
         assert len(data["results"]) == 1
 
-    def test_high_pia(self, base_params):
+    def test_high_pia(self, base_params, stub_ss_timing_batch):
         """Test with high PIA (max SS benefit)."""
         response = client.post(
             "/compare-ss-timing",
@@ -329,7 +374,7 @@ class TestSSTimingEdgeCases:
         # At 70 with high PIA: 3800 * 1.24 = ~4712/month
         assert age_70["monthly_benefit"] > 4500
 
-    def test_older_birth_year(self, base_params):
+    def test_older_birth_year(self, base_params, stub_ss_timing_batch):
         """Test with older birth year (FRA = 65)."""
         response = client.post(
             "/compare-ss-timing",

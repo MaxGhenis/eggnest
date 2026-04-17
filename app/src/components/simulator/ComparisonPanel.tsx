@@ -1,15 +1,24 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type {
   SimulationInput,
   StateComparisonResult,
+  StrategyComparisonResult,
+  RothOptimizationResult,
   SSTimingComparisonResult,
   AllocationComparisonResult,
 } from "../../lib/api";
 import type { AnnuityComparisonResult } from "../../lib/simulatorUtils";
 import { formatCurrency, formatPercent } from "../../lib/simulatorUtils";
 import { US_STATES, NO_TAX_STATES } from "../../lib/constants";
+import type { WithdrawalStrategy } from "../../hooks/usePortfolio";
+import {
+  buildRothOptimizationExportArtifact,
+  downloadTextFile,
+  makeRothOptimizationExportFilename,
+  serializeRothOptimizationCsv,
+} from "../../lib/rothExport";
 
 /* Shared styles */
 const sectionCls = "section-card";
@@ -28,7 +37,7 @@ interface AnnuityComparisonProps {
 export function AnnuityComparison({ annuityResult, guaranteeYears }: AnnuityComparisonProps) {
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold mb-4">Annuity comparison</h3>
+      <h3 className="mb-4 text-lg font-semibold">Annuity vs portfolio</h3>
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-[var(--radius-md)] bg-[var(--color-gray-50)] p-4">
           <div className="text-xs font-medium text-[var(--color-text-light)] uppercase tracking-wider">Annuity guaranteed total</div>
@@ -52,8 +61,368 @@ export function AnnuityComparison({ annuityResult, guaranteeYears }: AnnuityComp
         </div>
       </div>
       <div className="mt-4 rounded-[var(--radius-md)] bg-[var(--color-bg-alt)] p-3 text-sm">
-        <strong>Recommendation:</strong> {annuityResult.recommendation}
+        <strong>Model reading:</strong> {annuityResult.summary}
       </div>
+    </div>
+  );
+}
+
+/* ============================================ */
+/* Withdrawal strategy comparison               */
+/* ============================================ */
+
+interface WithdrawalStrategyComparisonProps {
+  strategyComparisonResult: StrategyComparisonResult | null;
+  isComparingStrategies: boolean;
+  currentStrategy: WithdrawalStrategy;
+  onCompare: () => void;
+  onReset: () => void;
+}
+
+const STRATEGY_LABELS: Record<WithdrawalStrategy, string> = {
+  taxable_first: "Taxable first",
+  traditional_first: "Traditional first",
+  roth_first: "Roth first",
+  pro_rata: "Pro rata",
+};
+
+export function WithdrawalStrategyComparison({
+  strategyComparisonResult,
+  isComparingStrategies,
+  currentStrategy,
+  onCompare,
+  onReset,
+}: WithdrawalStrategyComparisonProps) {
+  return (
+    <div className={sectionCls}>
+      <h3 className="text-lg font-semibold">How do withdrawal strategies compare?</h3>
+      <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+        Compare tax-aware drawdown policies across Monte Carlo and exact
+        historical cohorts using the same household assumptions. EggNest ranks
+        modeled scenarios here; it does not provide advice.
+      </p>
+
+      {!strategyComparisonResult && (
+        <button className={`mt-4 ${btnPrimary}`} onClick={onCompare} disabled={isComparingStrategies}>
+          {isComparingStrategies ? "Comparing scenarios..." : "Compare strategy scenarios"}
+        </button>
+      )}
+
+      {strategyComparisonResult && (
+        <div className="mt-4 space-y-4">
+          <div className="flex flex-wrap gap-4">
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-alt)] px-4 py-2 text-sm">
+              <span className="text-[var(--color-text-muted)]">Lowest modeled taxes: </span>
+              <span className="font-semibold text-[var(--color-text)]">{STRATEGY_LABELS[strategyComparisonResult.lowest_modeled_tax_strategy]}</span>
+            </div>
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-alt)] px-4 py-2 text-sm">
+              <span className="text-[var(--color-text-muted)]">Strongest historical resilience: </span>
+              <span className="font-semibold text-[var(--color-text)]">{STRATEGY_LABELS[strategyComparisonResult.strongest_historical_strategy]}</span>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full table-auto-style">
+              <thead>
+                <tr>
+                  <th>Strategy</th><th>MC success</th><th>Historical success</th><th>Median final (real)</th><th>Weakest cohort (real)</th><th>Median taxes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {strategyComparisonResult.results.map((result) => (
+                  <tr key={result.strategy}>
+                    <td className="font-medium">
+                      {STRATEGY_LABELS[result.strategy]}
+                      {result.strategy === currentStrategy && <span className="ml-1 rounded bg-[var(--color-primary-100)] px-1.5 py-0.5 text-[0.6rem] font-bold text-[var(--color-primary)]">Current</span>}
+                    </td>
+                    <td>{formatPercent(result.monte_carlo.success_rate)}</td>
+                    <td>{formatPercent(result.historical.success_rate)}</td>
+                    <td>{formatCurrency(result.historical.median_final_value_real)}</td>
+                    <td style={{ color: result.historical.worst_final_value_real <= 0 ? "#ef4444" : "inherit" }}>
+                      {formatCurrency(result.historical.worst_final_value_real)}
+                    </td>
+                    <td>{formatCurrency(result.monte_carlo.total_taxes_median)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Compare the table directly across success, historical downside, and taxes under the current assumptions.
+          </p>
+          <button className={btnSecondary} onClick={onReset}>Hide results</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================ */
+/* Roth conversion optimization                 */
+/* ============================================ */
+
+interface RothOptimizationComparisonProps {
+  rothOptimizationResult: RothOptimizationResult | null;
+  isOptimizingRoth: boolean;
+  onOptimize: () => void;
+  onReset: () => void;
+  reportLink?: string | null;
+}
+
+const ROTH_POLICY_LABELS: Record<string, string> = {
+  fixed_amount: "Fixed amount",
+  fill_standard_deduction: "Fill standard deduction",
+  fill_12_percent_bracket: "Fill 12% bracket",
+  fill_22_percent_bracket: "Fill 22% bracket",
+};
+
+export function RothOptimizationComparison({
+  rothOptimizationResult,
+  isOptimizingRoth,
+  onOptimize,
+  onReset,
+  reportLink,
+}: RothOptimizationComparisonProps) {
+  return (
+    <div className={sectionCls}>
+      <h3 className="text-lg font-semibold">How do Roth conversion paths compare?</h3>
+      <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+        Search bounded Roth conversion windows and sizing rules on the current
+        plan. EggNest ranks modeled scenarios here; it does not provide advice.
+      </p>
+
+      {!rothOptimizationResult && (
+        <button className={`mt-4 ${btnPrimary}`} onClick={onOptimize} disabled={isOptimizingRoth}>
+          {isOptimizingRoth ? "Searching Roth scenarios..." : "Search Roth conversion scenarios"}
+        </button>
+      )}
+
+      {rothOptimizationResult && (
+        <RothOptimizationReportView
+          rothOptimizationResult={rothOptimizationResult}
+          reportLink={reportLink}
+          showOpenReportPage
+          onReset={onReset}
+        />
+      )}
+    </div>
+  );
+}
+
+interface RothOptimizationReportViewProps {
+  rothOptimizationResult: RothOptimizationResult;
+  reportLink?: string | null;
+  showOpenReportPage?: boolean;
+  onReset?: () => void;
+}
+
+export function RothOptimizationReportView({
+  rothOptimizationResult,
+  reportLink,
+  showOpenReportPage = false,
+  onReset,
+}: RothOptimizationReportViewProps) {
+  const ledgerScenario = rothOptimizationResult.results.find(
+    (item) =>
+      item.monte_carlo.year_breakdown.some(
+        (row) =>
+          Math.abs(row.roth_conversion ?? 0) > 1e-9 ||
+          Math.abs(row.medicare_premium_delta_vs_baseline ?? 0) > 1e-9 ||
+          (row.medicare_part_b_irmaa_bracket ?? "none") !== "none" ||
+          (row.medicare_part_d_irmaa_bracket ?? "none") !== "none"
+      )
+  ) ?? null;
+  const [reportLinkCopied, setReportLinkCopied] = useState(false);
+
+  const ledgerRows = (ledgerScenario?.monte_carlo.year_breakdown ?? []).filter(
+    (row) =>
+      Math.abs(row.roth_conversion ?? 0) > 1e-9 ||
+      Math.abs(row.medicare_premium_delta_vs_baseline ?? 0) > 1e-9 ||
+      (row.medicare_part_b_irmaa_bracket ?? "none") !== "none" ||
+      (row.medicare_part_d_irmaa_bracket ?? "none") !== "none"
+  );
+
+  const handleDownloadJson = () => {
+    if (!rothOptimizationResult) return;
+    const generatedAt = new Date().toISOString();
+    downloadTextFile(
+      makeRothOptimizationExportFilename("json", generatedAt),
+      JSON.stringify(
+        buildRothOptimizationExportArtifact(rothOptimizationResult, generatedAt),
+        null,
+        2
+      ),
+      "application/json"
+    );
+  };
+
+  const handleDownloadCsv = () => {
+    if (!rothOptimizationResult) return;
+    const generatedAt = new Date().toISOString();
+    downloadTextFile(
+      makeRothOptimizationExportFilename("csv", generatedAt),
+      serializeRothOptimizationCsv(rothOptimizationResult),
+      "text/csv;charset=utf-8"
+    );
+  };
+
+  const handleCopyReportLink = async () => {
+    if (!reportLink) return;
+    try {
+      await navigator.clipboard.writeText(reportLink);
+      setReportLinkCopied(true);
+      window.setTimeout(() => setReportLinkCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy Roth report link:", error);
+    }
+  };
+
+  return (
+    <div className="mt-4 space-y-4">
+          <div className="flex flex-wrap gap-4">
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-alt)] px-4 py-2 text-sm">
+              <span className="text-[var(--color-text-muted)]">Lowest modeled taxes: </span>
+              <span className="font-semibold text-[var(--color-text)]">{rothOptimizationResult.lowest_modeled_tax_scenario_label}</span>
+            </div>
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-alt)] px-4 py-2 text-sm">
+              <span className="text-[var(--color-text-muted)]">Lowest Medicare premiums: </span>
+              <span className="font-semibold text-[var(--color-text)]">{rothOptimizationResult.lowest_medicare_premium_scenario_label}</span>
+            </div>
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-alt)] px-4 py-2 text-sm">
+              <span className="text-[var(--color-text-muted)]">Highest real ending wealth: </span>
+              <span className="font-semibold text-[var(--color-text)]">{rothOptimizationResult.highest_real_ending_wealth_scenario_label}</span>
+            </div>
+          </div>
+
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-alt)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
+            <span className="font-semibold text-[var(--color-text)]">Search space:</span>{" "}
+            {rothOptimizationResult.candidate_count} candidates across start ages{" "}
+            {rothOptimizationResult.candidate_start_ages.join(", ")} and window lengths{" "}
+            {rothOptimizationResult.window_lengths.join(", ")} years.
+            {rothOptimizationResult.baseline_scenario_label && (
+              <>
+                {" "}
+                Deltas are relative to{" "}
+                <span className="font-semibold text-[var(--color-text)]">
+                  {rothOptimizationResult.baseline_scenario_label}
+                </span>
+                .
+              </>
+            )}
+          </div>
+
+          {rothOptimizationResult.metadata && (
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-alt)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
+              <span className="font-semibold text-[var(--color-text)]">Method:</span>{" "}
+              {rothOptimizationResult.metadata.method_version} on engine{" "}
+              {rothOptimizationResult.metadata.engine_version}
+              {rothOptimizationResult.metadata.random_seed !== null && (
+                <>
+                  {" "}
+                  with seed{" "}
+                  <span className="font-semibold text-[var(--color-text)]">
+                    {rothOptimizationResult.metadata.random_seed}
+                  </span>
+                </>
+              )}
+              .{" "}
+              {rothOptimizationResult.metadata.assumptions_summary}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            {reportLink && showOpenReportPage && (
+              <a className={btnSecondary} href={reportLink}>
+                Open report page
+              </a>
+            )}
+            {reportLink && (
+              <button className={btnSecondary} onClick={handleCopyReportLink}>
+                {reportLinkCopied ? "Report link copied!" : "Copy report link"}
+              </button>
+            )}
+            <button className={btnSecondary} onClick={handleDownloadJson}>
+              Download JSON report
+            </button>
+            <button className={btnSecondary} onClick={handleDownloadCsv}>
+              Download CSV table
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full table-auto-style">
+              <thead>
+                <tr>
+                  <th>Scenario</th>
+                  <th>Policy</th>
+                  <th>MC success</th>
+                  <th>Historical success</th>
+                  <th>Real Δ</th>
+                  <th>Tax Δ</th>
+                  <th>Medicare Δ</th>
+                  <th>Median converted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rothOptimizationResult.results.map((item) => (
+                  <tr key={item.scenario_label}>
+                    <td className="font-medium">
+                      {item.scenario_label}
+                    </td>
+                    <td>{ROTH_POLICY_LABELS[item.conversion_policy] ?? item.conversion_policy}</td>
+                    <td>{formatPercent(item.monte_carlo.success_rate)}</td>
+                    <td>{formatPercent(item.historical.success_rate)}</td>
+                    <td>{formatCurrency(item.delta_vs_baseline.monte_carlo_median_final_value_real_delta)}</td>
+                    <td>{formatCurrency(item.delta_vs_baseline.monte_carlo_total_taxes_median_delta)}</td>
+                    <td>{formatCurrency(item.delta_vs_baseline.monte_carlo_total_medicare_premiums_median_delta)}</td>
+                    <td>{formatCurrency(item.monte_carlo.total_roth_conversions_median)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {ledgerScenario && ledgerRows.length > 0 && (
+            <div className="space-y-3">
+              <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-alt)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
+                <span className="font-semibold text-[var(--color-text)]">Example cliff ledger:</span>{" "}
+                {ledgerScenario.scenario_label}. Medicare deltas are relative to{" "}
+                {rothOptimizationResult.baseline_scenario_label ?? "the baseline"}.
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full table-auto-style">
+                  <thead>
+                    <tr>
+                      <th>Age</th>
+                      <th>Convert</th>
+                      <th>Bracket room used</th>
+                      <th>Marginal</th>
+                      <th>Part B band</th>
+                      <th>Part D surcharge</th>
+                      <th>Medicare Δ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ledgerRows.map((row) => (
+                      <tr key={`${row.age}-${row.year_index}`}>
+                        <td>{row.age}</td>
+                        <td>{formatCurrency(row.roth_conversion ?? 0)}</td>
+                        <td>{formatCurrency(row.federal_bracket_headroom_used ?? 0)}</td>
+                        <td>{formatPercent(row.federal_marginal_rate_on_last_conversion_dollar ?? 0)}</td>
+                        <td>{row.medicare_part_b_irmaa_bracket ?? "none"}</td>
+                        <td>{formatCurrency(row.medicare_part_d_premium_surcharge ?? 0)}</td>
+                        <td>{formatCurrency(row.medicare_premium_delta_vs_baseline ?? 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Compare the scenarios directly across success, tax drag, Medicare drag, and conversion size under the current assumptions.
+          </p>
+          {onReset && <button className={btnSecondary} onClick={onReset}>Hide results</button>}
     </div>
   );
 }
@@ -184,8 +553,8 @@ export function SSTimingComparison({
 
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold">When should you claim Social Security?</h3>
-      <p className="mt-1 text-sm text-[var(--color-text-muted)]">Compare how different claiming ages affect your lifetime benefits and portfolio.</p>
+      <h3 className="text-lg font-semibold">How do Social Security claiming ages compare?</h3>
+      <p className="mt-1 text-sm text-[var(--color-text-muted)]">Compare how different claiming ages change modeled lifetime benefits and portfolio outcomes.</p>
 
       {!ssTimingResult && !isComparingSSTiming && (
         <div className="mt-4 space-y-4">
@@ -208,7 +577,7 @@ export function SSTimingComparison({
             </div>
           </div>
           <button className={btnPrimary} onClick={onCompare} disabled={isComparingSSTiming || piaMonthly <= 0}>
-            Compare claiming ages
+            Compare claiming scenarios
           </button>
         </div>
       )}
@@ -230,8 +599,8 @@ export function SSTimingComparison({
               </span>
             </div>
             <div className="rounded-[var(--radius-md)] bg-[var(--color-success-light)] px-4 py-2 text-sm">
-              <span className="text-[var(--color-text-muted)]">Optimal: </span>
-              <span className="font-semibold text-[var(--color-success)]">Claim at age {ssTimingResult.optimal_claiming_age}</span>
+              <span className="text-[var(--color-text-muted)]">Highest modeled success: </span>
+              <span className="font-semibold text-[var(--color-success)]">Age {ssTimingResult.highest_success_claiming_age}</span>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -242,11 +611,11 @@ export function SSTimingComparison({
               <tbody>
                 {ssTimingResult.results.map((r) => (
                   <tr key={r.claiming_age}
-                    className={r.claiming_age === ssTimingResult.optimal_claiming_age ? "!bg-[var(--color-success-light)]" : r.claiming_age === Math.round(ssTimingResult.full_retirement_age) ? "!bg-[var(--color-primary-50)]" : ""}>
+                    className={r.claiming_age === ssTimingResult.highest_success_claiming_age ? "!bg-[var(--color-success-light)]" : r.claiming_age === Math.round(ssTimingResult.full_retirement_age) ? "!bg-[var(--color-primary-50)]" : ""}>
                     <td className="font-medium">
                       {r.claiming_age}
                       {r.claiming_age === Math.round(ssTimingResult.full_retirement_age) && <span className="ml-1 rounded bg-[var(--color-primary-100)] px-1.5 py-0.5 text-[0.6rem] font-bold text-[var(--color-primary)]">FRA</span>}
-                      {r.claiming_age === ssTimingResult.optimal_claiming_age && <span className="ml-1 rounded bg-[var(--color-success)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Best</span>}
+                      {r.claiming_age === ssTimingResult.highest_success_claiming_age && <span className="ml-1 rounded bg-[var(--color-success)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Top score</span>}
                     </td>
                     <td>${r.monthly_benefit.toLocaleString()}/mo</td>
                     <td style={{ color: r.adjustment_factor < 1 ? "#ef4444" : r.adjustment_factor > 1 ? "#10b981" : "inherit" }}>
@@ -286,12 +655,12 @@ export function AllocationComparison({
 }: AllocationComparisonProps) {
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold">How does asset allocation affect your plan?</h3>
+      <h3 className="text-lg font-semibold">How do asset allocations compare?</h3>
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">Compare different stock/bond mixes for the right balance of growth and safety.</p>
 
       {!allocationResult && (
         <button className={`mt-4 ${btnPrimary}`} onClick={onCompare} disabled={isComparingAllocations}>
-          {isComparingAllocations ? "Comparing..." : "Compare allocations"}
+          {isComparingAllocations ? "Comparing..." : "Compare allocation scenarios"}
         </button>
       )}
 
@@ -299,27 +668,27 @@ export function AllocationComparison({
         <div className="mt-4 space-y-4">
           <div className="flex flex-wrap gap-4">
             <div className="rounded-[var(--radius-md)] bg-[var(--color-success-light)] px-4 py-2 text-sm">
-              <span className="text-[var(--color-text-muted)]">Optimal for success: </span>
-              <span className="font-semibold text-[var(--color-success)]">{Math.round(allocationResult.optimal_for_success * 100)}% Stocks</span>
+              <span className="text-[var(--color-text-muted)]">Highest modeled success: </span>
+              <span className="font-semibold text-[var(--color-success)]">{Math.round(allocationResult.highest_success_allocation * 100)}% Stocks</span>
             </div>
-            {allocationResult.optimal_for_safety !== allocationResult.optimal_for_success && (
+            {allocationResult.highest_safety_allocation !== allocationResult.highest_success_allocation && (
               <div className="rounded-[var(--radius-md)] bg-[var(--color-primary-50)] px-4 py-2 text-sm">
-                <span className="text-[var(--color-text-muted)]">Optimal for safety: </span>
-                <span className="font-semibold text-[var(--color-primary)]">{Math.round(allocationResult.optimal_for_safety * 100)}% Stocks</span>
+                <span className="text-[var(--color-text-muted)]">Highest modeled safety: </span>
+                <span className="font-semibold text-[var(--color-primary)]">{Math.round(allocationResult.highest_safety_allocation * 100)}% Stocks</span>
               </div>
             )}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full table-auto-style">
               <thead>
-                <tr><th>Allocation</th><th>Success</th><th>Median final</th><th>Worst (5th)</th><th>Best (95th)</th><th>Volatility</th></tr>
+                <tr><th>Allocation</th><th>Success</th><th>Median final</th><th>Lower tail (5th)</th><th>Upper tail (95th)</th><th>Volatility</th></tr>
               </thead>
               <tbody>
                 {allocationResult.results.map((r) => (
-                  <tr key={r.stock_allocation} className={r.stock_allocation === allocationResult.optimal_for_success ? "!bg-[var(--color-success-light)]" : ""}>
+                  <tr key={r.stock_allocation} className={r.stock_allocation === allocationResult.highest_success_allocation ? "!bg-[var(--color-success-light)]" : ""}>
                     <td className="font-medium">
                       {Math.round(r.stock_allocation * 100)}% / {Math.round(r.bond_allocation * 100)}%
-                      {r.stock_allocation === allocationResult.optimal_for_success && <span className="ml-1 rounded bg-[var(--color-success)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Best</span>}
+                      {r.stock_allocation === allocationResult.highest_success_allocation && <span className="ml-1 rounded bg-[var(--color-success)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Top score</span>}
                     </td>
                     <td style={{
                       color: r.success_rate >= 0.9 ? "#10b981" : r.success_rate >= 0.8 ? "#84cc16" : r.success_rate >= 0.7 ? "#eab308" : "#ef4444"
@@ -333,7 +702,10 @@ export function AllocationComparison({
               </tbody>
             </table>
           </div>
-          <p className="text-sm text-[var(--color-text-muted)]">{allocationResult.recommendation}</p>
+          <p className="text-sm text-[var(--color-text-muted)]">
+            <span className="font-semibold text-[var(--color-text)]">Model reading:</span>{" "}
+            {allocationResult.summary}
+          </p>
           <button className={btnSecondary} onClick={onReset}>Hide results</button>
         </div>
       )}

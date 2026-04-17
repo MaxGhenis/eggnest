@@ -12,7 +12,7 @@ test.describe('Simulator Wizard', () => {
   test('loads the simulator page', async ({ page }) => {
     // Check header elements
     await expect(page.locator('header')).toBeVisible();
-    await expect(page.getByText('Financial simulator', { exact: false })).toBeVisible();
+    await expect(page.getByText('Simulator', { exact: false })).toBeVisible();
 
     // Check wizard is visible
     await expect(page.locator('[role="form"][aria-label="Simulation setup wizard"]')).toBeVisible();
@@ -211,5 +211,17 @@ test.describe('Simulator Wizard', () => {
     // Can change to female
     await genderSelect.selectOption('female');
     await expect(genderSelect).toHaveValue('female');
+  });
+});
+
+test.describe('Simulator personas', () => {
+  test('quick review loads the example into the review step without auto-running', async ({ page }) => {
+    await page.goto('/simulator');
+
+    await page.getByRole('button', { name: 'Quick review' }).first().click();
+
+    await expect(page.getByRole('heading', { level: 2, name: 'Review' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Run simulation' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /running/i })).not.toBeVisible();
   });
 });

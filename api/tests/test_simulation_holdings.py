@@ -51,6 +51,25 @@ class TestSimulationWithHoldings:
         assert result.success_rate >= 0
         assert result.success_rate <= 1
 
+    def test_simulation_resolves_withdrawal_policy_once(self):
+        """Simulator should resolve and share a concrete withdrawal policy."""
+        params = SimulationInput(
+            holdings=[
+                Holding(account_type="traditional_401k", fund="vt", balance=300_000),
+                Holding(account_type="taxable", fund="bnd", balance=50_000),
+            ],
+            withdrawal_strategy="traditional_first",
+            annual_spending=40_000,
+            current_age=60,
+            max_age=90,
+            n_simulations=100,
+        )
+        sim = MonteCarloSimulator(params)
+
+        assert sim.withdrawal_policy.name == "traditional_first"
+        assert sim.tracker is not None
+        assert sim.tracker.withdrawal_policy is sim.withdrawal_policy
+
     def test_holdings_uses_per_fund_returns(self):
         """Each holding should grow according to its fund's returns."""
         # 100% stocks vs 100% bonds should have different outcomes

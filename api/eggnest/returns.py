@@ -534,6 +534,111 @@ BND_PRICE_RETURNS = {
 }
 
 # =============================================================================
+# US CPI INFLATION (DECEMBER-TO-DECEMBER, 1928-2024)
+# Source: Federal Reserve FRED CPIAUCNS series, converted to annual Dec/Dec rates
+# =============================================================================
+
+CPI_INFLATION = {
+    1928: -0.0116,
+    1929: 0.0058,
+    1930: -0.0640,
+    1931: -0.0932,
+    1932: -0.1027,
+    1933: 0.0076,
+    1934: 0.0152,
+    1935: 0.0299,
+    1936: 0.0145,
+    1937: 0.0286,
+    1938: -0.0278,
+    1939: 0.0000,
+    1940: 0.0071,
+    1941: 0.0993,
+    1942: 0.0903,
+    1943: 0.0296,
+    1944: 0.0230,
+    1945: 0.0225,
+    1946: 0.1813,
+    1947: 0.0884,
+    1948: 0.0299,
+    1949: -0.0207,
+    1950: 0.0593,
+    1951: 0.0600,
+    1952: 0.0075,
+    1953: 0.0075,
+    1954: -0.0074,
+    1955: 0.0037,
+    1956: 0.0299,
+    1957: 0.0290,
+    1958: 0.0176,
+    1959: 0.0173,
+    1960: 0.0136,
+    1961: 0.0067,
+    1962: 0.0133,
+    1963: 0.0164,
+    1964: 0.0097,
+    1965: 0.0192,
+    1966: 0.0346,
+    1967: 0.0304,
+    1968: 0.0472,
+    1969: 0.0620,
+    1970: 0.0557,
+    1971: 0.0327,
+    1972: 0.0341,
+    1973: 0.0871,
+    1974: 0.1234,
+    1975: 0.0694,
+    1976: 0.0486,
+    1977: 0.0670,
+    1978: 0.0902,
+    1979: 0.1329,
+    1980: 0.1252,
+    1981: 0.0892,
+    1982: 0.0383,
+    1983: 0.0379,
+    1984: 0.0395,
+    1985: 0.0380,
+    1986: 0.0110,
+    1987: 0.0443,
+    1988: 0.0442,
+    1989: 0.0465,
+    1990: 0.0611,
+    1991: 0.0306,
+    1992: 0.0290,
+    1993: 0.0275,
+    1994: 0.0267,
+    1995: 0.0254,
+    1996: 0.0332,
+    1997: 0.0170,
+    1998: 0.0161,
+    1999: 0.0268,
+    2000: 0.0339,
+    2001: 0.0155,
+    2002: 0.0238,
+    2003: 0.0188,
+    2004: 0.0326,
+    2005: 0.0342,
+    2006: 0.0254,
+    2007: 0.0408,
+    2008: 0.0009,
+    2009: 0.0272,
+    2010: 0.0150,
+    2011: 0.0296,
+    2012: 0.0174,
+    2013: 0.0150,
+    2014: 0.0076,
+    2015: 0.0073,
+    2016: 0.0207,
+    2017: 0.0211,
+    2018: 0.0191,
+    2019: 0.0229,
+    2020: 0.0136,
+    2021: 0.0704,
+    2022: 0.0645,
+    2023: 0.0335,
+    2024: 0.0289,
+}
+
+# =============================================================================
 # NUMPY ARRAYS FOR EFFICIENT SIMULATION
 # =============================================================================
 
@@ -545,14 +650,21 @@ SP500_YEARS = np.array(list(SP500_PRICE_RETURNS.keys()))
 # Treasury
 TREASURY_PRICE_ARRAY = np.array(list(TREASURY_RETURNS.values()))
 TREASURY_YIELD_ARRAY = np.array(list(TREASURY_YIELDS.values()))
+TREASURY_YEARS = np.array(list(TREASURY_RETURNS.keys()))
 
 # VT
 VT_PRICE_ARRAY = np.array(list(VT_PRICE_RETURNS.values()))
 VT_DIVIDEND_ARRAY = np.array(list(VT_DIVIDEND_YIELDS.values()))
+VT_YEARS = np.array(list(VT_PRICE_RETURNS.keys()))
 
 # BND
 BND_PRICE_ARRAY = np.array(list(BND_PRICE_RETURNS.values()))
 BND_DIVIDEND_ARRAY = np.array(list(BND_DIVIDEND_YIELDS.values()))
+BND_YEARS = np.array(list(BND_PRICE_RETURNS.keys()))
+
+# Inflation
+INFLATION_ARRAY = np.array(list(CPI_INFLATION.values()))
+INFLATION_YEARS = np.array(list(CPI_INFLATION.keys()))
 
 # Legacy aliases for backward compatibility
 RETURNS_ARRAY = SP500_PRICE_ARRAY + SP500_DIVIDEND_ARRAY  # Total returns
@@ -567,13 +679,207 @@ FUND_ARRAYS = {
     "bnd": (BND_PRICE_ARRAY, BND_DIVIDEND_ARRAY),
     "treasury": (TREASURY_PRICE_ARRAY, TREASURY_YIELD_ARRAY),
 }
+FUND_HISTORIES = {
+    "vt": (VT_YEARS, VT_PRICE_ARRAY, VT_DIVIDEND_ARRAY),
+    "sp500": (SP500_YEARS, SP500_PRICE_ARRAY, SP500_DIVIDEND_ARRAY),
+    "bnd": (BND_YEARS, BND_PRICE_ARRAY, BND_DIVIDEND_ARRAY),
+    "treasury": (TREASURY_YEARS, TREASURY_PRICE_ARRAY, TREASURY_YIELD_ARRAY),
+}
+
+
+def _generate_sample_indices(
+    n_simulations: int,
+    n_years: int,
+    n_historical: int,
+    method: Literal["bootstrap", "block_bootstrap", "historical"],
+    block_size: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Generate shared historical indices for a Monte Carlo run."""
+    if method == "bootstrap":
+        return rng.integers(0, n_historical, size=(n_simulations, n_years))
+
+    if method == "historical":
+        start_indices = rng.integers(0, n_historical, size=n_simulations)
+        offsets = np.arange(n_years)
+        return (start_indices[:, None] + offsets[None, :]) % n_historical
+
+    if method == "block_bootstrap":
+        if block_size > n_historical:
+            raise ValueError(
+                f"block_size {block_size} exceeds history length {n_historical}"
+            )
+
+        indices = np.zeros((n_simulations, n_years), dtype=int)
+        n_blocks = (n_years + block_size - 1) // block_size
+
+        for sim in range(n_simulations):
+            year_idx = 0
+            for _ in range(n_blocks):
+                start = rng.integers(0, n_historical - block_size + 1)
+                end_idx = min(year_idx + block_size, n_years)
+                block_len = end_idx - year_idx
+                indices[sim, year_idx:end_idx] = np.arange(start, start + block_len)
+                year_idx = end_idx
+
+        return indices
+
+    raise ValueError(f"Unknown method: {method}")
+
+
+def _inflate_years_to_rates(sampled_years: np.ndarray) -> np.ndarray:
+    """Map sampled historical years to annual inflation rates."""
+    lookup = {
+        int(year): float(rate)
+        for year, rate in zip(INFLATION_YEARS, INFLATION_ARRAY, strict=True)
+    }
+    inflation = np.zeros_like(sampled_years, dtype=float)
+    for year, rate in lookup.items():
+        inflation = np.where(sampled_years == year, rate, inflation)
+
+    if np.any(~np.isin(sampled_years, INFLATION_YEARS)):
+        raise ValueError("Sampled years are outside the available inflation history")
+    return inflation
+
+
+def get_aligned_fund_arrays(
+    funds: list[Literal["vt", "sp500", "bnd", "treasury"]]
+    | tuple[Literal["vt", "sp500", "bnd", "treasury"], ...],
+) -> tuple[np.ndarray, dict[str, tuple[np.ndarray, np.ndarray]]]:
+    """
+    Align selected funds to their common overlapping year range.
+
+    Returns:
+        Tuple of (common_years, aligned price/dividend arrays by fund).
+    """
+    unique_funds = list(dict.fromkeys(funds))
+    if not unique_funds:
+        raise ValueError("At least one fund is required")
+
+    start_year = max(int(FUND_HISTORIES[fund][0][0]) for fund in unique_funds)
+    end_year = min(int(FUND_HISTORIES[fund][0][-1]) for fund in unique_funds)
+    if start_year > end_year:
+        raise ValueError("Selected funds do not share an overlapping history")
+
+    common_years: np.ndarray | None = None
+    aligned: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for fund in unique_funds:
+        years, price_array, div_array = FUND_HISTORIES[fund]
+        mask = (years >= start_year) & (years <= end_year)
+        fund_years = years[mask]
+        if common_years is None:
+            common_years = fund_years
+        elif not np.array_equal(common_years, fund_years):
+            raise ValueError("Selected funds do not align to a shared yearly history")
+        aligned[fund] = (price_array[mask], div_array[mask])
+
+    return common_years, aligned
+
+
+def build_historical_year_matrix(
+    available_years: np.ndarray,
+    n_years: int,
+    start_years: list[int] | np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Build exact year indices for historical cohort backtests.
+
+    Returns:
+        Tuple of (index_matrix, sampled_years, valid_start_years).
+    """
+    if n_years <= 0:
+        raise ValueError("n_years must be positive")
+
+    max_start_count = len(available_years) - n_years + 1
+    if max_start_count <= 0:
+        raise ValueError("Requested horizon exceeds available historical data")
+
+    valid_start_years = available_years[:max_start_count]
+
+    if start_years is None:
+        selected_start_years = valid_start_years
+        start_indices = np.arange(max_start_count, dtype=int)
+    else:
+        selected_start_years = np.asarray(start_years, dtype=int)
+        if selected_start_years.size == 0:
+            raise ValueError("At least one start year is required")
+        start_lookup = {int(year): index for index, year in enumerate(valid_start_years)}
+        missing_years = [
+            int(year) for year in selected_start_years if int(year) not in start_lookup
+        ]
+        if missing_years:
+            raise ValueError(
+                "Start years are outside the valid historical range: "
+                + ", ".join(str(year) for year in missing_years)
+            )
+        start_indices = np.array(
+            [start_lookup[int(year)] for year in selected_start_years], dtype=int
+        )
+
+    offsets = np.arange(n_years, dtype=int)
+    index_matrix = start_indices[:, None] + offsets[None, :]
+    sampled_years = available_years[index_matrix]
+    return index_matrix, sampled_years, valid_start_years
+
+
+def generate_historical_blended_return_paths(
+    n_years: int,
+    stock_allocation: float = 1.0,
+    stock_index: Literal["sp500", "vt"] = "sp500",
+    bond_index: Literal["treasury", "bnd"] = "treasury",
+    start_years: list[int] | np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Generate exact historical blended return paths for chosen cohort start years.
+
+    Returns:
+        Tuple of (price_growth, dividend_yields, sampled_years, valid_start_years).
+    """
+    common_years, aligned = get_aligned_fund_arrays([stock_index, bond_index])
+    stock_price, stock_div = aligned[stock_index]
+    bond_price, bond_div = aligned[bond_index]
+    index_matrix, sampled_years, valid_start_years = build_historical_year_matrix(
+        common_years, n_years, start_years
+    )
+    bond_allocation = 1.0 - stock_allocation
+    blended_price = (
+        stock_allocation * stock_price[index_matrix]
+        + bond_allocation * bond_price[index_matrix]
+    )
+    blended_div = (
+        stock_allocation * stock_div[index_matrix]
+        + bond_allocation * bond_div[index_matrix]
+    )
+    return blended_price, blended_div, sampled_years, valid_start_years
+
+
+def generate_historical_fund_return_paths(
+    funds: list[Literal["vt", "sp500", "bnd", "treasury"]]
+    | tuple[Literal["vt", "sp500", "bnd", "treasury"], ...],
+    n_years: int,
+    start_years: list[int] | np.ndarray | None = None,
+) -> tuple[dict[str, tuple[np.ndarray, np.ndarray]], np.ndarray, np.ndarray]:
+    """
+    Generate exact historical fund return paths for chosen cohort start years.
+
+    Returns:
+        Tuple of (fund returns, sampled years, valid start years).
+    """
+    common_years, aligned_funds = get_aligned_fund_arrays(funds)
+    index_matrix, sampled_years, valid_start_years = build_historical_year_matrix(
+        common_years, n_years, start_years
+    )
+    fund_returns: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for fund, (price_array, div_array) in aligned_funds.items():
+        fund_returns[fund] = (price_array[index_matrix], div_array[index_matrix])
+    return fund_returns, sampled_years, valid_start_years
 
 
 def generate_fund_returns(
     fund: Literal["vt", "sp500", "bnd", "treasury"],
     n_simulations: int,
     n_years: int,
-    method: Literal["bootstrap", "block_bootstrap"] = "bootstrap",
+    method: Literal["bootstrap", "block_bootstrap", "historical"] = "bootstrap",
     block_size: int = 5,
     rng: np.random.Generator | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -591,37 +897,101 @@ def generate_fund_returns(
     Returns:
         (price_growth, dividend_yields) arrays of shape (n_simulations, n_years)
     """
+    correlated = generate_correlated_fund_returns(
+        funds=[fund],
+        n_simulations=n_simulations,
+        n_years=n_years,
+        method=method,
+        block_size=block_size,
+        rng=rng,
+    )
+    return correlated[fund]
+
+
+def generate_correlated_fund_returns(
+    funds: list[Literal["vt", "sp500", "bnd", "treasury"]]
+    | tuple[Literal["vt", "sp500", "bnd", "treasury"], ...],
+    n_simulations: int,
+    n_years: int,
+    method: Literal["bootstrap", "block_bootstrap", "historical"] = "bootstrap",
+    block_size: int = 5,
+    rng: np.random.Generator | None = None,
+    return_sampled_years: bool = False,
+) -> (
+    dict[str, tuple[np.ndarray, np.ndarray]]
+    | tuple[dict[str, tuple[np.ndarray, np.ndarray]], np.ndarray]
+):
+    """
+    Generate fund returns with shared historical sampling across selected funds.
+
+    This preserves same-year cross-fund relationships within the funds' common
+    overlapping history window.
+    """
     if rng is None:
         rng = np.random.default_rng()
 
-    price_array, div_array = FUND_ARRAYS[fund]
-    n_historical = len(price_array)
+    common_years, aligned_funds = get_aligned_fund_arrays(funds)
+    sample_fund = next(iter(aligned_funds))
+    n_historical = len(aligned_funds[sample_fund][0])
+    indices = _generate_sample_indices(
+        n_simulations=n_simulations,
+        n_years=n_years,
+        n_historical=n_historical,
+        method=method,
+        block_size=block_size,
+        rng=rng,
+    )
 
-    if method == "bootstrap":
-        indices = rng.integers(0, n_historical, size=(n_simulations, n_years))
-        return price_array[indices], div_array[indices]
+    correlated_returns: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for fund, (price_array, div_array) in aligned_funds.items():
+        correlated_returns[fund] = (price_array[indices], div_array[indices])
 
-    elif method == "block_bootstrap":
-        price_growth = np.zeros((n_simulations, n_years))
-        div_returns = np.zeros((n_simulations, n_years))
-        n_blocks = (n_years + block_size - 1) // block_size
+    if return_sampled_years:
+        return correlated_returns, common_years[indices]
+    return correlated_returns
 
-        for sim in range(n_simulations):
-            year_idx = 0
-            for _ in range(n_blocks):
-                start = rng.integers(0, n_historical - block_size + 1)
-                end_idx = min(year_idx + block_size, n_years)
-                block_len = end_idx - year_idx
-                price_growth[sim, year_idx:end_idx] = price_array[
-                    start : start + block_len
-                ]
-                div_returns[sim, year_idx:end_idx] = div_array[
-                    start : start + block_len
-                ]
-                year_idx = end_idx
-        return price_growth, div_returns
 
-    raise ValueError(f"Unknown method: {method}")
+def generate_inflation_paths(
+    n_simulations: int,
+    n_years: int,
+    model: Literal["historical", "constant"] = "historical",
+    inflation_rate: float = 0.025,
+    method: Literal["bootstrap", "block_bootstrap", "historical", "normal"] = "bootstrap",
+    block_size: int = 5,
+    sampled_years: np.ndarray | None = None,
+    rng: np.random.Generator | None = None,
+) -> np.ndarray:
+    """Generate annual inflation paths for the simulation horizon."""
+    if rng is None:
+        rng = np.random.default_rng()
+
+    if model == "constant":
+        return np.full((n_simulations, n_years), inflation_rate, dtype=float)
+
+    if sampled_years is not None:
+        if sampled_years.shape != (n_simulations, n_years):
+            raise ValueError(
+                "sampled_years must have shape (n_simulations, n_years)"
+            )
+        return _inflate_years_to_rates(sampled_years)
+
+    if model != "historical":
+        raise ValueError(f"Unknown inflation model: {model}")
+
+    if method == "normal":
+        sample_method: Literal["bootstrap", "block_bootstrap", "historical"] = "bootstrap"
+    else:
+        sample_method = method
+
+    indices = _generate_sample_indices(
+        n_simulations=n_simulations,
+        n_years=n_years,
+        n_historical=len(INFLATION_ARRAY),
+        method=sample_method,
+        block_size=block_size,
+        rng=rng,
+    )
+    return INFLATION_ARRAY[indices]
 
 
 def get_historical_stats() -> dict:
@@ -652,18 +1022,21 @@ def get_historical_stats() -> dict:
         # BND stats
         "bnd_total_mean": float(np.mean(bnd_total)),
         "bnd_std": float(np.std(bnd_total)),
+        # Inflation stats
+        "inflation_mean": float(np.mean(INFLATION_ARRAY)),
+        "inflation_std": float(np.std(INFLATION_ARRAY)),
         # Legacy aliases (used by main.py allocation endpoint)
-        # Default to VT for stocks, BND for bonds since those are our defaults
-        "stock_mean": float(np.mean(vt_total)),
-        "stock_std": float(np.std(vt_total)),
-        "bond_mean": float(np.mean(bnd_total)),
-        "bond_std": float(np.std(bnd_total)),
+        # Default to the long-history S&P 500 / Treasury baseline.
+        "stock_mean": float(np.mean(sp500_total)),
+        "stock_std": float(np.std(sp500_total)),
+        "bond_mean": float(np.mean(treasury_total)),
+        "bond_std": float(np.std(treasury_total)),
     }
 
 
 def get_return_arrays(
-    stock_index: Literal["sp500", "vt"] = "vt",
-    bond_index: Literal["treasury", "bnd"] = "bnd",
+    stock_index: Literal["sp500", "vt"] = "sp500",
+    bond_index: Literal["treasury", "bnd"] = "treasury",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Get price and dividend arrays for the specified indexes.
@@ -671,31 +1044,9 @@ def get_return_arrays(
     Returns:
         (stock_price, stock_dividend, bond_price, bond_dividend)
     """
-    if stock_index == "vt":
-        stock_price = VT_PRICE_ARRAY
-        stock_div = VT_DIVIDEND_ARRAY
-    else:
-        stock_price = SP500_PRICE_ARRAY
-        stock_div = SP500_DIVIDEND_ARRAY
-
-    if bond_index == "bnd":
-        bond_price = BND_PRICE_ARRAY
-        bond_div = BND_DIVIDEND_ARRAY
-    else:
-        bond_price = TREASURY_PRICE_ARRAY
-        bond_div = TREASURY_YIELD_ARRAY
-
-    # Align to common length if mixing old/new indexes
-    if stock_index == "vt" or bond_index == "bnd":
-        # Use the shorter period (VT/BND era: 2008-2024)
-        min_len = min(len(stock_price), len(bond_price))
-        if len(stock_price) > min_len:
-            stock_price = stock_price[-min_len:]
-            stock_div = stock_div[-min_len:]
-        if len(bond_price) > min_len:
-            bond_price = bond_price[-min_len:]
-            bond_div = bond_div[-min_len:]
-
+    _, aligned = get_aligned_fund_arrays([stock_index, bond_index])
+    stock_price, stock_div = aligned[stock_index]
+    bond_price, bond_div = aligned[bond_index]
     return stock_price, stock_div, bond_price, bond_div
 
 
@@ -784,10 +1135,14 @@ def generate_blended_returns(
     stock_volatility: float = 0.16,
     expected_bond_return: float = 0.04,
     bond_volatility: float = 0.08,
-    stock_index: Literal["sp500", "vt"] = "vt",
-    bond_index: Literal["treasury", "bnd"] = "bnd",
+    stock_index: Literal["sp500", "vt"] = "sp500",
+    bond_index: Literal["treasury", "bnd"] = "treasury",
     rng: np.random.Generator | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+    return_sampled_years: bool = False,
+) -> (
+    tuple[np.ndarray, np.ndarray]
+    | tuple[np.ndarray, np.ndarray, np.ndarray | None]
+):
     """
     Generate blended stock/bond returns with separate price and dividend components.
 
@@ -803,70 +1158,31 @@ def generate_blended_returns(
         rng = np.random.default_rng()
 
     # Get the appropriate return arrays
-    stock_price, stock_div, bond_price, bond_div = get_return_arrays(
-        stock_index, bond_index
-    )
+    common_years, aligned = get_aligned_fund_arrays([stock_index, bond_index])
+    stock_price, stock_div = aligned[stock_index]
+    bond_price, bond_div = aligned[bond_index]
 
     n_historical = len(stock_price)
     bond_allocation = 1.0 - stock_allocation
+    sampled_years: np.ndarray | None = None
 
-    if method == "bootstrap":
-        indices = rng.integers(0, n_historical, size=(n_simulations, n_years))
-
-        # Blend price returns
+    if method in {"bootstrap", "block_bootstrap", "historical"}:
+        indices = _generate_sample_indices(
+            n_simulations=n_simulations,
+            n_years=n_years,
+            n_historical=n_historical,
+            method=method,
+            block_size=block_size,
+            rng=rng,
+        )
+        sampled_years = common_years[indices]
         blended_price = (
             stock_allocation * stock_price[indices]
             + bond_allocation * bond_price[indices]
         )
-
-        # Blend dividend yields
         blended_div = (
             stock_allocation * stock_div[indices] + bond_allocation * bond_div[indices]
         )
-
-        return blended_price, blended_div
-
-    elif method == "block_bootstrap":
-        n_blocks = (n_years + block_size - 1) // block_size
-        blended_price = np.zeros((n_simulations, n_years))
-        blended_div = np.zeros((n_simulations, n_years))
-
-        for sim in range(n_simulations):
-            year_idx = 0
-            for _ in range(n_blocks):
-                start = rng.integers(0, n_historical - block_size + 1)
-                end_idx = min(year_idx + block_size, n_years)
-                block_len = end_idx - year_idx
-
-                blended_price[sim, year_idx:end_idx] = (
-                    stock_allocation * stock_price[start : start + block_len]
-                    + bond_allocation * bond_price[start : start + block_len]
-                )
-                blended_div[sim, year_idx:end_idx] = (
-                    stock_allocation * stock_div[start : start + block_len]
-                    + bond_allocation * bond_div[start : start + block_len]
-                )
-                year_idx = end_idx
-
-        return blended_price, blended_div
-
-    elif method == "historical":
-        blended_price = np.zeros((n_simulations, n_years))
-        blended_div = np.zeros((n_simulations, n_years))
-        start_indices = rng.integers(0, n_historical, size=n_simulations)
-
-        for sim in range(n_simulations):
-            for year in range(n_years):
-                idx = (start_indices[sim] + year) % n_historical
-                blended_price[sim, year] = (
-                    stock_allocation * stock_price[idx]
-                    + bond_allocation * bond_price[idx]
-                )
-                blended_div[sim, year] = (
-                    stock_allocation * stock_div[idx] + bond_allocation * bond_div[idx]
-                )
-
-        return blended_price, blended_div
 
     elif method == "normal":
         avg_stock_div = float(np.mean(stock_div))
@@ -891,7 +1207,9 @@ def generate_blended_returns(
             stock_allocation * avg_stock_div + bond_allocation * avg_bond_div,
         )
 
-        return blended_price, blended_div
-
     else:
         raise ValueError(f"Unknown method: {method}")
+
+    if return_sampled_years:
+        return blended_price, blended_div, sampled_years
+    return blended_price, blended_div

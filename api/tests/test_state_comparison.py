@@ -3,6 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import main
 from eggnest.models import (
     SimulationInput,
     StateComparisonInput,
@@ -28,6 +29,48 @@ def base_params():
         filing_status="single",
         n_simulations=100,  # Small for testing
     )
+
+
+@pytest.fixture
+def stub_state_comparison_batch(monkeypatch):
+    """Stub simulator summaries for state-comparison contract tests."""
+    state_profiles = {
+        "CA": {"success_rate": 0.88, "median_final_value": 1_350_000, "taxes": 210_000},
+        "TX": {"success_rate": 0.9, "median_final_value": 1_420_000, "taxes": 160_000},
+        "FL": {"success_rate": 0.89, "median_final_value": 1_400_000, "taxes": 165_000},
+        "NV": {"success_rate": 0.89, "median_final_value": 1_395_000, "taxes": 167_000},
+    }
+
+    async def fake_batch(inputs):
+        summaries = []
+        for params in inputs:
+            profile = state_profiles.get(
+                params.state,
+                {
+                    "success_rate": 0.87,
+                    "median_final_value": 1_320_000,
+                    "taxes": 175_000,
+                },
+            )
+            total_withdrawn = params.annual_spending * (params.max_age - params.current_age)
+            summaries.append(
+                {
+                    "success_rate": profile["success_rate"],
+                    "median_final_value": profile["median_final_value"],
+                    "total_taxes_median": profile["taxes"],
+                    "total_withdrawn_median": total_withdrawn,
+                    "percentiles": {
+                        "p5": profile["median_final_value"] * 0.5,
+                        "p25": profile["median_final_value"] * 0.8,
+                        "p50": profile["median_final_value"],
+                        "p75": profile["median_final_value"] * 1.2,
+                        "p95": profile["median_final_value"] * 1.5,
+                    },
+                }
+            )
+        return summaries
+
+    monkeypatch.setattr(main, "_run_simulation_batch", fake_batch)
 
 
 class TestStateComparisonModels:
@@ -111,6 +154,7 @@ class TestStateComparisonModels:
 class TestStateComparisonEndpoint:
     """Test /compare-states API endpoint."""
 
+    @pytest.mark.montecarlo_smoke
     def test_compare_states_endpoint_returns_results(self, base_params):
         """Test that endpoint returns valid comparison results."""
         response = client.post(
@@ -126,7 +170,9 @@ class TestStateComparisonEndpoint:
         assert data["base_state"] == "CA"
         assert len(data["results"]) == 3  # CA + TX + FL
 
-    def test_compare_states_includes_base_state(self, base_params):
+    def test_compare_states_includes_base_state(
+        self, base_params, stub_state_comparison_batch
+    ):
         """Test that base state is included in results."""
         response = client.post(
             "/compare-states",
@@ -142,7 +188,9 @@ class TestStateComparisonEndpoint:
         assert "CA" in states
         assert "TX" in states
 
-    def test_compare_states_calculates_tax_savings(self, base_params):
+    def test_compare_states_calculates_tax_savings(
+        self, base_params, stub_state_comparison_batch
+    ):
         """Test that tax savings are calculated correctly."""
         response = client.post(
             "/compare-states",
@@ -162,7 +210,9 @@ class TestStateComparisonEndpoint:
         # (but we just check the calculation is present)
         assert "TX" in data["tax_savings_vs_base"]
 
-    def test_compare_states_no_duplicate_base(self, base_params):
+    def test_compare_states_no_duplicate_base(
+        self, base_params, stub_state_comparison_batch
+    ):
         """Test that base state isn't duplicated if included in compare_states."""
         response = client.post(
             "/compare-states",
@@ -177,7 +227,9 @@ class TestStateComparisonEndpoint:
         states = [r["state"] for r in data["results"]]
         assert states.count("CA") == 1  # Should only appear once
 
-    def test_compare_states_result_fields(self, base_params):
+    def test_compare_states_result_fields(
+        self, base_params, stub_state_comparison_batch
+    ):
         """Test that each state result has required fields."""
         response = client.post(
             "/compare-states",
@@ -206,7 +258,9 @@ class TestStateComparisonEndpoint:
 class TestStateComparisonTaxDifferences:
     """Test that state comparisons show meaningful tax differences."""
 
-    def test_no_income_tax_state_returns_valid_results(self, base_params):
+    def test_no_income_tax_state_returns_valid_results(
+        self, base_params, stub_state_comparison_batch
+    ):
         """Test that no-income-tax state comparison returns valid results."""
         # Run comparison with a high-income scenario where state taxes matter
         high_income_params = base_params.model_copy(
@@ -240,7 +294,9 @@ class TestStateComparisonTaxDifferences:
         assert ca_result["success_rate"] > 0
         assert tx_result["success_rate"] > 0
 
-    def test_tax_savings_calculation_correct(self, base_params):
+    def test_tax_savings_calculation_correct(
+        self, base_params, stub_state_comparison_batch
+    ):
         """Test that tax_savings_vs_base is calculated correctly."""
         response = client.post(
             "/compare-states",

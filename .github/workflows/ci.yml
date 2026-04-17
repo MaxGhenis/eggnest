@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test-api:
+  test-api-fast:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -32,8 +32,31 @@ jobs:
           uv run ruff check .
           uv run black --check .
 
-      - name: Run tests
-        run: uv run pytest tests/ -v --tb=short --ignore=tests/test_cli_auth.py --ignore=tests/test_cli_commands.py --ignore=tests/test_cli_sync.py
+      - name: Run fast API tests
+        run: uv run pytest tests/ -v --tb=short -m "not montecarlo_smoke" --ignore=tests/test_cli_auth.py --ignore=tests/test_cli_commands.py --ignore=tests/test_cli_sync.py
+
+  test-api-montecarlo-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv pip install -e ".[dev]" --system
+
+      - name: Run Monte Carlo smoke tests
+        run: uv run pytest tests/test_state_comparison.py tests/test_ss_timing_api.py tests/test_allocation_api.py -v --tb=short -m montecarlo_smoke
 
   test-app:
     runs-on: ubuntu-latest
@@ -58,3 +81,27 @@ jobs:
 
       - name: Build
         run: bun run build
+
+  test-app-e2e-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Build
+        run: bun run build
+
+      - name: Run browser smoke test
+        run: bun run test:e2e:smoke

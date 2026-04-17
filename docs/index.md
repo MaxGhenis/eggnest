@@ -49,7 +49,7 @@ COLORS = {
 
 ## Abstract
 
-Retirement planning requires balancing multiple uncertainties: market returns, longevity, inflation, and tax policy. Existing Monte Carlo simulators either ignore taxes entirely or use simplified effective tax rates that miss important interactions between account types, withdrawal strategies, and bracket inflation. We present EggNest, a retirement planning framework that integrates Monte Carlo simulation with PolicyEngine, an open-source tax-benefit microsimulation model. For a reference case—a {eval}`r.reference.description` with {eval}`r.reference.portfolio_description`—the taxable-first withdrawal strategy achieves {eval}`r.strategies.taxable_first.success_pct` success rate versus {eval}`r.strategies.traditional_first.success_pct` for traditional-first, despite higher lifetime taxes. The framework enforces required minimum distributions (RMDs), models calendar-year bracket inflation, and distinguishes tax treatment across traditional (ordinary income), Roth (tax-free), and taxable (capital gains) accounts. We find that withdrawal strategy choice can affect both success probability and total lifetime taxes by meaningful amounts, with the optimal strategy depending on individual circumstances.
+Retirement planning requires balancing multiple uncertainties: market returns, longevity, inflation, and tax policy. Existing Monte Carlo simulators either ignore taxes entirely or use simplified effective tax rates that miss important interactions between account types, withdrawal strategies, and bracket inflation. We present EggNest, a retirement planning framework that integrates Monte Carlo simulation with PolicyEngine, an open-source tax-benefit microsimulation model. For a reference case—a {eval}`r.reference.description` with {eval}`r.reference.portfolio_description`—the taxable-first withdrawal strategy achieves {eval}`r.strategies.taxable_first.success_pct` success rate versus {eval}`r.strategies.traditional_first.success_pct` for traditional-first, despite higher lifetime taxes. The framework enforces required minimum distributions (RMDs), models calendar-year bracket inflation, and distinguishes tax treatment across traditional (ordinary income), Roth (tax-free), and taxable (capital gains) accounts. We find that withdrawal strategy choice can affect both success probability and total lifetime taxes by meaningful amounts, with the highest-scoring strategy under the modeled objective depending on individual circumstances.
 
 ## Introduction
 
@@ -145,21 +145,18 @@ plt.show()
 
 ### Monte Carlo Simulation
 
-The simulator runs {eval}`r.n_simulations` independent paths, each representing a potential retirement outcome. For each simulation path and each year:
+The reference figures in this paper are generated from a checked-in artifact built with {eval}`r.n_simulations` seeded Monte Carlo paths (seed {eval}`r.random_seed`), while the live API defaults to 10,000 simulations per run. For each simulation path and each year:
 
-1. **Determine spending need**: Annual spending requirement, adjusted for any income sources (Social Security, pension, employment)
-2. **Calculate withdrawals**: Withdraw from accounts according to the selected strategy
-3. **Compute taxes**: Send income by type to PolicyEngine for precise tax calculation
-4. **Apply returns**: Apply stochastic returns to remaining portfolio
+1. **Determine inflation and spending need**: Build either a historical-CPI or fixed inflation path. If spending is modeled in real terms (the live default), inflate the annual spending target into nominal dollars for that year; otherwise keep it flat in nominal dollars.
+2. **Calculate withdrawals**: Withdraw from accounts according to the selected strategy, including any required minimum distributions (RMDs)
+3. **Gross up for taxes**: Send income by type to PolicyEngine, then iteratively solve for the portfolio cash needed after accounting for tax owed on withdrawals and other income
+4. **Apply income COLAs and returns**: Social Security can track the simulated inflation path, pensions and annuities can apply explicit COLAs, and stochastic nominal price returns are applied to the remaining invested portfolio while dividends are treated as distributed income
 5. **Check mortality**: Apply survival probability from SSA life tables
-6. **Record outcome**: Track whether portfolio depleted before death
+6. **Record outcome**: Track whether portfolio depleted before death; once the household dies, balances are frozen for the rest of the horizon. EggNest reports terminal wealth in both nominal dollars and today's dollars.
 
-Returns are modeled as log-normal with parameters calibrated to historical data {cite:p}`shiller2015,damodaran2024`:
+The default return engine is **historical bootstrap sampling** of annual nominal price returns and dividend yields from the selected stock and bond indexes {cite:p}`shiller2015,damodaran2024`. EggNest also supports block bootstrap, historical sequence replay, and a normal benchmark model for sensitivity analysis. The live API defaults to `bootstrap` with an S&P 500 / 10-Year Treasury baseline because those series provide the longest continuous history in the model.
 
-| Asset Class | Mean Return | Standard Deviation |
-|-------------|-------------|-------------------|
-| Stocks (S&P 500) | {eval}`r.stock_return_fmt` | 18% |
-| Bonds (Aggregate) | {eval}`r.bond_return_fmt` | 6% |
+The live API also defaults to `spending_mode="real"` and `inflation_model="historical"`. Historical inflation paths are sampled from annual CPI changes. When the market model also uses historical/bootstrap/block sampling, EggNest keeps inflation on the same sampled historical year or block so inflation shocks are not treated as independent of the market path.
 
 ### Holdings-Based Portfolio Model
 
@@ -168,7 +165,7 @@ Unlike traditional simulators that model a single portfolio balance, EggNest tra
 **Account Type**:
 - Traditional 401(k)/IRA: Pre-tax contributions, ordinary income on withdrawal
 - Roth 401(k)/IRA: Post-tax contributions, tax-free withdrawal
-- Taxable brokerage: Post-tax, capital gains on growth
+- Taxable brokerage: Post-tax, with optional cost basis used to separate sale proceeds from realized gains
 
 **Fund Type**:
 - VT (Total World Stock)
@@ -178,6 +175,10 @@ Unlike traditional simulators that model a single portfolio balance, EggNest tra
 
 Each fund has distinct expected return, dividend yield, and volatility characteristics.
 
+EggNest also maintains a **taxable cash reserve**. Excess RMD cash and any over-withdrawn amounts used to satisfy tax gross-up are carried there instead of disappearing from the portfolio, and later withdrawals from that cash sleeve are not treated as new capital gains.
+
+When holdings span multiple funds, EggNest aligns those funds to their shared overlapping history window and samples a common year or block across them. That preserves same-period cross-asset relationships instead of drawing each fund independently.
+
 ### Withdrawal Strategies
 
 The framework supports four withdrawal strategies:
@@ -186,7 +187,7 @@ The framework supports four withdrawal strategies:
 
 2. **Traditional First**: Withdraw from traditional accounts first, then taxable, then Roth. May reduce RMDs in later years.
 
-3. **Roth First**: Withdraw from Roth accounts first, then taxable, then traditional. Rarely optimal but useful for comparison.
+3. **Roth First**: Withdraw from Roth accounts first, then taxable, then traditional. Rarely the highest-scoring option under this model, but useful for comparison.
 
 4. **Pro Rata**: Withdraw proportionally from all account types based on current balances. Maintains consistent tax diversification.
 
@@ -227,12 +228,13 @@ PolicyEngine is an open-source microsimulation model that computes accurate fede
 1. Constructs a tax unit with age, filing status, and state
 2. Assigns income by type:
    - Traditional withdrawals → Ordinary income (employment_income)
-   - Taxable withdrawals → Long-term capital gains
+   - Realized gains from taxable sales → Long-term capital gains
+   - Taxable cash reserve withdrawals → Not reported again (already after-tax cash)
    - Roth withdrawals → Not reported (tax-free)
    - Social Security → Social Security income
    - Dividends → Dividend income
 3. Computes federal and state income tax
-4. Returns total tax liability
+4. Iterates until spending plus tax liability are covered by the combination of outside income and portfolio withdrawals
 
 Critically, we use the **calendar year** for each simulation year. If a simulation starts in 2025 and runs 30 years, year 20 uses 2045 tax brackets. PolicyEngine automatically inflates brackets for future years, so the same nominal income faces lower effective tax rates.
 
@@ -282,6 +284,7 @@ For the reference case at age 75 with ${eval}`f"{r.rmd_example.traditional_balan
 {eval}`r.rmd_example.calculation`
 
 RMDs are **mandatory**—they occur regardless of withdrawal strategy selection. If the RMD exceeds the needed withdrawal, the excess is taxed but not spent.
+In the simulator, that excess stays in the portfolio as taxable cash rather than being dropped from the balance sheet.
 
 ### Mortality Modeling
 
@@ -299,18 +302,22 @@ A simulation "succeeds" if the portfolio lasts until death in that path. This pr
 - Some people living to 100+ (long planning horizon needed)
 - Average life expectancy from age 65: {eval}`r.mortality.male_le_fmt` (male), {eval}`r.mortality.female_le_fmt` (female)
 
+After the household dies, EggNest freezes the portfolio at its death-date value rather than continuing to spend or compound it through the rest of the projection window.
+
 ## Results
+
+The tables and charts below are backed by `docs/eggnest_results.json`, not live recomputation during docs import. Regenerate that artifact explicitly from the API environment when the model changes.
 
 ### Reference Case Analysis
 
-For the reference case ({eval}`r.reference.description`, {eval}`r.reference.portfolio_description`, ${eval}`f"{r.reference.annual_spending:,}"` annual spending):
+For the reference case ({eval}`r.reference.description`, {eval}`r.reference.portfolio_description`, ${eval}`f"{r.reference.annual_spending:,}"` annual spending in today's dollars):
 
-| Strategy | Success Rate | Median Final | Lifetime Taxes |
-|----------|--------------|--------------|----------------|
-| Taxable First | {eval}`r.strategies.taxable_first.success_pct` | {eval}`r.strategies.taxable_first.median_final_fmt` | {eval}`r.strategies.taxable_first.taxes_fmt` |
-| Traditional First | {eval}`r.strategies.traditional_first.success_pct` | {eval}`r.strategies.traditional_first.median_final_fmt` | {eval}`r.strategies.traditional_first.taxes_fmt` |
-| Roth First | {eval}`r.strategies.roth_first.success_pct` | {eval}`r.strategies.roth_first.median_final_fmt` | {eval}`r.strategies.roth_first.taxes_fmt` |
-| Pro Rata | {eval}`r.strategies.pro_rata.success_pct` | {eval}`r.strategies.pro_rata.median_final_fmt` | {eval}`r.strategies.pro_rata.taxes_fmt` |
+| Strategy | Success Rate | Median Final (Nominal) | Median Final (Real) | Lifetime Taxes |
+|----------|--------------|------------------------|---------------------|----------------|
+| Taxable First | {eval}`r.strategies.taxable_first.success_pct` | {eval}`r.strategies.taxable_first.median_final_fmt` | {eval}`r.strategies.taxable_first.median_final_real_fmt` | {eval}`r.strategies.taxable_first.taxes_fmt` |
+| Traditional First | {eval}`r.strategies.traditional_first.success_pct` | {eval}`r.strategies.traditional_first.median_final_fmt` | {eval}`r.strategies.traditional_first.median_final_real_fmt` | {eval}`r.strategies.traditional_first.taxes_fmt` |
+| Roth First | {eval}`r.strategies.roth_first.success_pct` | {eval}`r.strategies.roth_first.median_final_fmt` | {eval}`r.strategies.roth_first.median_final_real_fmt` | {eval}`r.strategies.roth_first.taxes_fmt` |
+| Pro Rata | {eval}`r.strategies.pro_rata.success_pct` | {eval}`r.strategies.pro_rata.median_final_fmt` | {eval}`r.strategies.pro_rata.median_final_real_fmt` | {eval}`r.strategies.pro_rata.taxes_fmt` |
 
 Several findings emerge:
 
@@ -385,9 +392,11 @@ This aligns with the "4% rule" literature {cite:p}`bengen1994,finke2013`, though
 
 3. **Social Security uncertainty**: Future Social Security benefits may be reduced; the model assumes full scheduled benefits.
 
-4. **Inflation modeling**: Returns are modeled in nominal terms; we don't explicitly model inflation separate from bracket inflation.
+4. **Inflation modeling**: General inflation is modeled from CPI history or a fixed rate, but it is still a single aggregate CPI process rather than a household-specific spending basket. Pension and annuity COLAs are user-specified nominal rates rather than fully product-specific contract logic.
 
-5. **PolicyEngine limitations**: While comprehensive, PolicyEngine may not capture every tax provision perfectly.
+5. **Tax basis defaults**: EggNest now tracks proportional cost basis for taxable holdings when basis is supplied. If cost basis is omitted, the taxable holding defaults to zero basis and is treated as fully appreciated.
+
+6. **PolicyEngine limitations**: While comprehensive, PolicyEngine may not capture every tax provision perfectly.
 
 ### Future Work
 

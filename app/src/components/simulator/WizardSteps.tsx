@@ -54,10 +54,12 @@ export function useWizardSteps({
   return useMemo((): WizardStep[] => [
     {
       id: "about", title: "About you", subtitle: "Let's start with some basic information",
+      fieldNames: ["current_age", "max_age", "gender", "state", "filing_status"],
       content: <AboutYouStep params={params} updateParam={updateParam} />,
     },
     {
       id: "money", title: "Your money", subtitle: "How much have you saved, and how much do you need?",
+      fieldNames: ["initial_capital", "stock_allocation", "home_value", "annual_spending", "holdings", "spending_mode", "inflation_model", "inflation_rate"],
       content: (
         <MoneyStep params={params} updateParam={updateParam} portfolioMode={portfolioMode}
           setPortfolioMode={setPortfolioMode} holdings={holdings} setHoldings={setHoldings}
@@ -66,10 +68,12 @@ export function useWizardSteps({
     },
     {
       id: "income", title: "Income sources", subtitle: "What income sources do you have?",
+      fieldNames: ["social_security_monthly", "social_security_start_age", "social_security_inflation_adjusted", "pension_annual", "pension_cola_rate", "employment_income", "retirement_age"],
       content: <IncomeStep params={params} updateParam={updateParam} isReceivingSS={isReceivingSS} setIsReceivingSS={setIsReceivingSS} />,
     },
     {
       id: "spouse", title: "Spouse", subtitle: "Retiring with a partner? Include their details.", optional: true,
+      fieldNames: ["spouse.age", "spouse.social_security_monthly", "spouse.social_security_start_age", "spouse.pension_annual", "spouse.employment_income", "spouse.retirement_age"],
       content: (
         <SpouseStep params={params} updateParam={updateParam} spouse={spouse} setSpouse={setSpouse}
           isSpouseReceivingSS={isSpouseReceivingSS} setIsSpouseReceivingSS={setIsSpouseReceivingSS} />
@@ -77,6 +81,7 @@ export function useWizardSteps({
     },
     {
       id: "annuity", title: "Annuity", subtitle: "Compare your portfolio to a guaranteed annuity", optional: true,
+      fieldNames: ["annuity.monthly_payment", "annuity.guarantee_years", "annuity_cola_rate"],
       content: <AnnuityStep params={params} updateParam={updateParam} annuity={annuity} setAnnuity={setAnnuity} />,
     },
     {
@@ -245,7 +250,7 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
       </div>
 
       <div className={fieldCls}>
-        <label className={labelCls}>Annual spending need</label>
+        <label className={labelCls}>Annual spending target</label>
         <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.annual_spending}
@@ -253,8 +258,82 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
             min={0} step={1000}
             className="w-full border-none bg-transparent px-2 py-2.5 text-sm focus:outline-none" />
         </div>
-        <div className={hintCls}>That's ${(params.annual_spending / 12).toLocaleString()} per month</div>
+        <div className={hintCls}>
+          {params.spending_mode === "real"
+            ? `That is about $${(params.annual_spending / 12).toLocaleString()} per month in today's dollars`
+            : `That is about $${(params.annual_spending / 12).toLocaleString()} per month in flat nominal dollars`}
+        </div>
       </div>
+
+      <div className={fieldCls}>
+        <label className={labelCls}>Spending treatment</label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            className={`rounded-[var(--radius-md)] border p-4 text-left transition-all ${
+              params.spending_mode === "real"
+                ? "border-[var(--color-primary)] bg-[var(--color-primary-50)] shadow-[var(--shadow-sm)]"
+                : "border-[var(--color-border-light)] bg-white hover:border-[var(--color-primary-200)]"
+            }`}
+            onClick={() => updateParam("spending_mode", "real")}
+          >
+            <div className="text-sm font-semibold text-[var(--color-text)]">Keep purchasing power constant</div>
+            <div className="mt-1 text-xs text-[var(--color-text-muted)]">
+              EggNest inflates spending each year so the target stays in today&apos;s dollars.
+            </div>
+          </button>
+          <button
+            type="button"
+            className={`rounded-[var(--radius-md)] border p-4 text-left transition-all ${
+              params.spending_mode === "nominal"
+                ? "border-[var(--color-primary)] bg-[var(--color-primary-50)] shadow-[var(--shadow-sm)]"
+                : "border-[var(--color-border-light)] bg-white hover:border-[var(--color-primary-200)]"
+            }`}
+            onClick={() => updateParam("spending_mode", "nominal")}
+          >
+            <div className="text-sm font-semibold text-[var(--color-text)]">Keep dollars flat</div>
+            <div className="mt-1 text-xs text-[var(--color-text-muted)]">
+              Spending stays at the same nominal dollar amount every year.
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div className={fieldCls}>
+        <label className={labelCls}>Inflation assumption</label>
+        <select
+          value={params.inflation_model}
+          onChange={(e) => updateParam("inflation_model", e.target.value as SimulationInput["inflation_model"])}
+          className={selectCls}
+        >
+          <option value="historical">Historical CPI sampling</option>
+          <option value="constant">Fixed annual inflation rate</option>
+        </select>
+        <div className={hintCls}>
+          {params.inflation_model === "historical"
+            ? "Historical paths sample annual CPI. When market returns also use historical sampling, EggNest keeps inflation on the same sampled years."
+            : "Use a fixed annual inflation rate for every future year."}
+        </div>
+      </div>
+
+      {params.inflation_model === "constant" && (
+        <div className={fieldCls}>
+          <label className={labelCls}>Fixed inflation rate</label>
+          <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+            <input
+              type="number"
+              value={(params.inflation_rate * 100).toFixed(1)}
+              onChange={(e) => updateParam("inflation_rate", Number(e.target.value) / 100)}
+              min={0}
+              max={10}
+              step={0.1}
+              className="w-full border-none bg-transparent px-3 py-2.5 text-sm focus:outline-none"
+            />
+            <span className="pr-3 text-sm text-[var(--color-text-light)]">%</span>
+          </div>
+          <div className={hintCls}>Used for real spending and today&apos;s-dollar reporting</div>
+        </div>
+      )}
 
       {totalPortfolio > 0 && params.annual_spending > 0 && (
         <div className={`rounded-[var(--radius-md)] px-4 py-3 text-sm ${rateContext.warning ? "border border-[var(--color-warning)] bg-[var(--color-warning-light)]" : "border border-[var(--color-success)] bg-[var(--color-success-light)]"}`}>
@@ -314,6 +393,22 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
           <div className={hintCls}>Claiming earlier reduces benefits; waiting increases them</div>
         </div>
       )}
+      {params.social_security_monthly > 0 && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] p-4 transition-colors hover:bg-[var(--color-gray-50)]">
+          <input
+            type="checkbox"
+            checked={params.social_security_inflation_adjusted}
+            onChange={(e) => updateParam("social_security_inflation_adjusted", e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
+          />
+          <div>
+            <div className="text-sm font-semibold text-[var(--color-text)]">Apply Social Security COLA</div>
+            <div className="text-xs text-[var(--color-text-muted)]">
+              Future Social Security benefits rise with the simulated inflation path.
+            </div>
+          </div>
+        </label>
+      )}
       <div className={fieldCls}>
         <label className={labelCls}>Annual pension</label>
         <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
@@ -323,8 +418,26 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
             min={0} step={1000}
             className="w-full border-none bg-transparent px-2 py-2.5 text-sm focus:outline-none" />
         </div>
-        <div className={hintCls}>Enter 0 if you don't have a pension</div>
+        <div className={hintCls}>Enter 0 if you don&apos;t have a pension</div>
       </div>
+      {params.pension_annual > 0 && (
+        <div className={fieldCls}>
+          <label className={labelCls}>Pension COLA</label>
+          <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+            <input
+              type="number"
+              value={(params.pension_cola_rate * 100).toFixed(1)}
+              onChange={(e) => updateParam("pension_cola_rate", Number(e.target.value) / 100)}
+              min={0}
+              max={10}
+              step={0.1}
+              className="w-full border-none bg-transparent px-3 py-2.5 text-sm focus:outline-none"
+            />
+            <span className="pr-3 text-sm text-[var(--color-text-light)]">%</span>
+          </div>
+          <div className={hintCls}>Annual nominal increase applied to pension income</div>
+        </div>
+      )}
       <div className={fieldCls}>
         <label className={labelCls}>Current employment income</label>
         <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
@@ -341,7 +454,7 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
           <label className={labelCls}>Retirement age</label>
           <input type="number" value={params.retirement_age}
             onChange={(e) => updateParam("retirement_age", Number(e.target.value))}
-            min={params.current_age} max={80} className={inputCls} />
+            min={params.current_age + 1} max={80} className={inputCls} />
           <div className={hintCls}>When employment income will stop</div>
         </div>
       )}
@@ -428,6 +541,26 @@ function SpouseStep({ params, updateParam, spouse, setSpouse, isSpouseReceivingS
                 className="w-full border-none bg-transparent px-2 py-2.5 text-sm focus:outline-none" />
             </div>
           </div>
+          <div className={fieldCls}>
+            <label className={labelCls}>Spouse employment income</label>
+            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+              <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
+              <input type="number" value={spouse.employment_income}
+                onChange={(e) => setSpouse({ ...spouse, employment_income: Number(e.target.value) })}
+                min={0} step={5000}
+                className="w-full border-none bg-transparent px-2 py-2.5 text-sm focus:outline-none" />
+            </div>
+            <div className={hintCls}>If still working, enter your spouse&apos;s annual salary</div>
+          </div>
+          {spouse.employment_income > 0 && (
+            <div className={fieldCls}>
+              <label className={labelCls}>Spouse retirement age</label>
+              <input type="number" value={spouse.retirement_age}
+                onChange={(e) => setSpouse({ ...spouse, retirement_age: Number(e.target.value) })}
+                min={spouse.age + 1} max={80} className={inputCls} />
+              <div className={hintCls}>When your spouse&apos;s employment income will stop</div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -448,7 +581,7 @@ function AnnuityStep({ params, updateParam, annuity, setAnnuity }: {
           className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
         <div>
           <div className="text-sm font-semibold text-[var(--color-text)]">Compare to annuity</div>
-          <div className="text-xs text-[var(--color-text-muted)]">See if buying an annuity might be better than investing</div>
+          <div className="text-xs text-[var(--color-text-muted)]">Compare a guaranteed annuity payout with the portfolio model</div>
         </div>
       </label>
 
@@ -483,6 +616,22 @@ function AnnuityStep({ params, updateParam, annuity, setAnnuity }: {
                 min={1} max={30} className={inputCls} />
             </div>
           )}
+          <div className={fieldCls}>
+            <label className={labelCls}>Annuity COLA</label>
+            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+              <input
+                type="number"
+                value={(params.annuity_cola_rate * 100).toFixed(1)}
+                onChange={(e) => updateParam("annuity_cola_rate", Number(e.target.value) / 100)}
+                min={0}
+                max={10}
+                step={0.1}
+                className="w-full border-none bg-transparent px-3 py-2.5 text-sm focus:outline-none"
+              />
+              <span className="pr-3 text-sm text-[var(--color-text-light)]">%</span>
+            </div>
+            <div className={hintCls}>Annual nominal increase applied to the annuity payment</div>
+          </div>
         </div>
       )}
     </div>
@@ -504,6 +653,16 @@ function ReviewStep({ params, spouse, annuity, portfolioMode, holdings, error }:
 }) {
   return (
     <div className="space-y-5">
+      <div className="rounded-[var(--radius-md)] border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] p-4">
+        <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-primary)]">
+          What this run will answer
+        </div>
+        <ul className="mt-3 space-y-2 text-sm text-[var(--color-text)]">
+          <li>Probability of funding the plan through age {params.max_age}</li>
+          <li>10-year depletion risk from today</li>
+          <li>Median ending portfolio value in today&apos;s dollars at age {params.max_age}</li>
+        </ul>
+      </div>
       <div className="space-y-4 divide-y divide-[var(--color-border-light)]">
         <div className="space-y-1">
           <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)]">About you</div>
@@ -523,21 +682,57 @@ function ReviewStep({ params, spouse, annuity, portfolioMode, holdings, error }:
           ) : (
             <ReviewRow label="Portfolio" value={formatCurrency(params.initial_capital ?? 0)} />
           )}
-          <ReviewRow label="Annual spending" value={formatCurrency(params.annual_spending)} />
-          <ReviewRow label="Social Security" value={`$${params.social_security_monthly.toLocaleString()}/mo @ age ${params.social_security_start_age}`} />
-          {params.pension_annual > 0 && <ReviewRow label="Pension" value={`${formatCurrency(params.pension_annual)}/yr`} />}
+          <ReviewRow
+            label="Annual spending"
+            value={
+              params.spending_mode === "real"
+                ? `${formatCurrency(params.annual_spending)} in today's dollars`
+                : `${formatCurrency(params.annual_spending)} flat nominal`
+            }
+          />
+          <ReviewRow
+            label="Inflation"
+            value={
+              params.inflation_model === "historical"
+                ? "Historical CPI sampling"
+                : `${(params.inflation_rate * 100).toFixed(1)}% fixed`
+            }
+          />
+          <ReviewRow
+            label="Social Security"
+            value={`$${params.social_security_monthly.toLocaleString()}/mo @ age ${params.social_security_start_age}${params.social_security_inflation_adjusted ? " with COLA" : ""}`}
+          />
+          {params.pension_annual > 0 && (
+            <ReviewRow
+              label="Pension"
+              value={`${formatCurrency(params.pension_annual)}/yr${params.pension_cola_rate > 0 ? `, ${(params.pension_cola_rate * 100).toFixed(1)}% COLA` : ""}`}
+            />
+          )}
         </div>
         {params.has_spouse && (
           <div className="space-y-1 pt-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Spouse</div>
             <ReviewRow label="Age" value={String(spouse.age)} />
             <ReviewRow label="Social Security" value={`$${spouse.social_security_monthly.toLocaleString()}/mo`} />
+            {spouse.pension_annual > 0 && <ReviewRow label="Pension" value={`${formatCurrency(spouse.pension_annual)}/yr`} />}
+            {spouse.employment_income > 0 && (
+              <ReviewRow
+                label="Employment"
+                value={`${formatCurrency(spouse.employment_income)}/yr until age ${spouse.retirement_age}`}
+              />
+            )}
           </div>
         )}
         {params.has_annuity && (
           <div className="space-y-1 pt-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Annuity comparison</div>
             <ReviewRow label="Monthly payment" value={`$${annuity.monthly_payment.toLocaleString()}`} />
+            {params.annuity_cola_rate > 0 && (
+              <ReviewRow
+                label="Annuity COLA"
+                value={`${(params.annuity_cola_rate * 100).toFixed(1)}%`}
+              />
+            )}
           </div>
         )}
       </div>

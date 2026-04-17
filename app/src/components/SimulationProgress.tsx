@@ -7,6 +7,7 @@ interface SimulationProgressProps {
 
 export function SimulationProgress({ currentYear, totalYears }: SimulationProgressProps) {
   const percentage = totalYears > 0 ? Math.round((currentYear / totalYears) * 100) : 0;
+  const hasYearProgress = currentYear > 0;
 
   return (
     <div className="mx-auto max-w-md space-y-4 py-4">
@@ -15,7 +16,12 @@ export function SimulationProgress({ currentYear, totalYears }: SimulationProgre
           Running simulation
         </div>
         <div className="text-sm text-[var(--color-text-muted)]">
-          Calculating taxes with PolicyEngine...
+          {hasYearProgress
+            ? "Calculating annual tax results with PolicyEngine..."
+            : "Preparing the simulation and tax engine..."}
+        </div>
+        <div className="mt-1 text-xs text-[var(--color-text-light)]">
+          Longer retirement horizons can take around a minute.
         </div>
       </div>
       <div className="space-y-2">

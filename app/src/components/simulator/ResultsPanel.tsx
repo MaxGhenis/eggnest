@@ -1,23 +1,31 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import type { SimulationInput, SimulationResult } from "../../lib/api";
 import { colors, chartColors } from "../../lib/design-tokens";
 import {
   formatCurrency,
   formatPercent,
-  getSuccessRateInterpretation,
+  buildFullParams,
 } from "../../lib/simulatorUtils";
 import { useSimulationContext } from "../../contexts/SimulationContext";
 import { useComparisonContext } from "../../contexts/ComparisonContext";
+import { usePortfolioContext } from "../../contexts/PortfolioContext";
 import { useScenarioContext } from "../../contexts/ScenarioContext";
 import {
   AnnuityComparison,
   StateComparison,
   SSTimingComparison,
   AllocationComparison,
+  RothOptimizationComparison,
+  WithdrawalStrategyComparison,
 } from "./ComparisonPanel";
+import { HistoricalBacktestPanel } from "./HistoricalBacktestPanel";
+import {
+  buildRothReportHref,
+  buildRothReportRequestPayload,
+} from "../../lib/rothReportLink";
 
 // Dynamic import Plotly to avoid SSR issues
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
@@ -30,20 +38,60 @@ interface ResultsPanelProps {
 const sectionCls = "section-card";
 
 export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
-  const { params, annuity, simulation } = useSimulationContext();
+  const { params, spouse, annuity, simulation } = useSimulationContext();
   const comparisons = useComparisonContext();
+  const portfolio = usePortfolioContext();
   const scenarios = useScenarioContext();
+  const [isDeeperAnalysisOpen, setIsDeeperAnalysisOpen] = useState(false);
 
   const result = simulation.result!;
   const { annuityResult, selectedYearIndex, setSelectedYearIndex } = simulation;
 
-  const interpretation = useMemo(() => getSuccessRateInterpretation(result.success_rate), [result.success_rate]);
-  const successColor = useMemo(() => {
-    if (result.success_rate >= 0.9) return "#10b981";
-    if (result.success_rate >= 0.75) return "#f59e0b";
-    return "#ef4444";
-  }, [result.success_rate]);
+  const hasTraditionalAccounts = useMemo(
+    () =>
+      portfolio.holdings.some(
+        (holding) =>
+          holding.account_type === "traditional_401k" ||
+          holding.account_type === "traditional_ira"
+      ),
+    [portfolio.holdings]
+  );
+  const fullParams = useMemo(
+    () =>
+      buildFullParams(
+        params,
+        params.has_spouse ? spouse : undefined,
+        annuity,
+        portfolio.portfolioMode,
+        portfolio.holdings,
+        portfolio.withdrawalStrategy,
+      ),
+    [
+      annuity,
+      params,
+      portfolio.holdings,
+      portfolio.portfolioMode,
+      portfolio.withdrawalStrategy,
+      spouse,
+    ],
+  );
+  const rothReportLink = useMemo(() => {
+    if (!comparisons.rothOptimizationResult || typeof window === "undefined") {
+      return null;
+    }
+    return buildRothReportHref(
+      buildRothReportRequestPayload(fullParams, comparisons.rothOptimizationResult),
+      window.location.origin,
+    );
+  }, [comparisons.rothOptimizationResult, fullParams]);
   const ages = useMemo(() => result.percentile_paths.p50.map((_, i) => params.current_age + i), [result.percentile_paths.p50, params.current_age]);
+  const portfolioValue = useMemo(
+    () =>
+      portfolio.portfolioMode === "detailed" && portfolio.holdings.length > 0
+        ? portfolio.holdings.reduce((sum, holding) => sum + holding.balance, 0)
+        : params.initial_capital ?? 0,
+    [params.initial_capital, portfolio.holdings, portfolio.portfolioMode],
+  );
 
   return (
     <div className="space-y-6">
@@ -62,41 +110,14 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
         </button>
       </div>
 
-      {/* Success banner */}
-      <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] shadow-[var(--shadow-sm)]">
-        <div className="h-1.5" style={{ background: `linear-gradient(90deg, ${interpretation.color}, ${interpretation.color}88)` }} />
-        <div className="p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-lg font-bold" style={{ color: interpretation.color }}>{interpretation.label}</span>
-            <span className="rounded-full px-3 py-1 text-sm font-bold" style={{ color: interpretation.color, background: `${interpretation.color}12` }}>{formatPercent(result.success_rate)}</span>
-          </div>
-          <p className="mt-1.5 text-sm text-[var(--color-text-muted)]">{interpretation.description}</p>
-        </div>
-      </div>
-
-      {/* Metrics grid */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <div className="metric-card metric-card-primary" style={{ borderColor: successColor }}>
-          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Success rate</div>
-          <div className="mt-1.5 text-2xl font-bold tabular-nums" style={{ color: successColor }}>{formatPercent(result.success_rate)}</div>
-          <div className="mt-1 text-xs text-[var(--color-text-muted)]">Probability of not running out</div>
-        </div>
-        <div className="metric-card">
-          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Withdrawal rate</div>
-          <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{result.initial_withdrawal_rate.toFixed(1)}%</div>
-          <div className="mt-1 text-xs text-[var(--color-text-muted)]">From portfolio in year 1</div>
-        </div>
-        <div className="metric-card">
-          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Median final</div>
-          <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{formatCurrency(result.median_final_value)}</div>
-          <div className="mt-1 text-xs text-[var(--color-text-muted)]">50th pctl at age {params.max_age}</div>
-        </div>
-        <div className="metric-card">
-          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">10-yr depletion risk</div>
-          <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{formatPercent(result.prob_10_year_failure)}</div>
-          <div className="mt-1 text-xs text-[var(--color-text-muted)]">Depletion within 10 years</div>
-        </div>
-      </div>
+      <HeroAnswer
+        successRate={result.success_rate}
+        tenYearRisk={result.prob_10_year_failure}
+        medianFinalReal={result.median_final_value_real}
+        initialWithdrawalRate={result.initial_withdrawal_rate}
+        params={params}
+        portfolioValue={portfolioValue}
+      />
 
       {/* Portfolio chart */}
       <PortfolioChart result={result} ages={ages} selectedYearIndex={selectedYearIndex} setSelectedYearIndex={setSelectedYearIndex} />
@@ -109,36 +130,80 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
           onNext={() => setSelectedYearIndex(Math.min(result.year_breakdown.length - 1, selectedYearIndex + 1))} />
       )}
 
-      <OutcomeDistribution result={result} />
-      <TaxSummary result={result} state={params.state} />
-
-      {result.year_breakdown.length > 0 && <YearBreakdownTable result={result} />}
-
-      {annuityResult && <AnnuityComparison annuityResult={annuityResult} guaranteeYears={annuity.guarantee_years} />}
-
-      <StateComparison params={params} stateComparisonResult={comparisons.stateComparisonResult}
-        isComparingStates={comparisons.isComparingStates} selectedCompareStates={comparisons.selectedCompareStates}
-        onCompareStates={comparisons.handleCompareStates} onToggleCompareState={comparisons.toggleCompareState}
-        onResetComparison={() => { comparisons.setStateComparisonResult(null); comparisons.setSelectedCompareStates([]); }} />
-
-      <SSTimingComparison ssTimingResult={comparisons.ssTimingResult} isComparingSSTiming={comparisons.isComparingSSTiming}
-        birthYear={comparisons.birthYear} setBirthYear={comparisons.setBirthYear} piaMonthly={comparisons.piaMonthly} setPiaMonthly={comparisons.setPiaMonthly}
-        onCompare={comparisons.handleCompareSSTimings} onReset={() => comparisons.setSSTimingResult(null)} />
-
-      <AllocationComparison allocationResult={comparisons.allocationResult} isComparingAllocations={comparisons.isComparingAllocations}
-        onCompare={comparisons.handleCompareAllocations} onReset={() => comparisons.setAllocationResult(null)} />
-
       {result.median_depletion_age && (
         <div className="flex gap-3 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">
           <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-warning)] text-xs font-bold text-white">!</span>
           <div>
-            <strong>Depletion risk:</strong> In scenarios where the portfolio is depleted, the median depletion occurs at age {result.median_depletion_age}. Consider reducing spending or increasing savings.
+            <strong>Depletion risk:</strong> In scenarios where the portfolio
+            is depleted, the median depletion occurs at age{" "}
+            {result.median_depletion_age}. If you want to pressure-test this
+            case, try lower spending or higher savings assumptions in another
+            scenario.
           </div>
         </div>
       )}
 
       <WhatIfScenarios params={params} onWhatIf={onWhatIf} />
-      <NextStepsCTA hasAnnuity={params.has_annuity} />
+
+      <CollapsibleSection
+        title="Deeper analysis"
+        description="Backtests, strategy comparisons, audit tables, and third-party resources."
+        isOpen={isDeeperAnalysisOpen}
+        onToggle={() => setIsDeeperAnalysisOpen((current) => !current)}
+      >
+        <HistoricalBacktestPanel
+          monteCarloResult={result}
+          historicalBacktestResult={simulation.historicalBacktestResult}
+          isLoading={simulation.isHistoricalBacktestLoading}
+          error={simulation.historicalBacktestError}
+          includeMortality={params.include_mortality}
+        />
+
+        {portfolio.portfolioMode === "detailed" && portfolio.holdings.length > 0 && (
+          <WithdrawalStrategyComparison
+            strategyComparisonResult={comparisons.strategyComparisonResult}
+            isComparingStrategies={comparisons.isComparingStrategies}
+            currentStrategy={portfolio.withdrawalStrategy}
+            onCompare={comparisons.handleCompareStrategies}
+            onReset={() => comparisons.setStrategyComparisonResult(null)}
+          />
+        )}
+
+        {portfolio.portfolioMode === "detailed" && portfolio.holdings.length > 0 && hasTraditionalAccounts && (
+          <RothOptimizationComparison
+            rothOptimizationResult={comparisons.rothOptimizationResult}
+            isOptimizingRoth={comparisons.isOptimizingRoth}
+            onOptimize={comparisons.handleOptimizeRoth}
+            onReset={() => comparisons.setRothOptimizationResult(null)}
+            reportLink={rothReportLink}
+          />
+        )}
+
+        {annuityResult && (
+          <AnnuityComparison
+            annuityResult={annuityResult}
+            guaranteeYears={annuity.guarantee_years}
+          />
+        )}
+
+        <StateComparison params={params} stateComparisonResult={comparisons.stateComparisonResult}
+          isComparingStates={comparisons.isComparingStates} selectedCompareStates={comparisons.selectedCompareStates}
+          onCompareStates={comparisons.handleCompareStates} onToggleCompareState={comparisons.toggleCompareState}
+          onResetComparison={() => { comparisons.setStateComparisonResult(null); comparisons.setSelectedCompareStates([]); }} />
+
+        <SSTimingComparison ssTimingResult={comparisons.ssTimingResult} isComparingSSTiming={comparisons.isComparingSSTiming}
+          birthYear={comparisons.birthYear} setBirthYear={comparisons.setBirthYear} piaMonthly={comparisons.piaMonthly} setPiaMonthly={comparisons.setPiaMonthly}
+          onCompare={comparisons.handleCompareSSTimings} onReset={() => comparisons.setSSTimingResult(null)} />
+
+        <AllocationComparison allocationResult={comparisons.allocationResult} isComparingAllocations={comparisons.isComparingAllocations}
+          onCompare={comparisons.handleCompareAllocations} onReset={() => comparisons.setAllocationResult(null)} />
+
+        <OutcomeDistribution result={result} />
+        <TaxSummary result={result} state={params.state} />
+        {result.year_breakdown.length > 0 && <YearBreakdownTable result={result} />}
+
+        <NextStepsCTA hasAnnuity={params.has_annuity} />
+      </CollapsibleSection>
     </div>
   );
 }
@@ -146,6 +211,91 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
 /* ============================================ */
 /* Sub-components                               */
 /* ============================================ */
+
+function HeroAnswer({
+  successRate,
+  tenYearRisk,
+  medianFinalReal,
+  initialWithdrawalRate,
+  params,
+  portfolioValue,
+}: {
+  successRate: number;
+  tenYearRisk: number;
+  medianFinalReal: number;
+  initialWithdrawalRate: number;
+  params: SimulationInput;
+  portfolioValue: number;
+}) {
+  const spendingLine =
+    params.spending_mode === "real"
+      ? `${formatCurrency(params.annual_spending)}/yr in today's dollars`
+      : `${formatCurrency(params.annual_spending)}/yr flat nominal`;
+  const inflationLine =
+    params.inflation_model === "historical"
+      ? "historical CPI sampling"
+      : `fixed ${(params.inflation_rate * 100).toFixed(1)}% inflation`;
+
+  return (
+    <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-white p-6 shadow-[var(--shadow-sm)] md:p-8">
+      <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">
+        Outcome
+      </div>
+      <div className="mt-3 grid gap-6 md:grid-cols-[auto_1fr] md:items-center">
+        <div>
+          <div className="bg-gradient-golden bg-clip-text text-5xl font-bold tabular-nums text-transparent md:text-6xl">
+            {formatPercent(successRate)}
+          </div>
+          <div className="mt-1 max-w-xs text-sm leading-snug text-[var(--color-text-muted)]">
+            of simulated paths last through age {params.max_age}
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3 sm:border-l sm:border-[var(--color-border-light)] sm:pl-6">
+          <HeroMetric
+            label="Median ending (real)"
+            value={formatCurrency(medianFinalReal)}
+            detail={`Today's $ at age ${params.max_age}`}
+          />
+          <HeroMetric
+            label="10-year depletion risk"
+            value={formatPercent(tenYearRisk)}
+            detail="Running out within a decade"
+          />
+          <HeroMetric
+            label="Year-1 withdrawal rate"
+            value={`${initialWithdrawalRate.toFixed(1)}%`}
+            detail="Off the starting portfolio"
+          />
+        </div>
+      </div>
+      <p className="mt-6 border-t border-[var(--color-border-light)] pt-4 text-xs leading-relaxed text-[var(--color-text-light)]">
+        {formatCurrency(portfolioValue)} at age {params.current_age}, spending {spendingLine} in {params.state}. Inflation: {inflationLine}.
+      </p>
+    </div>
+  );
+}
+
+function HeroMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div>
+      <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">
+        {label}
+      </div>
+      <div className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-text)]">
+        {value}
+      </div>
+      <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{detail}</div>
+    </div>
+  );
+}
 
 function PortfolioChart({ result, ages, selectedYearIndex, setSelectedYearIndex }: {
   result: SimulationResult; ages: number[]; selectedYearIndex: number | null; setSelectedYearIndex: (index: number | null) => void;
@@ -207,6 +357,49 @@ function DetailRow({ label, value, highlight }: { label: string; value: string; 
   );
 }
 
+function CollapsibleSection({
+  title,
+  description,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  title: string;
+  description: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-white shadow-[var(--shadow-sm)]">
+      <button
+        type="button"
+        className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-[var(--color-bg-alt)]/60"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+      >
+        <div>
+          <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">
+            {title}
+          </div>
+          <p className="mt-1 text-sm leading-relaxed text-[var(--color-text-muted)]">
+            {description}
+          </p>
+        </div>
+        <span className="flex items-center gap-2 rounded-full border border-[var(--color-border-light)] bg-[var(--color-bg-alt)] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
+          {isOpen ? "Hide" : "Open"}
+          <span aria-hidden="true">{isOpen ? "−" : "+"}</span>
+        </span>
+      </button>
+      {isOpen && (
+        <div className="border-t border-[var(--color-border-light)] bg-[var(--color-bg-alt)]/40 px-4 py-5 space-y-6">
+          {children}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function YearDetailPanel({ year, selectedYearIndex, totalYears, onClose, onPrevious, onNext }: {
   year: SimulationResult["year_breakdown"][0]; selectedYearIndex: number; totalYears: number;
   onClose: () => void; onPrevious: () => void; onNext: () => void;
@@ -226,6 +419,7 @@ function YearDetailPanel({ year, selectedYearIndex, totalYears, onClose, onPrevi
           <DetailRow label="Start of year" value={formatCurrency(year.portfolio_start)} />
           <DetailRow label="End of year" value={formatCurrency(year.portfolio_end)} />
           <DetailRow label="Return" value={`${(year.portfolio_return * 100).toFixed(1)}%`} />
+          <DetailRow label="Inflation" value={`${(year.inflation_rate * 100).toFixed(1)}%`} />
         </div>
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)] mb-2">Income</h4>
@@ -238,6 +432,8 @@ function YearDetailPanel({ year, selectedYearIndex, totalYears, onClose, onPrevi
         </div>
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)] mb-2">Withdrawals & Taxes</h4>
+          <DetailRow label="Spend target" value={formatCurrency(year.spending_target)} />
+          <DetailRow label="Spend target (real)" value={formatCurrency(year.spending_target_real)} />
           <DetailRow label="Withdrawal" value={formatCurrency(year.withdrawal)} />
           <DetailRow label="Federal tax" value={formatCurrency(year.federal_tax)} />
           <DetailRow label="State tax" value={formatCurrency(year.state_tax)} />
@@ -264,13 +460,13 @@ function OutcomeDistribution({ result }: { result: SimulationResult }) {
       <h3 className="text-lg font-semibold mb-4">Outcome distribution</h3>
       <div className="overflow-x-auto">
         <table className="w-full table-auto-style">
-          <thead><tr><th>Percentile</th><th>Final portfolio</th><th>Interpretation</th></tr></thead>
+          <thead><tr><th>Percentile</th><th>Final portfolio (nominal)</th><th>Final portfolio (real)</th><th>Interpretation</th></tr></thead>
           <tbody>
-            <tr><td>5th (conservative)</td><td>{formatCurrency(result.percentiles.p5)}</td><td className="text-[var(--color-text-muted)]">95% of outcomes exceed this</td></tr>
-            <tr><td>25th</td><td>{formatCurrency(result.percentiles.p25)}</td><td className="text-[var(--color-text-muted)]">75% of outcomes are better</td></tr>
-            <tr className="!bg-[var(--color-primary-50)] font-semibold"><td>50th (median)</td><td>{formatCurrency(result.percentiles.p50)}</td><td className="text-[var(--color-text-muted)]">The "typical" outcome</td></tr>
-            <tr><td>75th</td><td>{formatCurrency(result.percentiles.p75)}</td><td className="text-[var(--color-text-muted)]">25% of outcomes are better</td></tr>
-            <tr><td>95th (optimistic)</td><td>{formatCurrency(result.percentiles.p95)}</td><td className="text-[var(--color-text-muted)]">Only 5% exceed this</td></tr>
+            <tr><td>5th (conservative)</td><td>{formatCurrency(result.percentiles.p5)}</td><td>{formatCurrency(result.percentiles_real.p5)}</td><td className="text-[var(--color-text-muted)]">95% of outcomes exceed this</td></tr>
+            <tr><td>25th</td><td>{formatCurrency(result.percentiles.p25)}</td><td>{formatCurrency(result.percentiles_real.p25)}</td><td className="text-[var(--color-text-muted)]">75% of outcomes are better</td></tr>
+            <tr className="!bg-[var(--color-primary-50)] font-semibold"><td>50th (median)</td><td>{formatCurrency(result.percentiles.p50)}</td><td>{formatCurrency(result.percentiles_real.p50)}</td><td className="text-[var(--color-text-muted)]">The &quot;typical&quot; outcome</td></tr>
+            <tr><td>75th</td><td>{formatCurrency(result.percentiles.p75)}</td><td>{formatCurrency(result.percentiles_real.p75)}</td><td className="text-[var(--color-text-muted)]">25% of outcomes are better</td></tr>
+            <tr><td>95th (optimistic)</td><td>{formatCurrency(result.percentiles.p95)}</td><td>{formatCurrency(result.percentiles_real.p95)}</td><td className="text-[var(--color-text-muted)]">Only 5% exceed this</td></tr>
           </tbody>
         </table>
       </div>
@@ -311,12 +507,13 @@ function YearBreakdownTable({ result }: { result: SimulationResult }) {
         </summary>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full table-auto-style">
-            <thead><tr><th>Age</th><th>Start</th><th>Income</th><th>Withdrawal</th><th>Taxes</th><th>Rate</th><th>End</th></tr></thead>
+            <thead><tr><th>Age</th><th>Start</th><th>Spend target</th><th>Income</th><th>Withdrawal</th><th>Taxes</th><th>Rate</th><th>End</th></tr></thead>
             <tbody>
               {result.year_breakdown.map((year) => (
                 <tr key={year.year_index}>
                   <td>{year.age}</td>
                   <td>{formatCurrency(year.portfolio_start)}</td>
+                  <td title={`Real: ${formatCurrency(year.spending_target_real)}, inflation: ${(year.inflation_rate * 100).toFixed(1)}%`}>{formatCurrency(year.spending_target)}</td>
                   <td title={`Employment: ${formatCurrency(year.employment_income)}, SS: ${formatCurrency(year.social_security)}`}>{formatCurrency(year.total_income)}</td>
                   <td>{formatCurrency(year.withdrawal)}</td>
                   <td>{formatCurrency(year.total_tax)}</td>
@@ -360,12 +557,12 @@ function WhatIfScenarios({ params, onWhatIf }: { params: SimulationInput; onWhat
 function NextStepsCTA({ hasAnnuity }: { hasAnnuity: boolean }) {
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold mb-4">Take the next step</h3>
+      <h3 className="mb-4 text-lg font-semibold">Further resources</h3>
       <div className="space-y-3">
         {[
-          { href: "https://www.nerdwallet.com/best/investing/financial-advisors-for-retirement", icon: "\uD83D\uDC64", title: "Talk to a fiduciary advisor", desc: "Get personalized advice from a fee-only advisor who works in your interest." },
-          { href: "https://investor.vanguard.com/investment-products/index-funds", icon: "\uD83D\uDCC8", title: "Low-cost index funds", desc: "Simple, diversified investing with minimal fees." },
-          ...(hasAnnuity ? [{ href: "https://www.immediateannuities.com/", icon: "\uD83D\uDEE1\uFE0F", title: "Compare annuity quotes", desc: "Get quotes from multiple insurers for guaranteed income." }] : []),
+          { href: "https://www.nerdwallet.com/best/investing/financial-advisors-for-retirement", icon: "\uD83D\uDC64", title: "Advisor directories", desc: "Find third-party directories if you want professional guidance beyond the calculator." },
+          { href: "https://investor.vanguard.com/investment-products/index-funds", icon: "\uD83D\uDCC8", title: "Index fund reference", desc: "Read a third-party primer on diversified, low-cost fund structures." },
+          ...(hasAnnuity ? [{ href: "https://www.immediateannuities.com/", icon: "\uD83D\uDEE1\uFE0F", title: "Annuity quote reference", desc: "Review third-party annuity quote marketplaces for payout comparisons." }] : []),
         ].map(({ href, icon, title, desc }) => (
           <a key={href} href={href} target="_blank" rel="noopener noreferrer"
             className="group flex items-center gap-4 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-white p-4 transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-md)]">

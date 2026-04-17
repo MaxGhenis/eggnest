@@ -9,20 +9,15 @@ from dataclasses import dataclass
 import numpy as np
 
 from .models import Holding, SimulationInput
-from .returns import generate_fund_returns
+from .returns import generate_correlated_fund_returns
 from .rmd import get_rmd_factor
-
-# Account type categories
-TRADITIONAL_ACCOUNTS = ("traditional_401k", "traditional_ira")
-ROTH_ACCOUNTS = ("roth_401k", "roth_ira")
-TAXABLE_ACCOUNTS = ("taxable",)
-
-# Withdrawal order for each strategy
-WITHDRAWAL_ORDER = {
-    "taxable_first": [TAXABLE_ACCOUNTS, TRADITIONAL_ACCOUNTS, ROTH_ACCOUNTS],
-    "traditional_first": [TRADITIONAL_ACCOUNTS, TAXABLE_ACCOUNTS, ROTH_ACCOUNTS],
-    "roth_first": [ROTH_ACCOUNTS, TAXABLE_ACCOUNTS, TRADITIONAL_ACCOUNTS],
-}
+from .withdrawal_policies import (
+    ROTH_ACCOUNTS,
+    TAXABLE_ACCOUNTS,
+    TRADITIONAL_ACCOUNTS,
+    WithdrawalPolicy,
+    resolve_withdrawal_policy,
+)
 
 
 @dataclass
@@ -34,6 +29,7 @@ class HoldingState:
     balance: np.ndarray  # (n_simulations,) current balance across all sims
     price_growth: np.ndarray  # (n_simulations, n_years) pre-generated returns
     div_yields: np.ndarray  # (n_simulations, n_years) pre-generated dividends
+    cost_basis: np.ndarray | None = None  # Tax basis for taxable holdings only
 
 
 class HoldingsTracker:
@@ -50,7 +46,10 @@ class HoldingsTracker:
         n_simulations: int,
         n_years: int,
         withdrawal_strategy: str = "taxable_first",
+        withdrawal_policy: WithdrawalPolicy | None = None,
         return_method: str = "bootstrap",
+        fund_returns: dict[str, tuple[np.ndarray, np.ndarray]] | None = None,
+        sampled_return_years: np.ndarray | None = None,
         rng: np.random.Generator | None = None,
     ):
         """
@@ -66,21 +65,28 @@ class HoldingsTracker:
         """
         self.n_simulations = n_simulations
         self.n_years = n_years
-        self.withdrawal_strategy = withdrawal_strategy
+        self.withdrawal_policy = withdrawal_policy or resolve_withdrawal_policy(
+            withdrawal_strategy
+        )
+        self.withdrawal_strategy = self.withdrawal_policy.name
         self._rng = rng or np.random.default_rng()
 
-        # Generate returns for each unique fund (shared across holdings with same fund)
-        self._fund_returns: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-        unique_funds = {h.fund for h in holdings}
-        for fund in unique_funds:
-            price_growth, div_yields = generate_fund_returns(
-                fund=fund,
+        unique_funds = list(dict.fromkeys(h.fund for h in holdings))
+        if fund_returns is not None:
+            self._fund_returns = fund_returns
+            self.sampled_return_years = sampled_return_years
+        else:
+            # Generate fund returns once with shared historical sampling so the
+            # selected funds preserve same-year cross-asset relationships.
+            generated_returns = generate_correlated_fund_returns(
+                funds=unique_funds,
                 n_simulations=n_simulations,
                 n_years=n_years,
                 method=return_method,
                 rng=self._rng,
+                return_sampled_years=True,
             )
-            self._fund_returns[fund] = (price_growth, div_yields)
+            self._fund_returns, self.sampled_return_years = generated_returns
 
         # Create holding states
         self.holdings: list[HoldingState] = []
@@ -91,19 +97,58 @@ class HoldingsTracker:
                     account_type=h.account_type,
                     fund=h.fund,
                     balance=np.full(n_simulations, h.balance, dtype=float),
+                    cost_basis=(
+                        np.full(
+                            n_simulations,
+                            h.cost_basis if h.cost_basis is not None else 0.0,
+                            dtype=float,
+                        )
+                        if h.account_type in TAXABLE_ACCOUNTS
+                        else None
+                    ),
                     price_growth=price_growth,
                     div_yields=div_yields,
                 )
             )
 
+        # Excess RMDs and similar cash flows are carried as taxable cash.
+        self.cash_balance = np.zeros(n_simulations, dtype=float)
+
+    def _get_or_create_roth_holding(self, source: HoldingState) -> HoldingState:
+        """Return the Roth holding paired to a traditional source holding."""
+        target_account_type = (
+            "roth_401k"
+            if source.account_type == "traditional_401k"
+            else "roth_ira"
+        )
+        for holding in self.holdings:
+            if (
+                holding.account_type == target_account_type
+                and holding.fund == source.fund
+            ):
+                return holding
+
+        created = HoldingState(
+            account_type=target_account_type,
+            fund=source.fund,
+            balance=np.zeros(self.n_simulations, dtype=float),
+            price_growth=source.price_growth,
+            div_yields=source.div_yields,
+            cost_basis=None,
+        )
+        self.holdings.append(created)
+        return created
+
     @property
     def total_balance(self) -> np.ndarray:
         """Total portfolio balance across all holdings (n_simulations,)."""
-        return sum(h.balance for h in self.holdings)
+        return self.cash_balance + sum(h.balance for h in self.holdings)
 
     def get_balance_by_account_category(self, category: tuple[str, ...]) -> np.ndarray:
         """Get total balance for an account category (n_simulations,)."""
         balances = [h.balance for h in self.holdings if h.account_type in category]
+        if any(account_type in TAXABLE_ACCOUNTS for account_type in category):
+            balances.append(self.cash_balance)
         if balances:
             return sum(balances)
         return np.zeros(self.n_simulations)
@@ -123,13 +168,17 @@ class HoldingsTracker:
         """Total taxable balance."""
         return self.get_balance_by_account_category(TAXABLE_ACCOUNTS)
 
-    def apply_growth(self, year: int) -> None:
-        """Apply one year of growth to all holdings."""
+    def apply_growth(self, year: int, mask: np.ndarray | None = None) -> None:
+        """Apply one year of growth to all active holdings."""
         for h in self.holdings:
             growth = h.balance * h.price_growth[:, year]
+            if mask is not None:
+                growth = np.where(mask, growth, 0)
             h.balance = h.balance + growth
 
-    def get_dividends(self, year: int) -> dict[str, np.ndarray]:
+    def get_dividends(
+        self, year: int, mask: np.ndarray | None = None
+    ) -> dict[str, np.ndarray]:
         """
         Get dividend income by account category for a year.
 
@@ -145,6 +194,8 @@ class HoldingsTracker:
 
         for h in self.holdings:
             divs = h.balance * h.div_yields[:, year]
+            if mask is not None:
+                divs = np.where(mask, divs, 0)
             if h.account_type in TRADITIONAL_ACCOUNTS:
                 result["traditional"] += divs
             elif h.account_type in ROTH_ACCOUNTS:
@@ -174,6 +225,8 @@ class HoldingsTracker:
         self,
         amount: np.ndarray,
         age: int,
+        include_rmd: bool = True,
+        mask: np.ndarray | None = None,
     ) -> dict[str, np.ndarray]:
         """
         Withdraw from portfolio following withdrawal strategy.
@@ -189,86 +242,20 @@ class HoldingsTracker:
             - 'traditional_rmd': RMD amount (taxed as ordinary income)
             - 'traditional': Additional traditional withdrawal (ordinary income)
             - 'roth': Roth withdrawal (tax-free)
-            - 'taxable': Taxable withdrawal (capital gains)
+            - 'taxable': Taxable withdrawal proceeds
+            - 'taxable_cash': Tax-free withdrawal from taxable cash reserves
+            - 'taxable_capital_gains': Realized capital gains from taxable sales
             - 'total': Total withdrawn
         """
-        result = {
-            "traditional_rmd": np.zeros(self.n_simulations),
-            "traditional": np.zeros(self.n_simulations),
-            "roth": np.zeros(self.n_simulations),
-            "taxable": np.zeros(self.n_simulations),
-            "total": np.zeros(self.n_simulations),
-        }
-
-        remaining = amount.copy()
-
-        # Step 1: Handle RMDs first (must be taken from traditional)
-        rmd = self.calculate_rmd(age)
-        rmd_withdrawal = np.minimum(rmd, self.traditional_balance)
-        self._withdraw_from_category(TRADITIONAL_ACCOUNTS, rmd_withdrawal)
-        result["traditional_rmd"] = rmd_withdrawal
-        remaining = np.maximum(0, remaining - rmd_withdrawal)
-
-        # Step 2: If RMD exceeds spending need, we're done (excess stays in taxable)
-        # Otherwise, continue with withdrawal strategy
-
-        if self.withdrawal_strategy == "pro_rata":
-            # Withdraw proportionally from all account types
-            # Calculate proportions based on CURRENT balances (after RMD)
-            total_bal = self.total_balance
-            # Store the amount to distribute (before any withdrawals in this step)
-            amount_to_distribute = remaining.copy()
-
-            for category, key in [
-                (TAXABLE_ACCOUNTS, "taxable"),
-                (TRADITIONAL_ACCOUNTS, "traditional"),
-                (ROTH_ACCOUNTS, "roth"),
-            ]:
-                cat_balance = self.get_balance_by_account_category(category)
-                # Proportion of portfolio in this category
-                proportion = np.where(total_bal > 0, cat_balance / total_bal, 0)
-                # Use original amount_to_distribute for all categories (not decremented remaining)
-                withdrawal = np.minimum(amount_to_distribute * proportion, cat_balance)
-                self._withdraw_from_category(category, withdrawal)
-                result[key] += withdrawal
-
-            # Update remaining after all pro-rata withdrawals
-            remaining = np.maximum(
-                0,
-                remaining
-                - (result["taxable"] + result["traditional"] + result["roth"]),
-            )
-        else:
-            # Sequential withdrawal based on strategy
-            order = WITHDRAWAL_ORDER.get(
-                self.withdrawal_strategy, WITHDRAWAL_ORDER["taxable_first"]
-            )
-            for category in order:
-                if category == TAXABLE_ACCOUNTS:
-                    key = "taxable"
-                elif category == TRADITIONAL_ACCOUNTS:
-                    key = "traditional"
-                else:
-                    key = "roth"
-
-                cat_balance = self.get_balance_by_account_category(category)
-                withdrawal = np.minimum(remaining, cat_balance)
-                self._withdraw_from_category(category, withdrawal)
-                result[key] += withdrawal
-                remaining = np.maximum(0, remaining - withdrawal)
-
-        result["total"] = (
-            result["traditional_rmd"]
-            + result["traditional"]
-            + result["roth"]
-            + result["taxable"]
+        return self.withdrawal_policy.withdraw(
+            self, amount, age, include_rmd=include_rmd, mask=mask
         )
-        return result
 
-    def _withdraw_from_category(
+    def withdraw_from_category(
         self,
         category: tuple[str, ...],
         amount: np.ndarray,
+        mask: np.ndarray | None = None,
     ) -> None:
         """
         Withdraw amount from holdings in a category (pro-rata within category).
@@ -282,6 +269,9 @@ class HoldingsTracker:
         if not cat_holdings:
             return
 
+        if mask is not None:
+            amount = np.where(mask, amount, 0)
+
         # Calculate total balance in category
         cat_total = sum(h.balance for h in cat_holdings)
 
@@ -294,11 +284,129 @@ class HoldingsTracker:
             withdrawal = amount * proportion
             h.balance = np.maximum(0, h.balance - withdrawal)
 
+    def convert_traditional_to_roth(
+        self,
+        amount: np.ndarray,
+        mask: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """
+        Convert traditional assets to Roth assets while keeping them invested.
+
+        Args:
+            amount: Desired conversion amount across simulations.
+
+        Returns:
+            Actual amount converted for each simulation path.
+        """
+        if mask is not None:
+            amount = np.where(mask, amount, 0)
+
+        trad_holdings = [
+            holding
+            for holding in self.holdings
+            if holding.account_type in TRADITIONAL_ACCOUNTS
+        ]
+        if not trad_holdings:
+            return np.zeros(self.n_simulations)
+
+        trad_total = sum(holding.balance for holding in trad_holdings)
+        actual_amount = np.minimum(amount, trad_total)
+        converted = np.zeros(self.n_simulations)
+
+        for holding in trad_holdings:
+            proportion = np.divide(
+                holding.balance,
+                trad_total,
+                out=np.zeros_like(holding.balance),
+                where=trad_total > 0,
+            )
+            moved = actual_amount * proportion
+            holding.balance = np.maximum(0, holding.balance - moved)
+            self._get_or_create_roth_holding(holding).balance += moved
+            converted += moved
+
+        return converted
+
+    def withdraw_from_taxable(
+        self,
+        amount: np.ndarray,
+        mask: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Withdraw from taxable cash first, then from invested taxable holdings.
+
+        Returns:
+            Tuple of (cash_withdrawal, invested_taxable_withdrawal, realized_gains)
+        """
+        if mask is not None:
+            amount = np.where(mask, amount, 0)
+
+        cash_withdrawal = np.minimum(amount, self.cash_balance)
+        self.cash_balance = np.maximum(0, self.cash_balance - cash_withdrawal)
+
+        invested_withdrawal = np.maximum(0, amount - cash_withdrawal)
+        realized_gains = np.zeros(self.n_simulations)
+        if np.any(invested_withdrawal > 0):
+            realized_gains = self._withdraw_from_taxable_holdings(
+                invested_withdrawal, mask=mask
+            )
+
+        return cash_withdrawal, invested_withdrawal, realized_gains
+
+    def _withdraw_from_taxable_holdings(
+        self,
+        amount: np.ndarray,
+        mask: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Withdraw from invested taxable holdings and return realized gains."""
+        if mask is not None:
+            amount = np.where(mask, amount, 0)
+
+        cat_holdings = [h for h in self.holdings if h.account_type in TAXABLE_ACCOUNTS]
+        if not cat_holdings:
+            return np.zeros(self.n_simulations)
+
+        cat_total = sum(h.balance for h in cat_holdings)
+        realized_gains = np.zeros(self.n_simulations)
+
+        for h in cat_holdings:
+            proportion = np.divide(
+                h.balance, cat_total, out=np.zeros_like(h.balance), where=cat_total > 0
+            )
+            withdrawal = amount * proportion
+            basis_ratio = np.divide(
+                h.cost_basis,
+                h.balance,
+                out=np.zeros_like(h.balance),
+                where=h.balance > 0,
+            )
+            basis_ratio = np.clip(basis_ratio, 0, 1)
+            basis_reduction = withdrawal * basis_ratio
+            realized_gains += np.maximum(0, withdrawal - basis_reduction)
+            h.balance = np.maximum(0, h.balance - withdrawal)
+            h.cost_basis = np.maximum(0, h.cost_basis - basis_reduction)
+
+        return realized_gains
+
+    def deposit_to_taxable(
+        self,
+        amount: np.ndarray,
+        mask: np.ndarray | None = None,
+    ) -> None:
+        """Deposit cash into the taxable cash reserve."""
+        deposit = np.maximum(0, amount)
+        if mask is not None:
+            deposit = np.where(mask, deposit, 0)
+        self.cash_balance = self.cash_balance + deposit
+
 
 def create_holdings_tracker(
     params: SimulationInput,
     n_simulations: int,
     n_years: int,
+    withdrawal_policy: WithdrawalPolicy | None = None,
+    fund_returns: dict[str, tuple[np.ndarray, np.ndarray]] | None = None,
+    sampled_return_years: np.ndarray | None = None,
     rng: np.random.Generator | None = None,
 ) -> HoldingsTracker | None:
     """
@@ -321,10 +429,13 @@ def create_holdings_tracker(
         n_simulations=n_simulations,
         n_years=n_years,
         withdrawal_strategy=params.withdrawal_strategy,
+        withdrawal_policy=withdrawal_policy,
         return_method=(
             params.return_model
             if params.return_model in ("bootstrap", "block_bootstrap")
             else "bootstrap"
         ),
+        fund_returns=fund_returns,
+        sampled_return_years=sampled_return_years,
         rng=rng,
     )

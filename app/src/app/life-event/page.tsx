@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import {
   compareLifeEvent,
@@ -389,11 +390,18 @@ export default function LifeEventPage() {
       <header className="header-glass sticky top-0 z-50 border-b border-[var(--color-border-light)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
           <Link href="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80" aria-label="EggNest home">
-            <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
+            <Image
+              src="/logo.svg"
+              alt="EggNest"
+              width={140}
+              height={28}
+              className="block"
+              priority
+            />
           </Link>
-          <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Tax & benefits calculator</span>
+          <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Life-event calculator</span>
           <Link href="/simulator" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">
-            Retirement simulator
+            Simulator
           </Link>
         </div>
       </header>

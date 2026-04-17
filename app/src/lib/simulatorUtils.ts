@@ -9,7 +9,7 @@ import {
   SimulationError,
   ApiError,
 } from "./api";
-import { URL_PARAM_MAP } from "./constants";
+import { DEFAULT_PARAMS, URL_PARAM_MAP } from "./constants";
 import type { PortfolioMode, WithdrawalStrategy } from "../hooks/usePortfolio";
 
 // ============================================
@@ -40,7 +40,7 @@ export interface AnnuityComparisonResult {
   annuity_total_guaranteed: number;
   probability_simulation_beats_annuity: number;
   simulation_median_total_income: number;
-  recommendation: string;
+  summary: string;
 }
 
 export interface Persona {
@@ -71,28 +71,11 @@ export const EXAMPLE_PERSONAS: Persona[] = [
     description: "55-year-old leaving tech with $1.5M saved",
     emoji: "\u{1F3D6}\u{FE0F}",
     params: {
+      ...DEFAULT_PARAMS,
       initial_capital: 1500000,
       annual_spending: 80000,
-      home_value: 0,
       current_age: 55,
-      max_age: 95,
-      gender: "male",
       social_security_monthly: 2800,
-      social_security_start_age: 67,
-      pension_annual: 0,
-      employment_income: 0,
-      employment_growth_rate: 0.03,
-      retirement_age: 65,
-      state: "CA",
-      filing_status: "single",
-      has_spouse: false,
-      has_annuity: false,
-      n_simulations: 10000,
-      include_mortality: true,
-      expected_return: 0.07,
-      return_volatility: 0.16,
-      dividend_yield: 0.02,
-      stock_allocation: 0.8,
     },
   },
   {
@@ -101,28 +84,14 @@ export const EXAMPLE_PERSONAS: Persona[] = [
     description: "Both 62, $800K saved, ready to retire",
     emoji: "\u{1F46B}",
     params: {
+      ...DEFAULT_PARAMS,
       initial_capital: 800000,
       annual_spending: 70000,
-      home_value: 0,
       current_age: 62,
-      max_age: 95,
-      gender: "male",
       social_security_monthly: 2400,
-      social_security_start_age: 67,
-      pension_annual: 0,
-      employment_income: 0,
-      employment_growth_rate: 0.03,
-      retirement_age: 65,
       state: "TX",
       filing_status: "married_filing_jointly",
       has_spouse: true,
-      has_annuity: false,
-      n_simulations: 10000,
-      include_mortality: true,
-      expected_return: 0.07,
-      return_volatility: 0.16,
-      dividend_yield: 0.02,
-      stock_allocation: 0.8,
     },
     spouse: {
       age: 60,
@@ -141,28 +110,14 @@ export const EXAMPLE_PERSONAS: Persona[] = [
     description: "67-year-old with pension and modest savings",
     emoji: "\u{1F3E6}",
     params: {
+      ...DEFAULT_PARAMS,
       initial_capital: 400000,
       annual_spending: 50000,
-      home_value: 0,
       current_age: 67,
-      max_age: 95,
       gender: "female",
       social_security_monthly: 2200,
-      social_security_start_age: 67,
       pension_annual: 18000,
-      employment_income: 0,
-      employment_growth_rate: 0.03,
-      retirement_age: 65,
       state: "FL",
-      filing_status: "single",
-      has_spouse: false,
-      has_annuity: false,
-      n_simulations: 10000,
-      include_mortality: true,
-      expected_return: 0.07,
-      return_volatility: 0.16,
-      dividend_yield: 0.02,
-      stock_allocation: 0.8,
     },
   },
   {
@@ -171,28 +126,17 @@ export const EXAMPLE_PERSONAS: Persona[] = [
     description: "50-year-old still working, $2M saved",
     emoji: "\u{1F4BC}",
     params: {
+      ...DEFAULT_PARAMS,
       initial_capital: 2000000,
       annual_spending: 120000,
-      home_value: 0,
       current_age: 50,
-      max_age: 95,
-      gender: "male",
       social_security_monthly: 3500,
       social_security_start_age: 70,
-      pension_annual: 0,
       employment_income: 300000,
-      employment_growth_rate: 0.03,
       retirement_age: 60,
       state: "NY",
       filing_status: "married_filing_jointly",
       has_spouse: true,
-      has_annuity: false,
-      n_simulations: 10000,
-      include_mortality: true,
-      expected_return: 0.07,
-      return_volatility: 0.16,
-      dividend_yield: 0.02,
-      stock_allocation: 0.8,
     },
     spouse: {
       age: 48,
@@ -226,60 +170,20 @@ export function formatPercent(value: number): string {
 }
 
 // ============================================
-// Interpretation helpers
+// Outcome helpers
 // ============================================
-
-export function getSuccessRateInterpretation(rate: number): { label: string; description: string; color: string } {
-  if (rate >= 0.95) {
-    return {
-      label: "Excellent",
-      description: "Very high confidence your money will last. You may even be able to spend more.",
-      color: "#16a34a",
-    };
-  } else if (rate >= 0.90) {
-    return {
-      label: "Good",
-      description: "Strong likelihood of success. This is generally considered a safe plan.",
-      color: "#22c55e",
-    };
-  } else if (rate >= 0.80) {
-    return {
-      label: "Adequate",
-      description: "Reasonable odds, but consider a small buffer. Minor adjustments could help.",
-      color: "#84cc16",
-    };
-  } else if (rate >= 0.70) {
-    return {
-      label: "Marginal",
-      description: "Some risk of running short. Consider reducing spending or increasing savings.",
-      color: "#eab308",
-    };
-  } else if (rate >= 0.50) {
-    return {
-      label: "Risky",
-      description: "Significant chance of depletion. Strongly consider adjusting your plan.",
-      color: "#f97316",
-    };
-  } else {
-    return {
-      label: "High risk",
-      description: "More likely than not to run out of money. Substantial changes recommended.",
-      color: "#ef4444",
-    };
-  }
-}
 
 export function getWithdrawalRateContext(rate: number): { warning: boolean; message: string } {
   if (rate <= 3) {
-    return { warning: false, message: "Conservative - historically very safe" };
+    return { warning: false, message: "Conservative relative to common historical rules of thumb" };
   } else if (rate <= 4) {
-    return { warning: false, message: "The classic '4% rule' - generally considered safe" };
+    return { warning: false, message: "Near the classic 4% rule range used in many retirement studies" };
   } else if (rate <= 5) {
-    return { warning: true, message: "Slightly aggressive - monitor carefully" };
+    return { warning: true, message: "Above common historical rules of thumb" };
   } else if (rate <= 6) {
-    return { warning: true, message: "Aggressive - may require flexibility" };
+    return { warning: true, message: "Aggressive relative to common retirement planning heuristics" };
   } else {
-    return { warning: true, message: "Very high - requires careful monitoring" };
+    return { warning: true, message: "Very high relative to common retirement planning heuristics" };
   }
 }
 
@@ -397,7 +301,7 @@ export function parseUrlParams(): { params: Partial<SimulationInput>; spouse: Pa
   const spouse: Partial<SpouseInput> = {};
 
   // Number params (short keys)
-  const numParams = ["cap", "spend", "home", "age", "max", "ss", "ssAge", "pension", "emp", "ret", "stocks"];
+  const numParams = ["cap", "spend", "home", "age", "max", "ss", "ssAge", "pension", "emp", "ret", "stocks", "infl", "penCola", "annCola"];
 
   for (const [shortKey, value] of urlParams.entries()) {
     if (!(shortKey in URL_PARAM_MAP)) continue;
@@ -428,10 +332,16 @@ export function parseUrlParams(): { params: Partial<SimulationInput>; spouse: Pa
       }
     } else if (shortKey === "gen") {
       params.gender = value as "male" | "female";
+    } else if (shortKey === "spMode") {
+      params.spending_mode = value as SimulationInput["spending_mode"];
+    } else if (shortKey === "infMode") {
+      params.inflation_model = value as SimulationInput["inflation_model"];
     } else if (shortKey === "state") {
       params.state = value;
     } else if (shortKey === "status") {
       params.filing_status = value as SimulationInput["filing_status"];
+    } else if (shortKey === "ssCola") {
+      params.social_security_inflation_adjusted = value === "1" || value === "true";
     } else if (shortKey === "spouse") {
       params.has_spouse = value === "1" || value === "true";
     }
@@ -482,6 +392,24 @@ export function buildUrlParams(params: SimulationInput, spouse?: SpouseInput): s
   }
   if (params.retirement_age !== 65) {
     urlParams.set("ret", String(params.retirement_age));
+  }
+  if (params.spending_mode !== "real") {
+    urlParams.set("spMode", params.spending_mode);
+  }
+  if (params.inflation_model !== "historical") {
+    urlParams.set("infMode", params.inflation_model);
+  }
+  if (params.inflation_rate !== 0.025) {
+    urlParams.set("infl", String(params.inflation_rate));
+  }
+  if (!params.social_security_inflation_adjusted) {
+    urlParams.set("ssCola", "0");
+  }
+  if (params.pension_cola_rate !== 0) {
+    urlParams.set("penCola", String(params.pension_cola_rate));
+  }
+  if (params.annuity_cola_rate !== 0) {
+    urlParams.set("annCola", String(params.annuity_cola_rate));
   }
   if (params.stock_allocation !== 0.8) {
     urlParams.set("stocks", String(Math.round(params.stock_allocation * 100)));

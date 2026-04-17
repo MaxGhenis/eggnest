@@ -81,6 +81,43 @@ export function validateSimulationInput(
     });
   }
 
+  // Social Security benefits: >= 0
+  if (params.social_security_monthly < 0) {
+    errors.push({
+      field: "social_security_monthly",
+      message: "Social Security benefit must be 0 or greater",
+    });
+  }
+
+  // Pension income: >= 0
+  if (params.pension_annual < 0) {
+    errors.push({
+      field: "pension_annual",
+      message: "Pension income must be 0 or greater",
+    });
+  }
+
+  if (params.inflation_rate < 0 || params.inflation_rate > 0.1) {
+    errors.push({
+      field: "inflation_rate",
+      message: "Inflation rate must be between 0% and 10%",
+    });
+  }
+
+  if (params.pension_cola_rate < 0 || params.pension_cola_rate > 0.1) {
+    errors.push({
+      field: "pension_cola_rate",
+      message: "Pension COLA must be between 0% and 10%",
+    });
+  }
+
+  if (params.annuity_cola_rate < 0 || params.annuity_cola_rate > 0.1) {
+    errors.push({
+      field: "annuity_cola_rate",
+      message: "Annuity COLA must be between 0% and 10%",
+    });
+  }
+
   // Initial capital: >= 0 (if provided)
   if (
     params.initial_capital !== undefined &&
@@ -154,6 +191,40 @@ export function validateSimulationInput(
         message: "Spouse employment income must be 0 or greater",
       });
     }
+
+    if (spouse.social_security_monthly < 0) {
+      errors.push({
+        field: "spouse.social_security_monthly",
+        message: "Spouse Social Security benefit must be 0 or greater",
+      });
+    }
+
+    if (spouse.pension_annual < 0) {
+      errors.push({
+        field: "spouse.pension_annual",
+        message: "Spouse pension income must be 0 or greater",
+      });
+    }
+  }
+
+  // Annuity validation (only when annuity comparison is enabled)
+  if (params.has_annuity && params.annuity) {
+    if (params.annuity.monthly_payment <= 0) {
+      errors.push({
+        field: "annuity.monthly_payment",
+        message: "Annuity payment must be greater than 0",
+      });
+    }
+
+    if (
+      params.annuity.annuity_type !== "life_only" &&
+      (params.annuity.guarantee_years < 1 || params.annuity.guarantee_years > 30)
+    ) {
+      errors.push({
+        field: "annuity.guarantee_years",
+        message: "Guarantee period must be between 1 and 30 years",
+      });
+    }
   }
 
   return errors;
@@ -172,6 +243,29 @@ export function validateHolding(
     errors.push({
       field: `holdings[${index}].balance`,
       message: "Balance must be 0 or greater",
+    });
+  }
+
+  if (holding.account_type === "taxable") {
+    if (holding.cost_basis !== undefined && holding.cost_basis < 0) {
+      errors.push({
+        field: `holdings[${index}].cost_basis`,
+        message: "Cost basis must be 0 or greater",
+      });
+    }
+    if (
+      holding.cost_basis !== undefined &&
+      holding.cost_basis > holding.balance
+    ) {
+      errors.push({
+        field: `holdings[${index}].cost_basis`,
+        message: "Cost basis cannot exceed the holding balance",
+      });
+    }
+  } else if (holding.cost_basis !== undefined) {
+    errors.push({
+      field: `holdings[${index}].cost_basis`,
+      message: "Cost basis only applies to taxable holdings",
     });
   }
 

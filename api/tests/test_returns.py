@@ -3,9 +3,11 @@
 import numpy as np
 
 from eggnest.returns import (
+    CPI_INFLATION,
     SP500_DIVIDEND_ARRAY,
     SP500_PRICE_ARRAY,
     generate_blended_returns,
+    generate_inflation_paths,
     get_return_arrays,
 )
 
@@ -74,3 +76,26 @@ def test_nominal_returns_not_inflation_adjusted():
     # In nominal terms, 1954 had ~52% total return
     total_returns = SP500_PRICE_ARRAY + SP500_DIVIDEND_ARRAY
     assert np.max(total_returns) > 0.40  # Should have some very high nominal years
+
+
+def test_historical_inflation_paths_follow_sampled_return_years():
+    """Inflation should align to the same sampled historical years as returns."""
+    rng = np.random.default_rng(123)
+    _, _, sampled_years = generate_blended_returns(
+        n_simulations=4,
+        n_years=6,
+        stock_allocation=0.6,
+        stock_index="sp500",
+        bond_index="treasury",
+        rng=rng,
+        return_sampled_years=True,
+    )
+
+    inflation = generate_inflation_paths(
+        n_simulations=4,
+        n_years=6,
+        sampled_years=sampled_years,
+    )
+
+    expected = np.vectorize(CPI_INFLATION.__getitem__)(sampled_years)
+    assert np.allclose(inflation, expected)

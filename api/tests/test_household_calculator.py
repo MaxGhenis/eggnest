@@ -2,6 +2,7 @@
 
 from fastapi.testclient import TestClient
 
+import eggnest.household as household_module
 from eggnest.household import HouseholdCalculator
 from eggnest.models import (
     HouseholdInput,
@@ -41,6 +42,7 @@ class TestPersonInput:
         assert person.employment_income == 0
         assert person.self_employment_income == 0
         assert person.social_security == 0
+        assert person.roth_conversion_amount == 0
 
 
 class TestHouseholdInput:
@@ -86,6 +88,15 @@ class TestHouseholdInput:
             ],
         )
         assert len(household.people) == 4
+
+    def test_household_defaults(self):
+        """Test default household-level values."""
+        household = HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[PersonInput(age=30, is_tax_unit_head=True)],
+        )
+        assert household.countable_cash_assets == 0
 
 
 class TestHouseholdCalculator:
@@ -187,6 +198,123 @@ class TestHouseholdCalculator:
 
         assert result.total_income == 0
         assert result.federal_income_tax == 0
+
+    def test_roth_conversion_affects_tax_benefit_model_without_counting_as_cash_income(self):
+        """Roth conversions should change modeled taxes/benefits without inflating spendable income."""
+        household = HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[
+                PersonInput(
+                    age=67,
+                    roth_conversion_amount=12000,
+                    is_tax_unit_head=True,
+                )
+            ],
+        )
+        calc = HouseholdCalculator()
+        result = calc.calculate(household)
+
+        assert result.total_income == 0
+        assert result.modeled_non_cash_income == 12000
+        assert result.total_modeled_income == 12000
+
+    def test_roth_conversion_uses_tax_only_field_when_policyengine_supports_it(
+        self, monkeypatch
+    ):
+        """Use the dedicated tax-only PolicyEngine field when it is available."""
+        monkeypatch.setattr(
+            household_module, "_uses_tax_only_roth_conversions", lambda: True
+        )
+
+        household = HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[
+                PersonInput(
+                    age=67,
+                    roth_conversion_amount=12000,
+                    is_tax_unit_head=True,
+                )
+            ],
+        )
+        calc = HouseholdCalculator()
+        situation = calc._build_situation(household)
+
+        assert situation["people"]["person_0"]["taxable_roth_conversions"] == {2025: 12000}
+        assert "taxable_ira_distributions" not in situation["people"]["person_0"]
+
+    def test_roth_conversion_falls_back_to_taxable_ira_distributions_on_older_policyengine(
+        self, monkeypatch
+    ):
+        """Keep the household calculator working until the new PE-US variable ships."""
+        monkeypatch.setattr(
+            household_module, "_uses_tax_only_roth_conversions", lambda: False
+        )
+
+        household = HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[
+                PersonInput(
+                    age=67,
+                    roth_conversion_amount=12000,
+                    is_tax_unit_head=True,
+                )
+            ],
+        )
+        calc = HouseholdCalculator()
+        situation = calc._build_situation(household)
+
+        assert situation["people"]["person_0"]["taxable_ira_distributions"] == {2025: 12000}
+        assert "taxable_roth_conversions" not in situation["people"]["person_0"]
+
+    def test_roth_conversion_benefit_effect_matches_installed_policyengine_support(self):
+        """Local end-to-end behavior should reflect whichever PE-US variable set is installed."""
+        before = HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[PersonInput(age=67, is_tax_unit_head=True)],
+        )
+        after = HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[
+                PersonInput(
+                    age=67,
+                    roth_conversion_amount=12000,
+                    is_tax_unit_head=True,
+                )
+            ],
+        )
+        calc = HouseholdCalculator()
+        before_result = calc.calculate(before)
+        after_result = calc.calculate(after)
+
+        if household_module._uses_tax_only_roth_conversions():
+            assert before_result.total_benefits == after_result.total_benefits
+        else:
+            assert before_result.total_benefits > after_result.total_benefits
+
+    def test_countable_cash_assets_reduce_means_tested_benefits(self):
+        """Countable cash assets should feed PE resource tests."""
+        low_asset_household = HouseholdInput(
+            state="CA",
+            year=2025,
+            countable_cash_assets=0,
+            people=[PersonInput(age=67, is_tax_unit_head=True)],
+        )
+        high_asset_household = HouseholdInput(
+            state="CA",
+            year=2025,
+            countable_cash_assets=10000,
+            people=[PersonInput(age=67, is_tax_unit_head=True)],
+        )
+        calc = HouseholdCalculator()
+        low_asset_result = calc.calculate(low_asset_household)
+        high_asset_result = calc.calculate(high_asset_household)
+
+        assert low_asset_result.total_benefits > high_asset_result.total_benefits
 
 
 class TestLifeEventComparison:

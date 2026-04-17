@@ -31,6 +31,13 @@ describe('SimulationProgress', () => {
   it('shows message about PolicyEngine calculations', () => {
     render(<SimulationProgress currentYear={5} totalYears={30} />)
 
-    expect(screen.getByText(/Calculating taxes/i)).toBeInTheDocument()
+    expect(screen.getByText(/Calculating annual tax results/i)).toBeInTheDocument()
+    expect(screen.getByText(/can take around a minute/i)).toBeInTheDocument()
+  })
+
+  it('shows a preparation message before year progress starts', () => {
+    render(<SimulationProgress currentYear={0} totalYears={30} />)
+
+    expect(screen.getByText(/Preparing the simulation and tax engine/i)).toBeInTheDocument()
   })
 })

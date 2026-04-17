@@ -8,12 +8,14 @@ const mockSteps: WizardStep[] = [
     id: 'step1',
     title: 'Step 1',
     subtitle: 'First step',
+    fieldNames: ['step1.field'],
     content: <div>Step 1 content</div>,
   },
   {
     id: 'step2',
     title: 'Step 2',
     subtitle: 'Second step',
+    fieldNames: ['step2.field'],
     content: <div>Step 2 content</div>,
   },
   {
@@ -32,6 +34,14 @@ describe('Wizard', () => {
     expect(screen.getByRole('heading', { name: 'Step 1' })).toBeInTheDocument()
     expect(screen.getByText('Step 1 content')).toBeInTheDocument()
     expect(screen.getByText('1 / 3')).toBeInTheDocument()
+  })
+
+  it('can start on a provided initial step', () => {
+    render(<Wizard steps={mockSteps} onComplete={vi.fn()} initialStep={2} />)
+
+    expect(screen.getByRole('heading', { name: 'Step 3' })).toBeInTheDocument()
+    expect(screen.getByText('Step 3 content')).toBeInTheDocument()
+    expect(screen.getByText('3 / 3')).toBeInTheDocument()
   })
 
   it('shows Back button disabled on first step', () => {
@@ -157,5 +167,46 @@ describe('Wizard', () => {
     // Step 1 should have checkmark (svg in the completed step button)
     const step1Button = screen.getByRole('button', { name: /Step 1:.*completed/i })
     expect(step1Button.querySelector('svg')).toBeTruthy()
+  })
+
+  it('shows validation errors on the review step', async () => {
+    const user = userEvent.setup()
+    render(
+      <Wizard
+        steps={mockSteps}
+        onComplete={vi.fn()}
+        validationErrors={[
+          { field: 'step2.field', message: 'Step 2 needs attention' },
+        ]}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /next/i }))
+    await user.click(screen.getByRole('button', { name: /next/i }))
+
+    expect(screen.getByRole('button', { name: /go to step 2 to fix 1 validation error/i })).toBeInTheDocument()
+    expect(screen.getByRole('alert', { name: /validation errors/i })).toHaveTextContent('Step 2 needs attention')
+  })
+
+  it('routes the user back to the first invalid step instead of submitting', async () => {
+    const onComplete = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <Wizard
+        steps={mockSteps}
+        onComplete={onComplete}
+        validationErrors={[
+          { field: 'step2.field', message: 'Step 2 needs attention' },
+        ]}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /next/i }))
+    await user.click(screen.getByRole('button', { name: /next/i }))
+    await user.click(screen.getByRole('button', { name: /go to step 2 to fix 1 validation error/i }))
+
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(screen.getByText('Step 2 content')).toBeInTheDocument()
+    expect(screen.getByRole('alert', { name: /step validation errors/i })).toHaveTextContent('Step 2 needs attention')
   })
 })

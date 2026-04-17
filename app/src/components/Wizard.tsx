@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { ValidationError } from "../lib/validation";
 
 export interface WizardStep {
@@ -10,11 +10,13 @@ export interface WizardStep {
   optional?: boolean;
   content: ReactNode;
   isComplete?: () => boolean;
+  fieldNames?: string[];
 }
 
 interface WizardProps {
   steps: WizardStep[];
   onComplete: () => void;
+  initialStep?: number;
   isLoading?: boolean;
   completeButtonText?: string;
   loadingButtonText?: string;
@@ -25,37 +27,65 @@ interface WizardProps {
 export function Wizard({
   steps,
   onComplete,
+  initialStep = 0,
   isLoading = false,
   completeButtonText = "Run simulation",
   loadingButtonText = "Running...",
   loadingContent,
   validationErrors = [],
 }: WizardProps) {
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(() =>
+    Math.max(0, Math.min(initialStep, steps.length - 1))
+  );
 
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === steps.length - 1;
   const step = steps[currentStep];
   const hasErrors = validationErrors.length > 0;
+  const stepValidationErrors = useMemo(
+    () =>
+      steps.map((wizardStep) => {
+        if (!wizardStep.fieldNames?.length) {
+          return [];
+        }
+
+        return validationErrors.filter((error) =>
+          wizardStep.fieldNames!.some((fieldName) => matchesFieldPattern(error.field, fieldName))
+        );
+      }),
+    [steps, validationErrors]
+  );
+  const currentStepErrors = stepValidationErrors[currentStep] ?? [];
+  const firstErrorStepIndex = stepValidationErrors.findIndex((errors) => errors.length > 0);
 
   function getPrimaryButtonLabel(): string {
     if (!isLastStep) return "Next";
     if (isLoading) return loadingButtonText;
+    if (hasErrors) {
+      return `Fix ${validationErrors.length} error${validationErrors.length === 1 ? "" : "s"}`;
+    }
     return completeButtonText;
   }
 
   function getPrimaryButtonAriaLabel(): string {
     if (!isLastStep) return "Go to next step";
     if (isLoading) return loadingButtonText;
-    if (hasErrors) return "Fix validation errors to continue";
+    if (hasErrors && firstErrorStepIndex >= 0) {
+      const firstErrorStep = steps[firstErrorStepIndex];
+      return `Go to ${firstErrorStep.title} to fix ${validationErrors.length} validation error${validationErrors.length === 1 ? "" : "s"}`;
+    }
     return completeButtonText;
   }
 
   const handleNext = () => {
     if (isLastStep) {
-      if (!hasErrors) {
-        onComplete();
+      if (hasErrors) {
+        if (firstErrorStepIndex >= 0) {
+          setCurrentStep(firstErrorStepIndex);
+        }
+        return;
       }
+      onComplete();
     } else {
       setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
     }
@@ -84,6 +114,8 @@ export function Wizard({
             const isCurrent = index === currentStep;
             const isCompleted = index < currentStep;
             const isClickable = index <= currentStep + 1;
+            const errorCount = stepValidationErrors[index]?.length ?? 0;
+            const hasStepErrors = errorCount > 0;
             return (
               <button
                 key={s.id}
@@ -92,11 +124,13 @@ export function Wizard({
                     ? "bg-white text-[var(--color-primary)] shadow-[var(--shadow-sm)]"
                     : isCompleted
                       ? "text-[var(--color-success)]"
+                      : hasStepErrors
+                        ? "text-[var(--color-warning)]"
                       : "text-[var(--color-text-light)]"
                 } ${isClickable ? "cursor-pointer hover:bg-white/80" : "cursor-default opacity-50"}`}
                 onClick={() => handleStepClick(index)}
                 disabled={!isClickable}
-                aria-label={`Step ${index + 1}: ${s.title}${isCompleted ? " (completed)" : isCurrent ? " (current)" : ""}`}
+                aria-label={`Step ${index + 1}: ${s.title}${isCompleted ? " (completed)" : isCurrent ? " (current)" : ""}${hasStepErrors ? ` (${errorCount} validation error${errorCount === 1 ? "" : "s"})` : ""}`}
                 aria-current={isCurrent ? "step" : undefined}
               >
                 <span
@@ -118,8 +152,17 @@ export function Wizard({
                   )}
                 </span>
                 <span className="text-[0.65rem] font-medium leading-tight">{s.title}</span>
-                {s.optional && (
-                  <span className="text-[0.55rem] text-[var(--color-text-light)]">Optional</span>
+                {(s.optional || hasStepErrors) && (
+                  <div className="flex items-center gap-1">
+                    {s.optional && (
+                      <span className="text-[0.55rem] text-[var(--color-text-light)]">Optional</span>
+                    )}
+                    {hasStepErrors && (
+                      <span className="rounded-full bg-[var(--color-warning-light)] px-2 py-0.5 text-[0.55rem] font-semibold text-[var(--color-warning)]">
+                        {errorCount} issue{errorCount === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </div>
                 )}
               </button>
             );
@@ -153,6 +196,22 @@ export function Wizard({
                 <p className="mt-1.5 text-sm text-[var(--color-text-muted)]">{step.subtitle}</p>
               )}
             </div>
+            {currentStepErrors.length > 0 && (
+              <div
+                className="mb-6 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4"
+                role="alert"
+                aria-label="Step validation errors"
+              >
+                <p className="mb-2 text-sm font-semibold text-[var(--color-warning)]">
+                  Fix these inputs on this step before running the simulation.
+                </p>
+                <ul className="list-inside list-disc space-y-1 text-sm text-[var(--color-text)]">
+                  {currentStepErrors.map((err, index) => (
+                    <li key={`${err.field}-${index}`}>{err.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="space-y-5">{step.content}</div>
           </section>
         )}
@@ -194,12 +253,20 @@ export function Wizard({
         <button
           className="rounded-[var(--radius-md)] bg-gradient-golden px-6 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-sm)] transition-all duration-200 hover:shadow-[var(--shadow-md)] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           onClick={handleNext}
-          disabled={isLoading || (isLastStep && hasErrors)}
+          disabled={isLoading}
           aria-label={getPrimaryButtonAriaLabel()}
         >
           {getPrimaryButtonLabel()}
         </button>
       </div>
     </div>
+  );
+}
+
+function matchesFieldPattern(field: string, pattern: string): boolean {
+  return (
+    field === pattern ||
+    field.startsWith(`${pattern}.`) ||
+    field.startsWith(`${pattern}[`)
   );
 }

@@ -2,9 +2,9 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "EggNest - Know if your money will last",
+  title: "EggNest - Tax-aware calculators for households and employers",
   description:
-    "Monte Carlo simulation meets real tax law. See thousands of possible futures for your finances — the full range of possibilities.",
+    "Tax-aware scenario calculators for household planning and employer package design. Model outcomes under explicit assumptions with real tax and benefit rules.",
 };
 
 export default function HomePage() {
@@ -23,28 +23,29 @@ export default function HomePage() {
               className="text-[clamp(2.75rem,6vw,4.5rem)] font-medium leading-[1.08] text-[var(--color-text)]"
               style={{ letterSpacing: "-0.03em" }}
             >
-              Know if your money
+              Model the numbers
               <br />
-              will last.
+              before you decide.
             </h1>
             <p className="mt-6 max-w-md text-xl leading-relaxed text-[var(--color-text-muted)]">
-              Monte Carlo simulation meets real tax law. See thousands of
-              possible futures for your finances&mdash;the full range of
-              possibilities.
+              EggNest has two tax-aware product surfaces: the Simulator for
+              household scenarios and the Employer calculator for package
+              design. Both use explicit assumptions and real tax and benefit
+              rules.
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
               <Link
                 href="/simulator"
                 className="inline-flex items-center gap-2 rounded-full bg-gradient-golden px-8 py-4 text-base font-semibold text-white shadow-[var(--shadow-md),0_4px_20px_var(--color-primary-glow)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-lg),0_8px_30px_rgba(234,88,12,0.3)]"
               >
-                Try the simulator
+                Open simulator
               </Link>
-              <a
-                href="#how-it-works"
+              <Link
+                href="/employer"
                 className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-[var(--color-border)] bg-white px-8 py-4 text-base font-semibold text-[var(--color-text)] shadow-[var(--shadow-sm)] transition-all hover:border-[var(--color-primary-200)] hover:bg-[var(--color-primary-50)]"
               >
-                See how it works
-              </a>
+                Employer calculator
+              </Link>
             </div>
           </div>
 
@@ -54,8 +55,8 @@ export default function HomePage() {
               <svg viewBox="0 0 420 240" className="w-full">
                 <line x1="50" y1="20" x2="50" y2="200" stroke="#e5e7eb" strokeWidth="1" />
                 <line x1="50" y1="200" x2="400" y2="200" stroke="#e5e7eb" strokeWidth="1" />
-                <text x="15" y="110" fontSize="11" fill="#6b7280" transform="rotate(-90, 15, 110)">Portfolio Value</text>
-                <text x="225" y="230" fontSize="11" fill="#6b7280" textAnchor="middle">Years</text>
+                <text x="15" y="110" fontSize="11" fill="#6b7280" transform="rotate(-90, 15, 110)">Net resources</text>
+                <text x="225" y="230" fontSize="11" fill="#6b7280" textAnchor="middle">Future years</text>
                 <text x="50" y="215" fontSize="10" fill="#9ca3af" textAnchor="middle">0</text>
                 <text x="165" y="215" fontSize="10" fill="#9ca3af" textAnchor="middle">10</text>
                 <text x="280" y="215" fontSize="10" fill="#9ca3af" textAnchor="middle">20</text>
@@ -76,7 +77,7 @@ export default function HomePage() {
                 <path d="M 130 60 L 150 80" stroke="#d97706" strokeWidth="1" fill="none" />
               </svg>
               <p className="mt-4 text-center text-sm italic text-[var(--color-text-muted)]">
-                Each line is a possible future. Which one will be yours?
+                Each line is a possible future. Compare the tradeoffs before you choose.
               </p>
             </div>
           </div>
@@ -89,25 +90,24 @@ export default function HomePage() {
           className="text-[clamp(2rem,4vw,2.75rem)] font-medium text-[var(--color-text)]"
           style={{ letterSpacing: "-0.02em" }}
         >
-          Go beyond the average.
+          Go beyond one-number calculators.
         </h2>
         <p className="mx-auto mt-6 max-w-[42rem] text-lg leading-relaxed text-[var(--color-text-muted)]">
-          Most financial calculators show one number: your &ldquo;expected&rdquo;
-          outcome. But markets don&rsquo;t move in averages&mdash;they crash,
-          they boom, they surprise. A single projection hides the range of
-          outcomes that could shape your financial future.
+          Most tools collapse everything into one answer. EggNest keeps the
+          assumptions visible, models taxes and benefits explicitly, and lets
+          you compare scenarios instead of treating the output like advice.
         </p>
         <div className="mt-12 grid grid-cols-1 gap-6 sm:grid-cols-2">
           {[
             {
-              value: "2x",
+              value: "Taxes + benefits",
               label:
-                "difference between good and bad market sequences with identical average returns",
+                "A raise, move, or new child can change what you actually keep, not just your gross income.",
             },
             {
-              value: "$400K+",
+              value: "Scenarios, not guesses",
               label:
-                "gap between 25th and 75th percentile outcomes on a $1M portfolio",
+                "See the range of outcomes before you decide, instead of relying on a single projection.",
             },
           ].map(({ value, label }) => (
             <div
@@ -120,6 +120,49 @@ export default function HomePage() {
               <span className="mt-3 block text-base text-[var(--color-text-muted)]">
                 {label}
               </span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-[72rem] px-6 py-8 md:py-12">
+        <div className="grid gap-5 lg:grid-cols-[1.1fr_1.1fr_0.8fr]">
+          {[
+            {
+              title: "Simulator",
+              body: "Household simulator for retirement, life events, taxes, and historical or Monte Carlo comparisons.",
+              href: "/simulator",
+              cta: "Open simulator",
+            },
+            {
+              title: "Employer surface",
+              body: "Compensation package calculator for loaded employer cost, market position, and employee after-tax value.",
+              href: "/employer",
+              cta: "Open employer calculator",
+            },
+            {
+              title: "Shared engine",
+              body: "One tax-aware modeling stack underneath both surfaces, with explicit assumptions and reproducible outputs.",
+            },
+          ].map((item) => (
+            <div
+              key={item.title}
+              className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-white p-6 shadow-[var(--shadow-sm)]"
+            >
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-primary)]">
+                {item.title}
+              </div>
+              <p className="mt-3 text-base leading-relaxed text-[var(--color-text-muted)]">
+                {item.body}
+              </p>
+              {"href" in item && item.href && item.cta ? (
+                <Link
+                  href={item.href}
+                  className="mt-5 inline-flex items-center text-sm font-semibold text-[var(--color-primary)] transition-colors hover:text-[var(--color-primary-dark)]"
+                >
+                  {item.cta}
+                </Link>
+              ) : null}
             </div>
           ))}
         </div>
@@ -147,7 +190,7 @@ export default function HomePage() {
                 </svg>
               ),
               title: "10,000 simulations",
-              desc: "Not one projection\u2014thousands. See the full range of what could happen based on historical market behavior.",
+              desc: "Not one projection\u2014thousands. See the full range of what could happen across your household's financial future.",
             },
             {
               icon: (
@@ -157,7 +200,7 @@ export default function HomePage() {
                 </svg>
               ),
               title: "Real tax calculations",
-              desc: "Powered by PolicyEngine. Actual federal and state tax law\u2014not estimates. See your true after-tax income.",
+              desc: "Powered by PolicyEngine. Actual federal and state tax law\u2014not estimates. See your true after-tax position.",
             },
             {
               icon: (
@@ -166,8 +209,8 @@ export default function HomePage() {
                   <path d="M12 6v6l4 2" />
                 </svg>
               ),
-              title: "Longevity-aware",
-              desc: "Accounts for time horizons and life expectancy. Near-term outcomes weighted appropriately.",
+              title: "Life-event planning",
+              desc: "Explore raises, marriage, children, relocation, and retirement with before-and-after scenario comparisons.",
             },
             {
               icon: (
@@ -178,7 +221,7 @@ export default function HomePage() {
                 </svg>
               ),
               title: "Household planning",
-              desc: "Planning with a partner? Model both of you\u2014different ages, incomes, and benefits.",
+              desc: "Model couples, dependents, and multiple decision-makers together\u2014different ages, incomes, and household rules included.",
             },
             {
               icon: (
@@ -188,7 +231,7 @@ export default function HomePage() {
                 </svg>
               ),
               title: "Multiple income sources",
-              desc: "Employment income, Social Security, pensions, and more. See how they all interact with taxes.",
+              desc: "Employment income, Social Security, pensions, portfolio drawdowns, and more. See how they interact with taxes over time.",
             },
             {
               icon: (
@@ -198,8 +241,8 @@ export default function HomePage() {
                   <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
               ),
-              title: "Annuity comparison",
-              desc: "Should you buy an annuity or invest? Compare guaranteed income vs. market upside with real numbers.",
+              title: "Retirement workflow",
+              desc: "When retirement is the question, compare claiming ages, annuities, and drawdown paths with real numbers.",
             },
           ].map(({ icon, title, desc }) => (
             <div
@@ -234,18 +277,18 @@ export default function HomePage() {
           {[
             {
               num: "1",
-              title: "Enter your situation",
-              desc: "Age, savings, income sources, state. Takes about 2 minutes.",
+              title: "Enter your household",
+              desc: "Income, state, assets, and the scenario you want to test. Takes about 2 minutes.",
             },
             {
               num: "2",
               title: "We simulate 10,000 futures",
-              desc: "Using historical market data and actual tax law to model your financial trajectory.",
+              desc: "Using historical market data plus actual tax and benefit rules to model your trajectory.",
             },
             {
               num: "3",
-              title: "See your probability of success",
-              desc: 'Not just "you\'ll be fine"\u2014the actual percentage chance your money lasts, with the full distribution of outcomes.',
+              title: "Compare the tradeoffs",
+              desc: "See the distribution of outcomes, not just a single answer, before you make a decision.",
             },
           ].map(({ num, title, desc }) => (
             <div key={num} className="relative z-10 text-center">
@@ -271,16 +314,17 @@ export default function HomePage() {
           className="relative z-10 text-[clamp(2rem,4vw,2.75rem)] font-medium"
           style={{ letterSpacing: "-0.02em" }}
         >
-          See the full picture. Make better decisions.
+          See the full picture before you decide.
         </h2>
         <p className="relative z-10 mt-4 text-lg opacity-90">
-          Free to use. No account required. Results in 30 seconds.
+          Start with the simulator, or jump to the employer surface
+          for package design and offer analysis.
         </p>
         <Link
           href="/simulator"
           className="relative z-10 mt-8 inline-block rounded-full bg-white px-10 py-4 text-lg font-semibold text-[var(--color-primary)] shadow-[var(--shadow-lg)] transition-all hover:bg-[var(--color-primary-50)] hover:shadow-[var(--shadow-xl)]"
         >
-          Run your simulation
+          Open simulator
         </Link>
       </section>
     </div>

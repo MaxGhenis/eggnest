@@ -1,13 +1,17 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   compareStates,
+  compareWithdrawalStrategies,
+  optimizeRothConversions,
   compareSSTimings,
   compareAllocations,
   type SimulationInput,
   type SpouseInput,
   type AnnuityInput,
   type Holding,
+  type RothOptimizationResult,
   type StateComparisonResult,
+  type StrategyComparisonResult,
   type SSTimingComparisonResult,
   type AllocationComparisonResult,
 } from "../lib/api";
@@ -16,6 +20,18 @@ import { buildFullParams } from "../lib/simulatorUtils";
 import type { PortfolioMode, WithdrawalStrategy } from "./usePortfolio";
 
 export interface UseComparisonsReturn {
+  // Withdrawal strategy comparison
+  strategyComparisonResult: StrategyComparisonResult | null;
+  isComparingStrategies: boolean;
+  setStrategyComparisonResult: React.Dispatch<React.SetStateAction<StrategyComparisonResult | null>>;
+  handleCompareStrategies: () => Promise<void>;
+
+  // Roth conversion optimization
+  rothOptimizationResult: RothOptimizationResult | null;
+  isOptimizingRoth: boolean;
+  setRothOptimizationResult: React.Dispatch<React.SetStateAction<RothOptimizationResult | null>>;
+  handleOptimizeRoth: () => Promise<void>;
+
   // State comparison
   stateComparisonResult: StateComparisonResult | null;
   isComparingStates: boolean;
@@ -56,6 +72,16 @@ interface ComparisonDeps {
 export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
   const { params, spouse, annuity, portfolioMode, holdings, withdrawalStrategy, result, setError } = deps;
 
+  // Withdrawal strategy comparison
+  const [strategyComparisonResult, setStrategyComparisonResult] = useState<StrategyComparisonResult | null>(null);
+  const [isComparingStrategies, setIsComparingStrategies] = useState(false);
+
+  // Roth conversion optimization
+  const [rothOptimizationResult, setRothOptimizationResult] = useState<RothOptimizationResult | null>(null);
+  const [isOptimizingRoth, setIsOptimizingRoth] = useState(false);
+  const rothOptimizationAbortControllerRef = useRef<AbortController | null>(null);
+  const rothOptimizationRequestIdRef = useRef(0);
+
   // State comparison
   const [stateComparisonResult, setStateComparisonResult] = useState<StateComparisonResult | null>(null);
   const [isComparingStates, setIsComparingStates] = useState(false);
@@ -75,6 +101,72 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
     () => buildFullParams(params, params.has_spouse ? spouse : undefined, annuity, portfolioMode, holdings, withdrawalStrategy),
     [params, spouse, annuity, portfolioMode, holdings, withdrawalStrategy],
   );
+
+  const resetRothOptimization = useCallback(() => {
+    rothOptimizationAbortControllerRef.current?.abort();
+    rothOptimizationRequestIdRef.current += 1;
+    setRothOptimizationResult(null);
+    setIsOptimizingRoth(false);
+  }, []);
+
+  useEffect(() => {
+    resetRothOptimization();
+  }, [result, params, spouse, annuity, portfolioMode, holdings, withdrawalStrategy, resetRothOptimization]);
+
+  const handleCompareStrategies = useCallback(async () => {
+    if (!result || portfolioMode !== "detailed" || holdings.length === 0) return;
+
+    setIsComparingStrategies(true);
+    setStrategyComparisonResult(null);
+
+    try {
+      const fullParams = getFullParams();
+      const comparison = await compareWithdrawalStrategies(fullParams);
+      setStrategyComparisonResult(comparison);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setIsComparingStrategies(false);
+    }
+  }, [result, portfolioMode, holdings.length, getFullParams, setError]);
+
+  const handleOptimizeRoth = useCallback(async () => {
+    const hasTraditionalAccounts = holdings.some(
+      (holding) =>
+        holding.account_type === "traditional_401k" ||
+        holding.account_type === "traditional_ira"
+    );
+    if (!result || portfolioMode !== "detailed" || holdings.length === 0 || !hasTraditionalAccounts) {
+      return;
+    }
+
+    rothOptimizationAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    const requestId = rothOptimizationRequestIdRef.current + 1;
+
+    rothOptimizationAbortControllerRef.current = controller;
+    rothOptimizationRequestIdRef.current = requestId;
+    setIsOptimizingRoth(true);
+    setRothOptimizationResult(null);
+
+    try {
+      const fullParams = getFullParams();
+      const optimization = await optimizeRothConversions(fullParams, undefined, controller.signal);
+      if (controller.signal.aborted || rothOptimizationRequestIdRef.current !== requestId) {
+        return;
+      }
+      setRothOptimizationResult(optimization);
+    } catch (err) {
+      if (controller.signal.aborted || rothOptimizationRequestIdRef.current !== requestId) {
+        return;
+      }
+      setError(err);
+    } finally {
+      if (rothOptimizationRequestIdRef.current === requestId) {
+        setIsOptimizingRoth(false);
+      }
+    }
+  }, [result, portfolioMode, holdings, getFullParams, setError]);
 
   const handleCompareStates = useCallback(async (statesToCompare?: string[]) => {
     if (!result) return;
@@ -151,6 +243,16 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
   }, [result, getFullParams, setError]);
 
   return {
+    strategyComparisonResult,
+    isComparingStrategies,
+    setStrategyComparisonResult,
+    handleCompareStrategies,
+
+    rothOptimizationResult,
+    isOptimizingRoth,
+    setRothOptimizationResult,
+    handleOptimizeRoth,
+
     stateComparisonResult,
     isComparingStates,
     selectedCompareStates,

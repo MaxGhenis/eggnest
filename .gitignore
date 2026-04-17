@@ -47,3 +47,4 @@ htmlcov/
 *.h5
 *.tmp
 .vercel
+.env*.local

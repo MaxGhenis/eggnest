@@ -41,6 +41,12 @@ export const DEFAULT_PARAMS: SimulationInput = {
   employment_income: 0,
   employment_growth_rate: 0.03,
   retirement_age: 65,
+  spending_mode: "real",
+  inflation_model: "historical",
+  inflation_rate: 0.025,
+  social_security_inflation_adjusted: true,
+  pension_cola_rate: 0,
+  annuity_cola_rate: 0,
   state: "CA",
   filing_status: "single",
   has_spouse: false,
@@ -51,6 +57,8 @@ export const DEFAULT_PARAMS: SimulationInput = {
   return_volatility: 0.16,
   dividend_yield: 0.02,
   stock_allocation: 0.8,
+  stock_index: "sp500",
+  bond_index: "treasury",
 };
 
 export const DEFAULT_SPOUSE: SpouseInput = {
@@ -87,6 +95,12 @@ export const URL_PARAM_MAP = {
   pension: "pension_annual",
   emp: "employment_income",
   ret: "retirement_age",
+  spMode: "spending_mode",
+  infMode: "inflation_model",
+  infl: "inflation_rate",
+  ssCola: "social_security_inflation_adjusted",
+  penCola: "pension_cola_rate",
+  annCola: "annuity_cola_rate",
   stocks: "stock_allocation",
   spouse: "has_spouse",
   // Spouse params

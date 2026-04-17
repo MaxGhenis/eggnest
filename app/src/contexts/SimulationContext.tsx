@@ -27,6 +27,8 @@ interface SimulationContextValue {
   setShowWizard: React.Dispatch<React.SetStateAction<boolean>>;
   showPersonaPicker: boolean;
   setShowPersonaPicker: React.Dispatch<React.SetStateAction<boolean>>;
+  personaEntryMode: "start" | "review";
+  setPersonaEntryMode: React.Dispatch<React.SetStateAction<"start" | "review">>;
   isReceivingSS: boolean;
   setIsReceivingSS: React.Dispatch<React.SetStateAction<boolean>>;
   isSpouseReceivingSS: boolean;
@@ -38,7 +40,7 @@ interface SimulationContextValue {
   // Actions
   handleSimulate: () => Promise<void>;
   handleSimulateWithParams: (simParams: SimulationInput, simSpouse?: SpouseInput) => Promise<void>;
-  loadPersona: (persona: Persona, runImmediately?: boolean) => void;
+  loadPersona: (persona: Persona, mode?: "start" | "review") => void;
   runWhatIfScenario: (modifier: Partial<SimulationInput>) => void;
 }
 
@@ -73,6 +75,7 @@ export function SimulationProvider({ children, portfolioMode, holdings, withdraw
 
   const [showWizard, setShowWizard] = useState(true);
   const [showPersonaPicker, setShowPersonaPicker] = useState(!hasUrlParams);
+  const [personaEntryMode, setPersonaEntryMode] = useState<"start" | "review">("start");
   const [isReceivingSS, setIsReceivingSS] = useState(false);
   const [isSpouseReceivingSS, setIsSpouseReceivingSS] = useState(false);
 
@@ -98,17 +101,17 @@ export function SimulationProvider({ children, portfolioMode, holdings, withdraw
     setShowWizard(false);
   }, [annuity, portfolioMode, holdings, withdrawalStrategy, simulation]);
 
-  const loadPersona = useCallback((persona: Persona, runImmediately: boolean = false) => {
+  const loadPersona = useCallback((persona: Persona, mode: "start" | "review" = "start") => {
     setParams(persona.params);
-    if (persona.spouse) setSpouse(persona.spouse);
+    setSpouse(persona.spouse ?? DEFAULT_SPOUSE);
+    setPersonaEntryMode(mode);
+    setShowWizard(true);
     setShowPersonaPicker(false);
-    if (runImmediately) {
-      setTimeout(() => handleSimulateWithParams(persona.params, persona.spouse), 0);
-    }
-  }, [handleSimulateWithParams]);
+  }, []);
 
   const runWhatIfScenario = useCallback((modifier: Partial<SimulationInput>) => {
     setParams((prev) => ({ ...prev, ...modifier }));
+    setPersonaEntryMode("start");
     setShowWizard(true);
   }, []);
 
@@ -119,6 +122,7 @@ export function SimulationProvider({ children, portfolioMode, holdings, withdraw
       annuity, setAnnuity,
       showWizard, setShowWizard,
       showPersonaPicker, setShowPersonaPicker,
+      personaEntryMode, setPersonaEntryMode,
       isReceivingSS, setIsReceivingSS,
       isSpouseReceivingSS, setIsSpouseReceivingSS,
       simulation,

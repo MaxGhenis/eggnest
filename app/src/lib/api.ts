@@ -294,6 +294,7 @@ export interface Holding {
   account_type: AccountType;
   fund: FundType;
   balance: number;
+  cost_basis?: number;
 }
 
 export interface SpouseInput {
@@ -317,6 +318,7 @@ export interface SimulationInput {
   // Holdings-based portfolio (preferred)
   holdings?: Holding[];
   withdrawal_strategy?: "traditional_first" | "roth_first" | "taxable_first" | "pro_rata";
+  random_seed?: number | null;
 
   // Legacy: simple portfolio (for backward compatibility)
   initial_capital?: number;
@@ -333,6 +335,12 @@ export interface SimulationInput {
   employment_income: number;
   employment_growth_rate: number;
   retirement_age: number;
+  spending_mode: "real" | "nominal";
+  inflation_model: "historical" | "constant";
+  inflation_rate: number;
+  social_security_inflation_adjusted: boolean;
+  pension_cola_rate: number;
+  annuity_cola_rate: number;
 
   // Tax settings
   state: string;
@@ -355,12 +363,11 @@ export interface SimulationInput {
   return_volatility: number;
   dividend_yield: number;
   stock_allocation: number;
-  stock_index?: "sp500" | "vt";  // vt = Vanguard Total World (default)
-  bond_index?: "treasury" | "bnd";  // bnd = Vanguard Total Bond Market (default)
+  stock_index?: "sp500" | "vt";  // sp500 = long-history default baseline
+  bond_index?: "treasury" | "bnd";  // treasury = long-history default baseline
 
   // Legacy fields for backward compatibility
   n_years?: number;
-  inflation_rate?: number;
 }
 
 export interface YearBreakdown {
@@ -369,6 +376,10 @@ export interface YearBreakdown {
   portfolio_start: number;
   portfolio_end: number;
   portfolio_return: number;
+  inflation_rate: number;
+  cumulative_inflation: number;
+  spending_target: number;
+  spending_target_real: number;
   employment_income: number;
   social_security: number;
   pension: number;
@@ -381,13 +392,29 @@ export interface YearBreakdown {
   total_tax: number;
   effective_tax_rate: number;
   net_income: number;
+  roth_conversion?: number;
+  federal_taxable_income?: number;
+  federal_taxable_income_without_roth_conversion?: number;
+  federal_bracket_headroom_used?: number;
+  federal_marginal_rate_on_last_conversion_dollar?: number;
+  medicare_part_b_premium?: number;
+  medicare_part_b_irmaa_increment?: number;
+  medicare_part_b_irmaa_bracket?: string;
+  medicare_part_d_premium_surcharge?: number;
+  medicare_part_d_irmaa_bracket?: string;
+  medicare_total_premium?: number;
+  medicare_premium_delta_vs_no_roth_conversion?: number;
+  medicare_premium_delta_vs_baseline?: number;
 }
 
 export interface SimulationResult {
   success_rate: number;
   median_final_value: number;
   mean_final_value: number;
+  median_final_value_real: number;
+  mean_final_value_real: number;
   percentiles: Record<string, number>;
+  percentiles_real: Record<string, number>;
   median_depletion_age: number | null;
   median_depletion_year: number | null;
   total_withdrawn_median: number;
@@ -396,6 +423,31 @@ export interface SimulationResult {
   year_breakdown: YearBreakdown[];
   initial_withdrawal_rate: number;
   prob_10_year_failure: number;
+}
+
+export interface HistoricalCohortResult {
+  start_year: number;
+  success: boolean;
+  final_value: number;
+  final_value_real: number;
+  total_withdrawn: number;
+  total_taxes: number;
+  failure_age: number | null;
+}
+
+export interface HistoricalBacktestResult {
+  horizon_years: number;
+  start_years: number[];
+  results: HistoricalCohortResult[];
+  success_rate: number;
+  median_final_value: number;
+  median_final_value_real: number;
+  total_withdrawn_median: number;
+  total_taxes_median: number;
+  strongest_start_year: number;
+  weakest_start_year: number;
+  median_path: number[];
+  median_path_real: number[];
 }
 
 export interface MortalityRates {
@@ -430,6 +482,22 @@ export async function runSimulation(
     method: "POST",
     body: params,
     token,
+    signal,
+    timeoutMs: LONG_TIMEOUT_MS,
+  });
+}
+
+export async function runHistoricalBacktest(
+  baseInput: SimulationInput,
+  startYears?: number[],
+  signal?: AbortSignal
+): Promise<HistoricalBacktestResult> {
+  return apiFetch<HistoricalBacktestResult>("/backtest/historical", {
+    method: "POST",
+    body: {
+      base_input: baseInput,
+      ...(startYears && { start_years: startYears }),
+    },
     signal,
     timeoutMs: LONG_TIMEOUT_MS,
   });
@@ -522,7 +590,7 @@ export async function compareAnnuity(
   annuity_total_guaranteed: number;
   probability_simulation_beats_annuity: number;
   simulation_median_total_income: number;
-  recommendation: string;
+  summary: string;
 }> {
   return apiFetch("/compare-annuity", {
     method: "POST",
@@ -568,6 +636,154 @@ export async function compareStates(
   });
 }
 
+export interface StrategyScenarioSummary {
+  success_rate: number;
+  median_final_value: number;
+  median_final_value_real: number;
+  total_taxes_median: number;
+  total_withdrawn_median: number;
+}
+
+export interface HistoricalStrategySummary extends StrategyScenarioSummary {
+  cohort_count: number;
+  strongest_start_year: number;
+  weakest_start_year: number;
+  worst_final_value_real: number;
+}
+
+export interface StrategyComparisonItem {
+  strategy: NonNullable<SimulationInput["withdrawal_strategy"]>;
+  monte_carlo: StrategyScenarioSummary;
+  historical: HistoricalStrategySummary;
+  blended_score: number;
+}
+
+export interface StrategyComparisonResult {
+  results: StrategyComparisonItem[];
+  top_scoring_strategy: NonNullable<SimulationInput["withdrawal_strategy"]>;
+  lowest_modeled_tax_strategy: NonNullable<SimulationInput["withdrawal_strategy"]>;
+  strongest_historical_strategy: NonNullable<SimulationInput["withdrawal_strategy"]>;
+  summary: string;
+}
+
+export async function compareWithdrawalStrategies(
+  baseInput: SimulationInput,
+  strategies?: Array<NonNullable<SimulationInput["withdrawal_strategy"]>>,
+  signal?: AbortSignal
+): Promise<StrategyComparisonResult> {
+  return apiFetch<StrategyComparisonResult>("/compare-withdrawal-strategies", {
+    method: "POST",
+    body: {
+      base_input: baseInput,
+      ...(strategies && { strategies }),
+    },
+    signal,
+    timeoutMs: LONG_TIMEOUT_MS,
+  });
+}
+
+export type RothConversionPolicy =
+  | "fixed_amount"
+  | "fill_standard_deduction"
+  | "fill_12_percent_bracket"
+  | "fill_22_percent_bracket";
+
+export interface RothConversionScenarioSummary extends StrategyScenarioSummary {
+  total_medicare_premiums_median?: number;
+  total_roth_conversions_median: number;
+  year_breakdown: YearBreakdown[];
+}
+
+export interface HistoricalRothConversionSummary extends HistoricalStrategySummary {
+  total_medicare_premiums_median?: number;
+  total_roth_conversions_median: number;
+}
+
+export interface EngineResultMetadata {
+  engine_version: string;
+  method_version: string;
+  random_seed: number | null;
+  assumptions_summary: string;
+}
+
+export interface RothConversionScenarioDelta {
+  blended_score_delta: number;
+  monte_carlo_success_rate_delta: number;
+  historical_success_rate_delta: number;
+  monte_carlo_median_final_value_real_delta: number;
+  historical_median_final_value_real_delta: number;
+  monte_carlo_total_taxes_median_delta: number;
+  monte_carlo_total_medicare_premiums_median_delta: number;
+  monte_carlo_total_roth_conversions_median_delta: number;
+  historical_total_medicare_premiums_median_delta: number;
+  historical_worst_final_value_real_delta: number;
+}
+
+export interface RothOptimizationItem {
+  conversion_policy: RothConversionPolicy;
+  scenario_label: string;
+  annual_conversion_amount: number | null;
+  conversion_start_age: number;
+  conversion_end_age: number;
+  monte_carlo: RothConversionScenarioSummary;
+  historical: HistoricalRothConversionSummary;
+  blended_score: number;
+  delta_vs_baseline: RothConversionScenarioDelta;
+}
+
+export interface RothOptimizationResult {
+  results: RothOptimizationItem[];
+  metadata?: EngineResultMetadata | null;
+  baseline_scenario_label: string | null;
+  baseline_conversion_amount: number | null;
+  top_scoring_scenario_label: string;
+  top_scoring_conversion_amount: number | null;
+  lowest_modeled_tax_scenario_label: string;
+  lowest_modeled_tax_amount: number | null;
+  strongest_historical_scenario_label: string;
+  strongest_historical_conversion_amount: number | null;
+  candidate_count: number;
+  candidate_start_ages: number[];
+  window_lengths: number[];
+  lowest_medicare_premium_scenario_label: string;
+  lowest_medicare_premium_conversion_amount: number | null;
+  highest_real_ending_wealth_scenario_label: string;
+  highest_real_ending_wealth_conversion_amount: number | null;
+  summary: string;
+}
+
+export async function optimizeRothConversions(
+  baseInput: SimulationInput,
+  options?: {
+    annualConversionAmounts?: number[];
+    conversionPolicies?: RothConversionPolicy[];
+    candidateStartAges?: number[];
+    windowLengths?: number[];
+  },
+  signal?: AbortSignal
+): Promise<RothOptimizationResult> {
+  return apiFetch<RothOptimizationResult>("/optimize-roth-conversions", {
+    method: "POST",
+    body: {
+      base_input: baseInput,
+      ...(options?.annualConversionAmounts && {
+        annual_conversion_amounts: options.annualConversionAmounts,
+      }),
+      ...(options?.conversionPolicies && {
+        conversion_policies: options.conversionPolicies,
+      }),
+      ...(options?.candidateStartAges && {
+        candidate_start_ages: options.candidateStartAges,
+      }),
+      ...(options?.windowLengths && {
+        window_lengths: options.windowLengths,
+      }),
+    },
+    signal,
+    timeoutMs: LONG_TIMEOUT_MS,
+  });
+}
+
 // Social Security timing types
 export interface SSTimingResult {
   claiming_age: number;
@@ -586,8 +802,8 @@ export interface SSTimingComparisonResult {
   full_retirement_age: number;
   pia_monthly: number;
   results: SSTimingResult[];
-  optimal_claiming_age: number;
-  optimal_for_longevity: number;
+  highest_success_claiming_age: number;
+  highest_lifetime_income_claiming_age: number;
 }
 
 export async function compareSSTimings(
@@ -624,9 +840,9 @@ export interface AllocationResult {
 
 export interface AllocationComparisonResult {
   results: AllocationResult[];
-  optimal_for_success: number;
-  optimal_for_safety: number;
-  recommendation: string;
+  highest_success_allocation: number;
+  highest_safety_allocation: number;
+  summary: string;
 }
 
 export async function compareAllocations(
@@ -681,6 +897,105 @@ export interface HouseholdResult {
   effective_tax_rate: number;
 }
 
+export interface CompensationBenchmark {
+  id: string;
+  role: string;
+  tier: string;
+  label: string;
+  source: string;
+  market_p25_total: number;
+  market_p50_total: number;
+  market_p75_total: number;
+}
+
+export interface CompensationEmployeeProfile {
+  state: string;
+  year: number;
+  filing_status: "single" | "married_filing_jointly" | "head_of_household";
+  age: number;
+  spouse_age?: number;
+  spouse_employment_income?: number;
+  children?: number;
+  child_age?: number;
+}
+
+export interface CompensationPackageInput {
+  name: string;
+  benchmark_id: string;
+  salary: number;
+  annual_bonus?: number;
+  annual_equity?: number;
+  taxable_equity_treatment?: "w2" | "capital_gains";
+  employer_retirement_rate?: number;
+  employer_retirement_cap?: number;
+  employer_retirement_amount?: number;
+  employer_health_premiums?: number;
+  other_employer_costs?: number;
+}
+
+export interface CompensationAnalysisInput {
+  employee_profile: CompensationEmployeeProfile;
+  packages: CompensationPackageInput[];
+}
+
+export interface CompensationPackageTotals {
+  guaranteed_total: number;
+  upside_total: number;
+  employer_retirement: number;
+  taxable_wages: number;
+}
+
+export interface CompensationMarketPosition {
+  guaranteed_percentile: number;
+  upside_percentile: number;
+  guaranteed_percentile_label: string;
+  upside_percentile_label: string;
+  market_p25_total: number;
+  market_p50_total: number;
+  market_p75_total: number;
+}
+
+export interface CompensationEmployerCost {
+  salary: number;
+  annual_bonus: number;
+  annual_equity: number;
+  employer_retirement: number;
+  employer_health_premiums: number;
+  other_employer_costs: number;
+  employer_social_security_tax: number;
+  employer_medicare_tax: number;
+  employer_additional_payroll_taxes: number;
+  employer_payroll_tax_components: Record<string, number>;
+  employer_payroll_tax_variables_used: string[];
+  employer_payroll_taxes: number;
+  total_cost: number;
+}
+
+export interface CompensationEmployeeValue {
+  gross_income: number;
+  federal_income_tax: number;
+  state_income_tax: number;
+  payroll_tax: number;
+  total_taxes: number;
+  modeled_public_benefits: number;
+  cash_after_tax: number;
+  employer_retirement: number;
+  employer_health_premiums: number;
+  other_benefits_value: number;
+  net_resources_total: number;
+  effective_tax_rate: number;
+  marginal_tax_rate: number;
+}
+
+export interface CompensationAnalysisResult {
+  package: CompensationPackageInput;
+  benchmark: CompensationBenchmark;
+  totals: CompensationPackageTotals;
+  market_position: CompensationMarketPosition;
+  employer_cost: CompensationEmployerCost;
+  employee_value: CompensationEmployeeValue;
+}
+
 export interface LifeEventComparison {
   event_name: string;
   before_result: HouseholdResult;
@@ -714,6 +1029,26 @@ export async function compareLifeEvent(
       after,
       event_name: eventName,
     },
+    signal,
+    timeoutMs: LONG_TIMEOUT_MS,
+  });
+}
+
+export async function getCompensationBenchmarks(
+  signal?: AbortSignal
+): Promise<CompensationBenchmark[]> {
+  return apiFetch<CompensationBenchmark[]>("/compensation/benchmarks", {
+    signal,
+  });
+}
+
+export async function analyzeCompensationPackages(
+  input: CompensationAnalysisInput,
+  signal?: AbortSignal
+): Promise<CompensationAnalysisResult[]> {
+  return apiFetch<CompensationAnalysisResult[]>("/compensation/analyze", {
+    method: "POST",
+    body: input,
     signal,
     timeoutMs: LONG_TIMEOUT_MS,
   });

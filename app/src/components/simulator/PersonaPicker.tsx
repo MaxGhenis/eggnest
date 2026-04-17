@@ -7,7 +7,7 @@ interface PersonaPickerProps {
   personas: Persona[];
   isLoading: boolean;
   progress: { currentYear: number; totalYears: number };
-  onLoadPersona: (persona: Persona, runImmediately: boolean) => void;
+  onLoadPersona: (persona: Persona, mode: "start" | "review") => void;
   onStartFromScratch: () => void;
 }
 
@@ -26,12 +26,12 @@ export function PersonaPicker({
           Monte Carlo simulation
         </div>
         <h2 className="text-3xl font-semibold text-[var(--color-text)] md:text-4xl" style={{ letterSpacing: "-0.03em" }}>
-          See your financial
+          Model your financial
           <br />
-          <span className="bg-gradient-golden bg-clip-text text-transparent">outlook in seconds</span>
+          <span className="bg-gradient-golden bg-clip-text text-transparent">outlook with real tax rules</span>
         </h2>
         <p className="mx-auto mt-3 max-w-md text-[var(--color-text-muted)]">
-          Choose a profile similar to yours, or start from scratch with your own numbers
+          Choose a profile similar to yours, then review or customize the inputs before running. Example inputs load immediately; full simulations can take a minute.
         </p>
       </div>
 
@@ -60,14 +60,14 @@ export function PersonaPicker({
             <div className="flex gap-2">
               <button
                 className="flex-1 rounded-[var(--radius-sm)] bg-gradient-golden py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-sm)] transition-all hover:shadow-[var(--shadow-md)] hover:brightness-110 disabled:opacity-50"
-                onClick={() => onLoadPersona(persona, true)}
+                onClick={() => onLoadPersona(persona, "review")}
                 disabled={isLoading}
               >
-                {isLoading ? "Running..." : "Run simulation"}
+                Quick review
               </button>
               <button
                 className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-4 py-2.5 text-sm font-medium text-[var(--color-text-muted)] transition-all hover:bg-[var(--color-gray-50)] hover:text-[var(--color-text)]"
-                onClick={() => onLoadPersona(persona, false)}
+                onClick={() => onLoadPersona(persona, "start")}
               >
                 Customize
               </button>

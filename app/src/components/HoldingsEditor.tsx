@@ -32,10 +32,10 @@ const ACCOUNT_TAX_TREATMENT: Record<
 };
 
 const FUND_TYPE_LABELS: Record<FundType, string> = {
-  vt: "VT (Total World)",
-  sp500: "S&P 500",
-  bnd: "BND (Total Bond)",
-  treasury: "Treasury bonds",
+  sp500: "S&P 500 (1928+)",
+  treasury: "Treasury bonds (1928+)",
+  vt: "VT (Total World, 2008+)",
+  bnd: "BND (Total Bond, 2007+)",
 };
 
 export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
@@ -52,7 +52,7 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
   const addHolding = () => {
     onChange([
       ...holdings,
-      { account_type: "traditional_401k", fund: "vt", balance: 0 },
+      { account_type: "traditional_401k", fund: "sp500", balance: 0 },
     ]);
   };
 
@@ -60,10 +60,22 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
     onChange(holdings.filter((_, i) => i !== index));
   };
 
-  const updateHolding = (index: number, field: keyof Holding, value: string | number) => {
-    const updated = holdings.map((h, i) =>
-      i === index ? { ...h, [field]: value } : h
-    );
+  const updateHolding = (
+    index: number,
+    field: keyof Holding,
+    value: string | number | undefined
+  ) => {
+    const updated = holdings.map((h, i) => {
+      if (i !== index) {
+        return h;
+      }
+
+      const next: Holding = { ...h, [field]: value };
+      if (field === "account_type" && value !== "taxable") {
+        delete next.cost_basis;
+      }
+      return next;
+    });
     onChange(updated);
   };
 
@@ -89,6 +101,10 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
             Add each retirement account separately. Traditional accounts are
             withdrawn first for tax efficiency, followed by taxable, then Roth.
           </p>
+          <p className="max-w-xs text-xs text-[var(--color-text-light)]">
+            S&amp;P 500 and Treasury options use the longest history. VT and BND
+            use shorter ETF-era histories.
+          </p>
         </div>
       )}
 
@@ -99,11 +115,20 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
         const balanceErrorId = `balance-error-${index}`;
         const balanceError = getFieldError(errors, `holdings[${index}].balance`);
         const isBalanceTouched = touchedFields.has(balanceFieldId);
+        const costBasisFieldId = `cost-basis-${index}`;
+        const costBasisErrorId = `cost-basis-error-${index}`;
+        const costBasisError = getFieldError(errors, `holdings[${index}].cost_basis`);
+        const isCostBasisTouched = touchedFields.has(costBasisFieldId);
+        const showCostBasis = holding.account_type === "taxable";
 
         return (
           <fieldset
             key={index}
-            className="relative grid grid-cols-[1fr_1fr_auto_auto] items-end gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-gray-50)] p-4"
+            className={`relative grid items-end gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-gray-50)] p-4 ${
+              showCostBasis
+                ? "grid-cols-[1fr_1fr_auto_auto_auto]"
+                : "grid-cols-[1fr_1fr_auto_auto]"
+            }`}
             aria-label={`Holding ${index + 1}`}
           >
             <div>
@@ -166,6 +191,39 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
                 </p>
               )}
             </div>
+
+            {showCostBasis && (
+              <div>
+                <label htmlFor={costBasisFieldId} className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]">
+                  Cost basis
+                </label>
+                <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white transition-colors focus-within:border-[var(--color-primary)]">
+                  <span className="pl-3 text-sm text-[var(--color-text-light)]" aria-hidden="true">$</span>
+                  <input
+                    id={costBasisFieldId}
+                    type="number"
+                    value={holding.cost_basis ?? ""}
+                    onChange={(e) => updateHolding(
+                      index,
+                      "cost_basis",
+                      e.target.value === "" ? undefined : Number(e.target.value)
+                    )}
+                    onBlur={() => markTouched(costBasisFieldId)}
+                    min={0}
+                    step={1000}
+                    placeholder="Optional"
+                    className="w-28 border-none bg-transparent px-2 py-2 text-sm focus:outline-none"
+                    aria-invalid={isCostBasisTouched && costBasisError ? "true" : undefined}
+                    aria-describedby={isCostBasisTouched && costBasisError ? costBasisErrorId : undefined}
+                  />
+                </div>
+                {isCostBasisTouched && costBasisError && (
+                  <p id={costBasisErrorId} className="mt-1 text-xs text-[var(--color-danger)]" role="alert">
+                    {costBasisError}
+                  </p>
+                )}
+              </div>
+            )}
 
             <button
               type="button"

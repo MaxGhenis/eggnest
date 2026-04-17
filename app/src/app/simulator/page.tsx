@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { Wizard } from "../../components/Wizard";
 import { SimulationProgress } from "../../components/SimulationProgress";
@@ -15,7 +17,8 @@ import { PortfolioProvider, usePortfolioContext } from "../../contexts/Portfolio
 import { SimulationProvider, useSimulationContext } from "../../contexts/SimulationContext";
 import { ComparisonProvider } from "../../contexts/ComparisonContext";
 import { ScenarioProvider } from "../../contexts/ScenarioContext";
-import { EXAMPLE_PERSONAS } from "../../lib/simulatorUtils";
+import { EXAMPLE_PERSONAS, buildFullParams } from "../../lib/simulatorUtils";
+import { validateHoldings, validateSimulationInput } from "../../lib/validation";
 
 export default function SimulatorPage() {
   return (
@@ -42,6 +45,30 @@ function SimulatorWithPortfolio() {
 function SimulatorShell() {
   const sim = useSimulationContext();
   const portfolio = usePortfolioContext();
+  const validationErrors = useMemo(() => {
+    const fullParams = buildFullParams(
+      sim.params,
+      sim.spouse,
+      sim.annuity,
+      portfolio.portfolioMode,
+      portfolio.holdings,
+      portfolio.withdrawalStrategy
+    );
+
+    return [
+      ...validateSimulationInput(fullParams),
+      ...(portfolio.portfolioMode === "detailed"
+        ? validateHoldings(portfolio.holdings)
+        : []),
+    ];
+  }, [
+    sim.params,
+    sim.spouse,
+    sim.annuity,
+    portfolio.portfolioMode,
+    portfolio.holdings,
+    portfolio.withdrawalStrategy,
+  ]);
 
   const wizardSteps = useWizardSteps({
     params: sim.params, updateParam: sim.updateParam,
@@ -63,7 +90,10 @@ function SimulatorShell() {
           isLoading={sim.simulation.isLoading}
           progress={sim.simulation.progress}
           onLoadPersona={sim.loadPersona}
-          onStartFromScratch={() => sim.setShowPersonaPicker(false)}
+          onStartFromScratch={() => {
+            sim.setPersonaEntryMode("start");
+            sim.setShowPersonaPicker(false);
+          }}
         />
       );
     }
@@ -73,11 +103,14 @@ function SimulatorShell() {
         <>
           <ScenarioManager />
           <Wizard
+            key={sim.personaEntryMode}
             steps={wizardSteps}
             onComplete={sim.handleSimulate}
+            initialStep={sim.personaEntryMode === "review" ? wizardSteps.length - 1 : 0}
             isLoading={sim.simulation.isLoading}
             completeButtonText="Run simulation"
             loadingButtonText="Running simulation..."
+            validationErrors={validationErrors}
             loadingContent={
               <SimulationProgress
                 currentYear={sim.simulation.progress.currentYear}
@@ -103,7 +136,11 @@ function SimulatorShell() {
         <ErrorState
           error={sim.simulation.error}
           onRetry={() => { sim.simulation.setError(null); sim.handleSimulate(); }}
-          onEditInputs={() => { sim.simulation.setError(null); sim.setShowWizard(true); }}
+          onEditInputs={() => {
+            sim.simulation.setError(null);
+            sim.setPersonaEntryMode("start");
+            sim.setShowWizard(true);
+          }}
         />
       );
     }
@@ -111,7 +148,10 @@ function SimulatorShell() {
     if (sim.simulation.result) {
       return (
         <ResultsPanel
-          onEditInputs={() => sim.setShowWizard(true)}
+          onEditInputs={() => {
+            sim.setPersonaEntryMode("start");
+            sim.setShowWizard(true);
+          }}
           onWhatIf={sim.runWhatIfScenario}
         />
       );
@@ -125,11 +165,18 @@ function SimulatorShell() {
       <header className="header-glass sticky top-0 z-50 border-b border-[var(--color-border-light)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
           <Link href="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
-            <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
+            <Image
+              src="/logo.svg"
+              alt="EggNest"
+              width={140}
+              height={28}
+              className="block"
+              priority
+            />
           </Link>
-          <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Financial simulator</span>
+          <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Simulator</span>
           <Link href="/life-event" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">
-            Tax & benefits calculator
+            Life-event calculator
           </Link>
         </div>
       </header>

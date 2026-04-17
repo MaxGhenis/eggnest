@@ -9,10 +9,14 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
-from supabase import Client
+
+if TYPE_CHECKING:
+    from supabase import Client
+else:
+    Client = Any
 
 from .auth import get_authenticated_client, get_current_user_id, is_logged_in
 from .models import AnnuityInput, SpouseInput

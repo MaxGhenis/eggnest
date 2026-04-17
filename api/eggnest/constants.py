@@ -57,15 +57,16 @@ STATE_FIPS: dict[str, int] = {
 
 # Filing status mapping for PolicyEngine dataset (numeric codes for Microsimulation)
 FILING_STATUS_PE_DATASET: dict[str, int] = {
-    "SINGLE": 1,
-    "single": 1,
-    "JOINT": 2,
-    "married_filing_jointly": 2,
-    "SEPARATE": 3,
-    "married_filing_separately": 3,
-    "HEAD_OF_HOUSEHOLD": 4,
-    "head_of_household": 4,
-    "WIDOW": 5,
+    "SINGLE": 0,
+    "single": 0,
+    "JOINT": 1,
+    "married_filing_jointly": 1,
+    "SEPARATE": 2,
+    "married_filing_separately": 2,
+    "HEAD_OF_HOUSEHOLD": 3,
+    "head_of_household": 3,
+    "SURVIVING_SPOUSE": 4,
+    "WIDOW": 4,
 }
 
 # Filing status mapping for PolicyEngine situation API (string values for Simulation)

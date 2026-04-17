@@ -21,6 +21,12 @@ function makeValidInput(overrides: Partial<SimulationInput> = {}): SimulationInp
     employment_income: 100000,
     employment_growth_rate: 0.02,
     retirement_age: 65,
+    spending_mode: "real",
+    inflation_model: "historical",
+    inflation_rate: 0.025,
+    social_security_inflation_adjusted: true,
+    pension_cola_rate: 0,
+    annuity_cola_rate: 0,
     state: "CA",
     filing_status: "single",
     has_spouse: false,
@@ -158,6 +164,64 @@ describe("validateSimulationInput", () => {
     });
   });
 
+  describe("social_security_monthly", () => {
+    it("returns no errors for zero benefit", () => {
+      const errors = validateSimulationInput(makeValidInput({ social_security_monthly: 0 }));
+      expect(errors.filter((e) => e.field === "social_security_monthly")).toHaveLength(0);
+    });
+
+    it("returns error for negative benefit", () => {
+      const errors = validateSimulationInput(makeValidInput({ social_security_monthly: -1 }));
+      const ssErrors = errors.filter((e) => e.field === "social_security_monthly");
+      expect(ssErrors).toHaveLength(1);
+      expect(ssErrors[0].message).toMatch(/0 or greater/i);
+    });
+  });
+
+  describe("pension_annual", () => {
+    it("returns no errors for zero pension", () => {
+      const errors = validateSimulationInput(makeValidInput({ pension_annual: 0 }));
+      expect(errors.filter((e) => e.field === "pension_annual")).toHaveLength(0);
+    });
+
+    it("returns error for negative pension", () => {
+      const errors = validateSimulationInput(makeValidInput({ pension_annual: -1000 }));
+      const pensionErrors = errors.filter((e) => e.field === "pension_annual");
+      expect(pensionErrors).toHaveLength(1);
+      expect(pensionErrors[0].message).toMatch(/0 or greater/i);
+    });
+  });
+
+  describe("inflation assumptions", () => {
+    it("returns no errors for a valid fixed inflation rate", () => {
+      const errors = validateSimulationInput(
+        makeValidInput({ inflation_model: "constant", inflation_rate: 0.03 })
+      );
+      expect(errors.filter((e) => e.field === "inflation_rate")).toHaveLength(0);
+    });
+
+    it("returns error for inflation rate above 10%", () => {
+      const errors = validateSimulationInput(
+        makeValidInput({ inflation_model: "constant", inflation_rate: 0.12 })
+      );
+      expect(errors.filter((e) => e.field === "inflation_rate")).toHaveLength(1);
+    });
+
+    it("returns error for pension COLA above 10%", () => {
+      const errors = validateSimulationInput(
+        makeValidInput({ pension_annual: 10000, pension_cola_rate: 0.12 })
+      );
+      expect(errors.filter((e) => e.field === "pension_cola_rate")).toHaveLength(1);
+    });
+
+    it("returns error for annuity COLA above 10%", () => {
+      const errors = validateSimulationInput(
+        makeValidInput({ has_annuity: true, annuity_cola_rate: 0.12 })
+      );
+      expect(errors.filter((e) => e.field === "annuity_cola_rate")).toHaveLength(1);
+    });
+  });
+
   // Initial capital / savings validation
   describe("initial_capital", () => {
     it("returns no errors for zero initial capital", () => {
@@ -285,6 +349,96 @@ describe("validateSimulationInput", () => {
       const ssErrors = errors.filter((e) => e.field === "spouse.social_security_start_age");
       expect(ssErrors).toHaveLength(1);
     });
+
+    it("returns error for spouse retirement age before spouse age", () => {
+      const errors = validateSimulationInput(
+        makeValidInput({
+          has_spouse: true,
+          spouse: {
+            age: 62,
+            gender: "female",
+            social_security_monthly: 1500,
+            social_security_start_age: 67,
+            pension_annual: 0,
+            employment_income: 40000,
+            employment_growth_rate: 0,
+            retirement_age: 60,
+          },
+        })
+      );
+      const retirementErrors = errors.filter((e) => e.field === "spouse.retirement_age");
+      expect(retirementErrors).toHaveLength(1);
+      expect(retirementErrors[0].message).toMatch(/greater than spouse age/i);
+    });
+
+    it("returns error for negative spouse employment income", () => {
+      const errors = validateSimulationInput(
+        makeValidInput({
+          has_spouse: true,
+          spouse: {
+            age: 60,
+            gender: "female",
+            social_security_monthly: 1500,
+            social_security_start_age: 67,
+            pension_annual: 0,
+            employment_income: -1,
+            employment_growth_rate: 0,
+            retirement_age: 65,
+          },
+        })
+      );
+      const incomeErrors = errors.filter((e) => e.field === "spouse.employment_income");
+      expect(incomeErrors).toHaveLength(1);
+      expect(incomeErrors[0].message).toMatch(/0 or greater/i);
+    });
+  });
+
+  describe("annuity", () => {
+    it("returns error for zero annuity payment when comparison is enabled", () => {
+      const errors = validateSimulationInput(
+        makeValidInput({
+          has_annuity: true,
+          annuity: {
+            monthly_payment: 0,
+            annuity_type: "life_with_guarantee",
+            guarantee_years: 15,
+          },
+        })
+      );
+      const paymentErrors = errors.filter((e) => e.field === "annuity.monthly_payment");
+      expect(paymentErrors).toHaveLength(1);
+      expect(paymentErrors[0].message).toMatch(/greater than 0/i);
+    });
+
+    it("returns error for invalid guarantee period", () => {
+      const errors = validateSimulationInput(
+        makeValidInput({
+          has_annuity: true,
+          annuity: {
+            monthly_payment: 1500,
+            annuity_type: "fixed_period",
+            guarantee_years: 31,
+          },
+        })
+      );
+      const guaranteeErrors = errors.filter((e) => e.field === "annuity.guarantee_years");
+      expect(guaranteeErrors).toHaveLength(1);
+      expect(guaranteeErrors[0].message).toMatch(/1 and 30/i);
+    });
+
+    it("returns no errors for valid annuity comparison", () => {
+      const errors = validateSimulationInput(
+        makeValidInput({
+          has_annuity: true,
+          annuity: {
+            monthly_payment: 1500,
+            annuity_type: "life_only",
+            guarantee_years: 15,
+          },
+        })
+      );
+      expect(errors.filter((e) => e.field.startsWith("annuity."))).toHaveLength(0);
+    });
   });
 
   // Full valid input should have zero errors
@@ -315,6 +469,41 @@ describe("validateHolding", () => {
     const holding: Holding = { account_type: "traditional_401k", fund: "vt", balance: 0 };
     const errors = validateHolding(holding, 0);
     expect(errors).toHaveLength(0);
+  });
+
+  it("returns no errors for valid taxable cost basis", () => {
+    const holding: Holding = {
+      account_type: "taxable",
+      fund: "vt",
+      balance: 100000,
+      cost_basis: 80000,
+    };
+    const errors = validateHolding(holding, 0);
+    expect(errors).toHaveLength(0);
+  });
+
+  it("returns error when taxable cost basis exceeds balance", () => {
+    const holding: Holding = {
+      account_type: "taxable",
+      fund: "vt",
+      balance: 100000,
+      cost_basis: 120000,
+    };
+    const errors = validateHolding(holding, 0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("holdings[0].cost_basis");
+  });
+
+  it("returns error when cost basis is set on non-taxable holding", () => {
+    const holding: Holding = {
+      account_type: "roth_ira",
+      fund: "vt",
+      balance: 100000,
+      cost_basis: 50000,
+    };
+    const errors = validateHolding(holding, 0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("holdings[0].cost_basis");
   });
 });
 

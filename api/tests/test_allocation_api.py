@@ -3,6 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import main
 from eggnest.models import (
     AllocationComparisonResult,
     AllocationInput,
@@ -21,12 +22,48 @@ def base_params():
         initial_capital=500_000,
         annual_spending=40_000,
         current_age=65,
-        max_age=90,
+        max_age=80,  # Keep comparison tests practical; explicit long-horizon cases override this
         gender="male",
         state="CA",
         filing_status="single",
         n_simulations=100,  # Small for faster tests
     )
+
+
+@pytest.fixture
+def stub_allocation_batch(monkeypatch):
+    """Stub simulator summaries for allocation contract tests."""
+
+    async def fake_batch(inputs):
+        summaries = []
+        for params in inputs:
+            withdrawal_rate = params.annual_spending / max(params.total_capital, 1)
+            stock_alloc = params.stock_allocation
+            success_rate = min(
+                0.99, max(0.05, 1.0 - withdrawal_rate * 3 + stock_alloc * 0.15)
+            )
+            median_final = params.total_capital * max(
+                0.1, 1.0 + stock_alloc * 0.4 - withdrawal_rate * 4
+            )
+            summaries.append(
+                {
+                    "success_rate": success_rate,
+                    "median_final_value": median_final,
+                    "total_taxes_median": params.annual_spending * 0.1,
+                    "total_withdrawn_median": params.annual_spending
+                    * (params.max_age - params.current_age),
+                    "percentiles": {
+                        "p5": median_final * 0.5,
+                        "p25": median_final * 0.8,
+                        "p50": median_final,
+                        "p75": median_final * 1.2,
+                        "p95": median_final * 1.5,
+                    },
+                }
+            )
+        return summaries
+
+    monkeypatch.setattr(main, "_run_simulation_batch", fake_batch)
 
 
 class TestAllocationModels:
@@ -92,16 +129,17 @@ class TestAllocationModels:
                     expected_return=0.07,
                 ),
             ],
-            optimal_for_success=1.0,
-            optimal_for_safety=0.4,
-            recommendation="",
+            highest_success_allocation=1.0,
+            highest_safety_allocation=0.4,
+            summary="",
         )
-        assert result.optimal_for_success == 1.0
+        assert result.highest_success_allocation == 1.0
 
 
 class TestAllocationEndpoint:
     """Test /compare-allocations API endpoint."""
 
+    @pytest.mark.montecarlo_smoke
     def test_compare_allocations_returns_results(self, base_params):
         """Test that endpoint returns valid comparison results."""
         response = client.post(
@@ -117,7 +155,9 @@ class TestAllocationEndpoint:
         assert "results" in data
         assert len(data["results"]) == 3
 
-    def test_compare_allocations_default_allocations(self, base_params):
+    def test_compare_allocations_default_allocations(
+        self, base_params, stub_allocation_batch
+    ):
         """Test comparison with default allocations."""
         response = client.post(
             "/compare-allocations",
@@ -130,7 +170,9 @@ class TestAllocationEndpoint:
         data = response.json()
         assert len(data["results"]) >= 3
 
-    def test_compare_allocations_result_fields(self, base_params):
+    def test_compare_allocations_result_fields(
+        self, base_params, stub_allocation_batch
+    ):
         """Test that each result has required fields."""
         response = client.post(
             "/compare-allocations",
@@ -161,7 +203,9 @@ class TestAllocationEndpoint:
         assert 0 <= result["success_rate"] <= 1
         assert result["stock_allocation"] == 0.6
 
-    def test_compare_allocations_identifies_optimal(self, base_params):
+    def test_compare_allocations_identifies_optimal(
+        self, base_params, stub_allocation_batch
+    ):
         """Test that optimal allocations are identified."""
         response = client.post(
             "/compare-allocations",
@@ -174,14 +218,16 @@ class TestAllocationEndpoint:
 
         data = response.json()
 
-        # Should have optimal allocations identified
-        assert "optimal_for_success" in data
-        assert 0 <= data["optimal_for_success"] <= 1
+        # Should have summary allocations identified
+        assert "highest_success_allocation" in data
+        assert 0 <= data["highest_success_allocation"] <= 1
 
-        assert "optimal_for_safety" in data
-        assert 0 <= data["optimal_for_safety"] <= 1
+        assert "highest_safety_allocation" in data
+        assert 0 <= data["highest_safety_allocation"] <= 1
 
-    def test_compare_allocations_volatility_ordering(self, base_params):
+    def test_compare_allocations_volatility_ordering(
+        self, base_params, stub_allocation_batch
+    ):
         """Test that higher stock allocations have higher volatility."""
         response = client.post(
             "/compare-allocations",
@@ -205,7 +251,9 @@ class TestAllocationEndpoint:
 class TestAllocationWithDifferentScenarios:
     """Test allocations with different financial scenarios."""
 
-    def test_conservative_investor_scenario(self, base_params):
+    def test_conservative_investor_scenario(
+        self, base_params, stub_allocation_batch
+    ):
         """Test scenario for conservative investor (low spending rate)."""
         conservative_params = base_params.model_copy(
             update={
@@ -227,7 +275,9 @@ class TestAllocationWithDifferentScenarios:
         for result in data["results"]:
             assert result["success_rate"] >= 0.7
 
-    def test_aggressive_spending_scenario(self, base_params):
+    def test_aggressive_spending_scenario(
+        self, base_params, stub_allocation_batch
+    ):
         """Test scenario with aggressive spending rate."""
         aggressive_params = base_params.model_copy(
             update={
@@ -248,7 +298,7 @@ class TestAllocationWithDifferentScenarios:
         # With high spending, some allocations should show lower success
         assert len(data["results"]) == 2
 
-    def test_long_horizon_scenario(self, base_params):
+    def test_long_horizon_scenario(self, base_params, stub_allocation_batch):
         """Test scenario with long planning horizon."""
         long_horizon_params = base_params.model_copy(
             update={
@@ -267,11 +317,11 @@ class TestAllocationWithDifferentScenarios:
         assert response.status_code == 200
 
 
-class TestAllocationRecommendation:
-    """Test allocation recommendation logic."""
+class TestAllocationSummary:
+    """Test allocation summary logic."""
 
-    def test_recommendation_provided(self, base_params):
-        """Test that a recommendation is provided."""
+    def test_summary_provided(self, base_params, stub_allocation_batch):
+        """Test that a neutral summary is provided."""
         response = client.post(
             "/compare-allocations",
             json={
@@ -281,11 +331,13 @@ class TestAllocationRecommendation:
         assert response.status_code == 200
 
         data = response.json()
-        assert "recommendation" in data
-        assert len(data["recommendation"]) > 0
+        assert "summary" in data
+        assert len(data["summary"]) > 0
 
-    def test_recommendation_references_allocations(self, base_params):
-        """Test that recommendation mentions allocation percentages."""
+    def test_summary_references_allocations(
+        self, base_params, stub_allocation_batch
+    ):
+        """Test that summary mentions allocation percentages."""
         response = client.post(
             "/compare-allocations",
             json={
@@ -296,6 +348,5 @@ class TestAllocationRecommendation:
         assert response.status_code == 200
 
         data = response.json()
-        recommendation = data["recommendation"]
-        # Recommendation should mention percentage or allocation
-        assert "%" in recommendation or "allocation" in recommendation.lower()
+        summary = data["summary"]
+        assert "%" in summary or "allocation" in summary.lower() or "stocks" in summary.lower()

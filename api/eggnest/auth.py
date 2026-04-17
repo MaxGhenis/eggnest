@@ -8,8 +8,12 @@ import time
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-from supabase import Client, create_client
+if TYPE_CHECKING:
+    from supabase import Client
+else:
+    Client = Any
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +86,8 @@ def clear_credentials() -> None:
 
 def get_supabase_client() -> Client:
     """Get a Supabase client with anon key."""
+    from supabase import create_client
+
     supabase_url = os.environ.get("EGGNEST_SUPABASE_URL", DEFAULT_SUPABASE_URL)
     supabase_key = os.environ.get("EGGNEST_SUPABASE_ANON_KEY", "")
 
