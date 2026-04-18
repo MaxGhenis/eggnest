@@ -47,3 +47,8 @@ htmlcov/
 *.h5
 *.tmp
 .vercel
+.env*.local
+
+# Playwright recordings (not versioned — regenerate locally)
+output/playwright/
+app/.playwright-cli/

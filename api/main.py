@@ -524,6 +524,52 @@ async def remove_simulation(
     return {"status": "deleted"}
 
 
+@app.post("/simulate-uk", response_model=None)
+async def run_uk_simulation_endpoint(params: dict):
+    """Run a UK Monte Carlo retirement simulation (ISA/SIPP/GIA + State Pension).
+
+    UK income tax, NI, and dividend tax are computed per-sim via
+    ``policyengine-uk-compiled`` (Rust). Supports stochastic earnings
+    (Meghir-Pistaferri style), historical UK asset-return sampling (JST
+    Macrohistory 1871-2020), and the UK-specific UFPLS / MPA / LSA rules.
+    """
+    from eggnest.models_uk import UKSimulationInput
+    from eggnest.simulation_uk import run_uk_simulation
+
+    parsed = UKSimulationInput.model_validate(params)
+    if parsed.n_simulations > settings.max_n_simulations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"n_simulations cannot exceed {settings.max_n_simulations}",
+        )
+    result = run_uk_simulation(parsed)
+    return result.model_dump()
+
+
+@app.post("/simulate-uk/stream")
+async def run_uk_simulation_stream(params: dict):
+    """UK simulation with SSE progress streaming."""
+    from eggnest.models_uk import UKSimulationInput
+    from eggnest.simulation_uk import run_uk_simulation_with_progress
+
+    parsed = UKSimulationInput.model_validate(params)
+    if parsed.n_simulations > settings.max_n_simulations:
+        raise HTTPException(
+            status_code=400,
+            detail=f"n_simulations cannot exceed {settings.max_n_simulations}",
+        )
+
+    def generate():
+        for event in run_uk_simulation_with_progress(parsed):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
 

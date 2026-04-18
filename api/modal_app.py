@@ -1,4 +1,8 @@
+from pathlib import Path
+
 import modal
+
+HERE = Path(__file__).parent
 
 app = modal.App("eggnest-api")
 
@@ -16,9 +20,10 @@ image = (
         "scipy>=1.10.0",
         "httpx>=0.26.0",
         "policyengine-us>=1.0.0",
+        "policyengine-uk-compiled>=0.20.0",
     )
-    .add_local_dir("eggnest", "/root/eggnest")
-    .add_local_file("main.py", "/root/main.py")
+    .add_local_dir(str(HERE / "eggnest"), "/root/eggnest")
+    .add_local_file(str(HERE / "main.py"), "/root/main.py")
 )
 
 
