@@ -105,6 +105,31 @@ def test_pre_mpa_paths_cannot_touch_sipp():
         assert b.sipp_withdrawal == 0.0, f"SIPP withdrawn at age {b.age} (pre-MPA)"
 
 
+@pytest.mark.parametrize(
+    "return_source",
+    ["historical_bootstrap", "historical_block_bootstrap", "historical_sequential"],
+)
+def test_historical_return_sources_produce_valid_result(basic_input, return_source):
+    """Every historical return mode should run end-to-end and match the year count."""
+    inp = basic_input.model_copy(update={"return_source": return_source})
+    result = run_uk_simulation(inp)
+    n_years = inp.max_age - inp.current_age + 1
+    assert len(result.year_breakdown) == n_years
+    assert 0.0 <= result.success_rate <= 1.0
+    # With historical UK data the median portfolio should not be exactly zero
+    # for a 6-year horizon with a £200k nest egg and £25k spending.
+    assert result.median_final_value > 0
+
+
+def test_historical_bootstrap_differs_from_gaussian(basic_input):
+    """The two return models should diverge on the same seed (different draws)."""
+    gaus = run_uk_simulation(basic_input.model_copy(update={"return_source": "gaussian"}))
+    hist = run_uk_simulation(
+        basic_input.model_copy(update={"return_source": "historical_bootstrap"})
+    )
+    assert gaus.success_rate != hist.success_rate or gaus.median_final_value != hist.median_final_value
+
+
 def test_tfc_lowers_taxes_vs_full_taxable_sipp(basic_input):
     """The 25 % tax-free split should not produce higher tax than full-taxable SIPP."""
     # Indirect check: when the simulation leans heavily on SIPP (low ISA/GIA),

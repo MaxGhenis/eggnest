@@ -2,6 +2,12 @@
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export type UKReturnSource =
+  | "gaussian"
+  | "historical_bootstrap"
+  | "historical_block_bootstrap"
+  | "historical_sequential";
+
 export interface UKSimulationInput {
   current_age: number;
   max_age: number;
@@ -16,9 +22,11 @@ export interface UKSimulationInput {
   state_pension_start_age?: number;
   employment_income?: number;
   retirement_age?: number;
+  return_source?: UKReturnSource;
   expected_return?: number;
   return_volatility?: number;
   dividend_yield?: number;
+  equity_weight?: number;
   inflation_rate?: number;
   n_simulations?: number;
   random_seed?: number;

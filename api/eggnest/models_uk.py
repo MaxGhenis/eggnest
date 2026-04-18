@@ -7,6 +7,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 UKAccountType = Literal["isa", "sipp", "gia"]
+UKReturnSource = Literal[
+    "gaussian",
+    "historical_bootstrap",
+    "historical_block_bootstrap",
+    "historical_sequential",
+]
 UKRegion = Literal[
     "London",
     "South East",
@@ -51,12 +57,29 @@ class UKSimulationInput(BaseModel):
     employment_income: float = Field(ge=0.0, default=0.0)
     retirement_age: int = Field(ge=18, le=80, default=67)
 
-    # Market assumptions (decimal fractions)
+    # Return model
+    return_source: UKReturnSource = Field(
+        default="historical_block_bootstrap",
+        description=(
+            "How to generate annual returns: 'gaussian' uses expected_return/"
+            "return_volatility; the historical_* variants sample from 150 years "
+            "of UK equity + gilt + CPI history (JST Macrohistory)."
+        ),
+    )
+
+    # Market assumptions (decimal fractions; only used when return_source='gaussian')
     expected_return: float = Field(ge=-0.1, le=0.2, default=0.055)
     return_volatility: float = Field(ge=0.0, le=0.5, default=0.15)
     dividend_yield: float = Field(ge=0.0, le=0.15, default=0.025)
+    # Equity/gilt allocation split (only used for historical sampling).
+    equity_weight: float = Field(
+        ge=0.0,
+        le=1.0,
+        default=0.6,
+        description="Portfolio weight on UK equities (balance: UK gilts).",
+    )
 
-    # Inflation
+    # Inflation (only used when return_source='gaussian')
     inflation_rate: float = Field(ge=0.0, le=0.15, default=0.025)
 
     # Monte Carlo controls

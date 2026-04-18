@@ -14,6 +14,7 @@ from typing import Iterator
 
 import numpy as np
 
+from .historical_returns_uk import sample_historical_returns
 from .models_uk import (
     UKAccountType,
     UKSimulationInput,
@@ -53,7 +54,7 @@ class _PathState:
     depleted_year: np.ndarray  # -1 until depleted
 
 
-def _simulate_returns(
+def _simulate_returns_gaussian(
     n_sims: int,
     n_years: int,
     expected_return: float,
@@ -61,28 +62,58 @@ def _simulate_returns(
     dividend_yield: float,
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Simple geometric Brownian motion with a dividend split.
-
-    Returns (price_growth, dividend_yield) arrays of shape (n_sims, n_years).
-    Price growth is the capital appreciation portion; the dividend yield is
-    paid out as income each year. This keeps parity with the US model's
-    dividend-yield split so taxable-account treatment is straightforward.
-    """
+    """Gaussian IID total returns split into (price_growth, dividend_yield)."""
     total_returns = rng.normal(expected_return, volatility, size=(n_sims, n_years))
     price_growth = total_returns - dividend_yield
     div_yield = np.full((n_sims, n_years), dividend_yield)
     return price_growth, div_yield
 
 
-def _simulate_inflation(
+def _simulate_inflation_gaussian(
     n_sims: int, n_years: int, rate: float, rng: np.random.Generator
 ) -> np.ndarray:
-    """Fixed-rate inflation with small random noise (placeholder).
-
-    UK-specific historical CPI sampling is a follow-up.
-    """
+    """Fixed-rate inflation with small noise (only used when return_source='gaussian')."""
     noise = rng.normal(0.0, 0.005, size=(n_sims, n_years))
     return np.clip(rate + noise, -0.02, 0.15)
+
+
+def _build_return_paths(
+    inputs: UKSimulationInput,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return (price_growth, dividend_yield, inflation) shape (n_sims, n_years).
+
+    For historical sources: blended equity/gilt total return is split into a
+    capital-growth component (total minus the portfolio's effective dividend
+    yield) and an income component ``effective_yield = dividend_yield *
+    equity_weight`` that flows through the GIA's tax base.
+    """
+    n_sims = inputs.n_simulations
+    n_years = inputs.max_age - inputs.current_age + 1
+
+    if inputs.return_source == "gaussian":
+        price_growth, div_yield = _simulate_returns_gaussian(
+            n_sims,
+            n_years,
+            inputs.expected_return,
+            inputs.return_volatility,
+            inputs.dividend_yield,
+            rng,
+        )
+        inflation = _simulate_inflation_gaussian(
+            n_sims, n_years, inputs.inflation_rate, rng
+        )
+        return price_growth, div_yield, inflation
+
+    equity_ret, bond_ret, inflation = sample_historical_returns(
+        inputs.return_source, n_sims, n_years, rng
+    )
+    w = inputs.equity_weight
+    total_return = w * equity_ret + (1.0 - w) * bond_ret
+    effective_div_yield = w * inputs.dividend_yield  # gilts don't pay dividends
+    price_growth = total_return - effective_div_yield
+    div_yield = np.full((n_sims, n_years), effective_div_yield)
+    return price_growth, div_yield, inflation
 
 
 def _withdraw(
@@ -124,15 +155,7 @@ def _iterate_years(
     n_sims = inputs.n_simulations
     n_years = inputs.max_age - inputs.current_age + 1
 
-    price_growth, div_yield = _simulate_returns(
-        n_sims,
-        n_years,
-        inputs.expected_return,
-        inputs.return_volatility,
-        inputs.dividend_yield,
-        rng,
-    )
-    inflation_paths = _simulate_inflation(n_sims, n_years, inputs.inflation_rate, rng)
+    price_growth, div_yield, inflation_paths = _build_return_paths(inputs, rng)
 
     alive_mask = (
         generate_alive_mask(

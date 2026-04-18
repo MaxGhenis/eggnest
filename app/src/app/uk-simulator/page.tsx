@@ -28,6 +28,8 @@ const DEFAULT_INPUT: UKSimulationInput = {
   state_pension_start_age: 67,
   employment_income: 0,
   retirement_age: 67,
+  return_source: "historical_block_bootstrap",
+  equity_weight: 0.6,
   expected_return: 0.055,
   return_volatility: 0.15,
   dividend_yield: 0.025,
@@ -35,6 +37,40 @@ const DEFAULT_INPUT: UKSimulationInput = {
   n_simulations: 800,
   include_mortality: true,
 };
+
+const RETURN_SOURCE_OPTIONS: {
+  value: NonNullable<UKSimulationInput["return_source"]>;
+  label: string;
+  detail: string;
+}[] = [
+  {
+    value: "historical_block_bootstrap",
+    label: "UK history · blocks",
+    detail: "Real 5-year windows resampled",
+  },
+  {
+    value: "historical_sequential",
+    label: "UK history · sequences",
+    detail: "'What if I retired in 1974?'",
+  },
+  {
+    value: "historical_bootstrap",
+    label: "UK history · shuffled",
+    detail: "Random historical years",
+  },
+  {
+    value: "gaussian",
+    label: "Synthetic (Gaussian)",
+    detail: "Fixed mean + volatility",
+  },
+];
+
+const RETURN_SOURCE_LABEL: Record<
+  NonNullable<UKSimulationInput["return_source"]>,
+  string
+> = Object.fromEntries(
+  RETURN_SOURCE_OPTIONS.map((o) => [o.value, o.label]),
+) as Record<NonNullable<UKSimulationInput["return_source"]>, string>;
 
 const UK_REGIONS = [
   "London",
@@ -284,6 +320,54 @@ function InputsPanel({
         )}
       </Section>
 
+      <Section title="Return model">
+        <ReturnSourceToggle
+          value={input.return_source ?? "historical_block_bootstrap"}
+          onChange={(v) => updateField("return_source", v)}
+        />
+        {(input.return_source ?? "historical_block_bootstrap") !== "gaussian" ? (
+          <RangeField
+            label="Equities vs. gilts"
+            hint="Portfolio weight on UK equities (rest is UK gilts)"
+            value={Math.round((input.equity_weight ?? 0.6) * 100)}
+            onChange={(v) => updateField("equity_weight", v / 100)}
+            min={0}
+            max={100}
+            format={(v) => `${v}% equities`}
+          />
+        ) : (
+          <>
+            <RangeField
+              label="Expected return"
+              value={Math.round((input.expected_return ?? 0.055) * 1000) / 10}
+              onChange={(v) => updateField("expected_return", v / 100)}
+              min={0}
+              max={12}
+              step={0.1}
+              format={(v) => `${v.toFixed(1)}%`}
+            />
+            <RangeField
+              label="Return volatility"
+              value={Math.round((input.return_volatility ?? 0.15) * 1000) / 10}
+              onChange={(v) => updateField("return_volatility", v / 100)}
+              min={0}
+              max={30}
+              step={0.1}
+              format={(v) => `${v.toFixed(1)}%`}
+            />
+            <RangeField
+              label="Inflation (annual)"
+              value={Math.round((input.inflation_rate ?? 0.025) * 1000) / 10}
+              onChange={(v) => updateField("inflation_rate", v / 100)}
+              min={0}
+              max={10}
+              step={0.1}
+              format={(v) => `${v.toFixed(1)}%`}
+            />
+          </>
+        )}
+      </Section>
+
       <Section title="Spending & income">
         <RangeField
           label="Annual spending"
@@ -420,8 +504,13 @@ function HeroAnswer({
           <p className="mt-6 border-t border-[var(--color-border-light)] pt-4 text-xs leading-relaxed text-[var(--color-text-light)]">
             {formatGBP(totalPortfolio)} at age {input.current_age} · spending {formatGBP(input.annual_spending)}/yr
             {input.spending_mode === "real" ? " (today's £)" : " (flat nominal)"} · {input.region}
-            {spendingYear20 != null ? (
+            {spendingYear20 != null && input.return_source === "gaussian" ? (
               <> · ≈ {formatGBP(spendingYear20)}/yr at {(input.inflation_rate ?? 0.025) * 100}% inflation in year 20</>
+            ) : null}{" "}
+            · returns:{" "}
+            {RETURN_SOURCE_LABEL[input.return_source ?? "historical_block_bootstrap"]}
+            {input.return_source !== "gaussian" ? (
+              <> · {Math.round((input.equity_weight ?? 0.6) * 100)}% equities / {100 - Math.round((input.equity_weight ?? 0.6) * 100)}% gilts</>
             ) : null}{" "}
             · HMRC tax via PolicyEngine UK (Rust)
           </p>
@@ -622,6 +711,44 @@ function ScenarioProbes({
 
 const selectCls =
   "w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none";
+
+function ReturnSourceToggle({
+  value,
+  onChange,
+}: {
+  value: NonNullable<UKSimulationInput["return_source"]>;
+  onChange: (v: NonNullable<UKSimulationInput["return_source"]>) => void;
+}) {
+  const current = RETURN_SOURCE_OPTIONS.find((o) => o.value === value);
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-1.5">
+        {RETURN_SOURCE_OPTIONS.map((o) => {
+          const active = o.value === value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => onChange(o.value)}
+              className={`rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-left text-[0.72rem] font-medium leading-tight transition-colors ${
+                active
+                  ? "border-[var(--color-primary)] bg-[var(--color-primary-50)] text-[var(--color-primary)]"
+                  : "border-[var(--color-border-light)] bg-white text-[var(--color-text-muted)] hover:border-[var(--color-border)]"
+              }`}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+      {current && (
+        <p className="text-[0.7rem] leading-snug text-[var(--color-text-light)]">
+          {current.detail}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
