@@ -25,8 +25,6 @@ from .models_uk import (
 from .mortality import generate_alive_mask
 from .tax_uk import UKYearInputs, calculate_uk_tax
 
-START_YEAR = datetime.now().year
-
 # Minimum Pension Age — earliest age at which SIPP funds can be accessed.
 # Currently 55 in the UK, rising to 57 from April 2028. We use 55 as a simple
 # default; the rise affects only paths where current_age is 55/56 in 2028+.
@@ -40,6 +38,13 @@ LSA_CAP = 268_275.0
 # Fraction of an uncrystallised SIPP drawdown that can be taken tax-free
 # (UFPLS): 25 % tax-free, 75 % subject to income tax.
 TFC_FRACTION = 0.25
+
+# Basic-rate UK income tax. Used as a first-cut gross-up of SIPP drawdowns —
+# we assume the taxable 75 % chunk clears at basic rate, which breaks down
+# near the higher-rate threshold (£50,270). The final tax is recomputed via
+# PolicyEngine on the gross-up amount, so this is a sizing heuristic, not
+# the authoritative tax.
+BASIC_RATE = 0.20
 
 # Withdrawal order (taxable/GIA first, then ISA, then SIPP — roughly
 # tax-efficient: use the most-taxed money first, preserve tax-sheltered growth).
@@ -157,24 +162,20 @@ def _withdraw(
 def _iterate_years(
     inputs: UKSimulationInput,
     rng: np.random.Generator,
-    start_years_out: list[np.ndarray | None] | None = None,
-) -> Iterator[tuple[int, UKYearBreakdown, _PathState, np.ndarray, np.ndarray]]:
+) -> Iterator[tuple[int, UKYearBreakdown, _PathState, np.ndarray, np.ndarray, np.ndarray | None]]:
     """Iterate year-by-year over the simulation.
 
-    Yields ``(year_idx, breakdown, state, tax_array, earnings_array)`` where
-    the last two are per-sim numpy arrays used to assemble percentile bands
-    for the UI. ``start_years_out`` is an optional single-element list used
-    as an out-parameter: if provided, the caller receives the per-path
-    start-year array (sequential mode) or ``None`` (other modes).
+    Yields ``(year_idx, breakdown, state, tax_array, earnings_array, start_years)``
+    where ``start_years`` is the per-path historical-year array in sequential
+    mode (repeated each yield for convenience) or ``None`` otherwise.
     """
     n_sims = inputs.n_simulations
     n_years = inputs.max_age - inputs.current_age + 1
+    start_year = datetime.now().year
 
     price_growth, div_yield, inflation_paths, start_years = _build_return_paths(
         inputs, rng
     )
-    if start_years_out is not None:
-        start_years_out.append(start_years)
 
     ages_per_year = np.arange(
         inputs.current_age, inputs.current_age + n_years, dtype=np.int64
@@ -215,7 +216,7 @@ def _iterate_years(
 
     for year_idx in range(n_years):
         age = inputs.current_age + year_idx
-        calendar_year = START_YEAR + year_idx
+        calendar_year = start_year + year_idx
 
         cumulative_inflation = cumulative_inflation * (1.0 + inflation_paths[:, year_idx])
         spending_target_nominal = inputs.annual_spending * (
@@ -286,16 +287,17 @@ def _iterate_years(
             # lifetime allowance on a per-path basis.
             tfc_avail = np.maximum(LSA_CAP - state.tfc_used, 0.0)
             tfc_cap = np.minimum(TFC_FRACTION * sipp_take, tfc_avail)
+            # Inner np.where on sipp_take avoids divide-by-zero warnings even
+            # though the outer np.where masks those paths to 0.0.
+            safe_sipp = np.where(sipp_take > 0, sipp_take, 1.0)
             taxable_fraction = np.where(
-                sipp_take > 0,
-                1.0 - tfc_cap / np.where(sipp_take > 0, sipp_take, 1.0),
-                0.0,
+                sipp_take > 0, 1.0 - tfc_cap / safe_sipp, 0.0
             )
-            # Simple first-cut gross-up using 20 % basic rate on the taxable
-            # portion of the SIPP draw. A tax-free slice is worth £1 per £1;
-            # a taxable slice is worth (1 - 0.20) = £0.80 per £1. Blend:
-            #   net_per_£ = (1 - taxable_fraction) + taxable_fraction * 0.80
-            net_per_pound = (1.0 - taxable_fraction) + taxable_fraction * 0.80
+            # First-cut gross-up: assume the taxable 75 % clears at UK basic
+            # rate. Blended net-per-£ = (1 - τ) + τ·(1 - BASIC_RATE).
+            net_per_pound = (1.0 - taxable_fraction) + taxable_fraction * (
+                1.0 - BASIC_RATE
+            )
             gross_up = np.where(
                 net_per_pound > 0,
                 sipp_take / net_per_pound - sipp_take,
@@ -365,7 +367,7 @@ def _iterate_years(
             isa_withdrawal=float(np.median(per_account["isa"])),
             gia_withdrawal=float(np.median(per_account["gia"])),
         )
-        yield year_idx, breakdown, state, tax.total_tax, employment
+        yield year_idx, breakdown, state, tax.total_tax, employment, start_years
 
 
 def _percentile_path_start_years(
@@ -388,58 +390,32 @@ def _percentile_path_start_years(
     return out
 
 
-def run_uk_simulation(inputs: UKSimulationInput) -> UKSimulationResult:
-    """Run the full UK Monte Carlo simulation and return aggregated result."""
-    rng = np.random.default_rng(inputs.random_seed)
+_PERCENTILES = (5, 25, 50, 75, 95)
 
-    year_breakdown: list[UKYearBreakdown] = []
-    final_state: _PathState | None = None
-    portfolio_paths: list[np.ndarray] = []
-    tax_paths: list[np.ndarray] = []
-    earnings_paths_snapshot: list[np.ndarray] = []
-    start_years_out: list[np.ndarray | None] = []
 
-    for year_idx, breakdown, state, tax_arr, earnings_arr in _iterate_years(
-        inputs, rng, start_years_out
-    ):
-        year_breakdown.append(breakdown)
-        portfolio_paths.append(state.gia + state.isa + state.sipp)
-        tax_paths.append(tax_arr)
-        earnings_paths_snapshot.append(earnings_arr)
-        final_state = state
+def _bands(arr: np.ndarray) -> dict[str, list[float]]:
+    """Return {'p5','p25','p50','p75','p95': list[float]} for a (n_sims, n_years) array."""
+    rows = np.percentile(arr, _PERCENTILES, axis=0)  # one sort per column, 5× cheaper
+    return {f"p{p}": rows[i].tolist() for i, p in enumerate(_PERCENTILES)}
 
-    assert final_state is not None
-    portfolio_over_time = np.stack(portfolio_paths, axis=1)  # (n_sims, n_years)
-    tax_over_time = np.stack(tax_paths, axis=1)
-    earnings_over_time = np.stack(earnings_paths_snapshot, axis=1)
 
-    depleted = final_state.depleted_year != -1
-    success_rate = float(np.mean(~depleted))
-
+def _assemble_result(
+    inputs: UKSimulationInput,
+    year_breakdown: list[UKYearBreakdown],
+    final_state: _PathState,
+    portfolio_over_time: np.ndarray,
+    tax_over_time: np.ndarray,
+    earnings_over_time: np.ndarray,
+    start_years: np.ndarray | None,
+) -> UKSimulationResult:
     final_portfolio = final_state.gia + final_state.isa + final_state.sipp
-    percentiles = {
-        p: float(np.percentile(final_portfolio, int(p[1:])))
-        for p in ("p5", "p25", "p50", "p75", "p95")
-    }
+    final_quantiles = np.percentile(final_portfolio, _PERCENTILES)
 
-    # Real (today's £) by deflating final nominal by cumulative median inflation
     median_inflation_path = float(
         np.prod([1.0 + b.inflation_rate for b in year_breakdown])
     )
+    percentiles = {f"p{p}": float(q) for p, q in zip(_PERCENTILES, final_quantiles)}
     percentiles_real = {k: v / median_inflation_path for k, v in percentiles.items()}
-
-    percentile_paths = {
-        f"p{p}": np.percentile(portfolio_over_time, p, axis=0).tolist()
-        for p in (5, 25, 50, 75, 95)
-    }
-    tax_percentile_paths = {
-        f"p{p}": np.percentile(tax_over_time, p, axis=0).tolist()
-        for p in (5, 25, 50, 75, 95)
-    }
-    earnings_percentile_paths = {
-        f"p{p}": np.percentile(earnings_over_time, p, axis=0).tolist()
-        for p in (5, 25, 50, 75, 95)
-    }
 
     total_portfolio_start = (
         inputs.gia_balance + inputs.isa_balance + inputs.sipp_balance
@@ -450,23 +426,14 @@ def run_uk_simulation(inputs: UKSimulationInput) -> UKSimulationResult:
         else 0.0
     )
 
-    # 10-year failure probability (approximate: depleted within first 10 years)
     horizon = min(10, len(year_breakdown))
     first_10_depleted = (final_state.depleted_year != -1) & (
         final_state.depleted_year < horizon
     )
-    prob_10_year_failure = float(np.mean(first_10_depleted))
 
-    # Sequence explorer: surface per-path start years (sequential mode only).
-    start_years_arr = start_years_out[0] if start_years_out else None
-    path_start_years: list[int] | None = (
-        [int(y) for y in start_years_arr]
-        if start_years_arr is not None
-        else None
-    )
-    percentile_path_start_years: dict[str, int] | None = (
-        _percentile_path_start_years(final_portfolio, start_years_arr)
-        if start_years_arr is not None
+    percentile_path_start_years = (
+        _percentile_path_start_years(final_portfolio, start_years)
+        if start_years is not None
         else None
     )
 
@@ -477,120 +444,78 @@ def run_uk_simulation(inputs: UKSimulationInput) -> UKSimulationResult:
             "max_age": inputs.max_age,
             "random_seed": inputs.random_seed,
         },
-        success_rate=success_rate,
+        success_rate=float(np.mean(final_state.depleted_year == -1)),
         median_final_value=float(np.median(final_portfolio)),
         median_final_value_real=float(np.median(final_portfolio) / median_inflation_path),
         percentiles=percentiles,
         percentiles_real=percentiles_real,
-        percentile_paths=percentile_paths,
-        tax_percentile_paths=tax_percentile_paths,
-        earnings_percentile_paths=earnings_percentile_paths,
+        percentile_paths=_bands(portfolio_over_time),
+        tax_percentile_paths=_bands(tax_over_time),
+        earnings_percentile_paths=_bands(earnings_over_time),
         year_breakdown=year_breakdown,
         initial_withdrawal_rate=initial_withdrawal_rate,
-        prob_10_year_failure=prob_10_year_failure,
-        path_start_years=path_start_years,
+        prob_10_year_failure=float(np.mean(first_10_depleted)),
         percentile_path_start_years=percentile_path_start_years,
     )
 
 
 def run_uk_simulation_with_progress(inputs: UKSimulationInput):
-    """Generator variant that yields progress events for SSE streaming."""
+    """Generator yielding per-year progress events then a final ``result`` event.
+
+    ``run_uk_simulation`` is a thin wrapper around this that filters out
+    progress events and returns the final ``UKSimulationResult`` — shared
+    aggregation logic lives in ``_assemble_result`` so there's only one
+    place to change post-loop behaviour.
+    """
     rng = np.random.default_rng(inputs.random_seed)
+    n_sims = inputs.n_simulations
     n_years = inputs.max_age - inputs.current_age + 1
+
+    portfolio_over_time = np.empty((n_sims, n_years), dtype=np.float64)
+    tax_over_time = np.empty((n_sims, n_years), dtype=np.float64)
+    earnings_over_time = np.empty((n_sims, n_years), dtype=np.float64)
 
     year_breakdown: list[UKYearBreakdown] = []
     final_state: _PathState | None = None
-    portfolio_paths: list[np.ndarray] = []
-    tax_paths: list[np.ndarray] = []
-    earnings_paths_snapshot: list[np.ndarray] = []
-    start_years_out: list[np.ndarray | None] = []
+    start_years: np.ndarray | None = None
 
-    for year_idx, breakdown, state, tax_arr, earnings_arr in _iterate_years(
-        inputs, rng, start_years_out
-    ):
+    for (
+        year_idx, breakdown, state, tax_arr, earnings_arr, sy,
+    ) in _iterate_years(inputs, rng):
         year_breakdown.append(breakdown)
-        portfolio_paths.append(state.gia + state.isa + state.sipp)
-        tax_paths.append(tax_arr)
-        earnings_paths_snapshot.append(earnings_arr)
+        portfolio_over_time[:, year_idx] = state.gia + state.isa + state.sipp
+        tax_over_time[:, year_idx] = tax_arr
+        earnings_over_time[:, year_idx] = earnings_arr
         final_state = state
-        yield {"type": "progress", "current_year": year_idx + 1, "total_years": n_years}
+        start_years = sy  # stable across yields; we just need the last value
+        yield {
+            "type": "progress",
+            "current_year": year_idx + 1,
+            "total_years": n_years,
+        }
 
     assert final_state is not None
-    portfolio_over_time = np.stack(portfolio_paths, axis=1)
-    tax_over_time = np.stack(tax_paths, axis=1)
-    earnings_over_time = np.stack(earnings_paths_snapshot, axis=1)
-
-    depleted = final_state.depleted_year != -1
-    success_rate = float(np.mean(~depleted))
-    final_portfolio = final_state.gia + final_state.isa + final_state.sipp
-
-    percentiles = {
-        f"p{p}": float(np.percentile(final_portfolio, p))
-        for p in (5, 25, 50, 75, 95)
-    }
-    median_inflation_path = float(
-        np.prod([1.0 + b.inflation_rate for b in year_breakdown])
-    )
-    percentiles_real = {k: v / median_inflation_path for k, v in percentiles.items()}
-
-    percentile_paths = {
-        f"p{p}": np.percentile(portfolio_over_time, p, axis=0).tolist()
-        for p in (5, 25, 50, 75, 95)
-    }
-    tax_percentile_paths = {
-        f"p{p}": np.percentile(tax_over_time, p, axis=0).tolist()
-        for p in (5, 25, 50, 75, 95)
-    }
-    earnings_percentile_paths = {
-        f"p{p}": np.percentile(earnings_over_time, p, axis=0).tolist()
-        for p in (5, 25, 50, 75, 95)
-    }
-
-    total_portfolio_start = (
-        inputs.gia_balance + inputs.isa_balance + inputs.sipp_balance
-    )
-    initial_withdrawal_rate = (
-        (inputs.annual_spending / total_portfolio_start * 100.0)
-        if total_portfolio_start > 0
-        else 0.0
-    )
-    horizon = min(10, len(year_breakdown))
-    first_10_depleted = (final_state.depleted_year != -1) & (
-        final_state.depleted_year < horizon
-    )
-    prob_10_year_failure = float(np.mean(first_10_depleted))
-
-    start_years_arr = start_years_out[0] if start_years_out else None
-    path_start_years: list[int] | None = (
-        [int(y) for y in start_years_arr]
-        if start_years_arr is not None
-        else None
-    )
-    percentile_path_start_years: dict[str, int] | None = (
-        _percentile_path_start_years(final_portfolio, start_years_arr)
-        if start_years_arr is not None
-        else None
-    )
-
-    result = UKSimulationResult(
-        metadata={
-            "n_simulations": inputs.n_simulations,
-            "current_age": inputs.current_age,
-            "max_age": inputs.max_age,
-            "random_seed": inputs.random_seed,
-        },
-        success_rate=success_rate,
-        median_final_value=float(np.median(final_portfolio)),
-        median_final_value_real=float(np.median(final_portfolio) / median_inflation_path),
-        percentiles=percentiles,
-        percentiles_real=percentiles_real,
-        percentile_paths=percentile_paths,
-        tax_percentile_paths=tax_percentile_paths,
-        earnings_percentile_paths=earnings_percentile_paths,
-        year_breakdown=year_breakdown,
-        initial_withdrawal_rate=initial_withdrawal_rate,
-        prob_10_year_failure=prob_10_year_failure,
-        path_start_years=path_start_years,
-        percentile_path_start_years=percentile_path_start_years,
+    result = _assemble_result(
+        inputs,
+        year_breakdown,
+        final_state,
+        portfolio_over_time,
+        tax_over_time,
+        earnings_over_time,
+        start_years,
     )
     yield {"type": "result", "result": result.model_dump()}
+
+
+def run_uk_simulation(inputs: UKSimulationInput) -> UKSimulationResult:
+    """Run the full UK Monte Carlo simulation and return the aggregated result.
+
+    Drains the streaming generator so all post-loop logic lives in exactly
+    one place (``_assemble_result``).
+    """
+    result: UKSimulationResult | None = None
+    for event in run_uk_simulation_with_progress(inputs):
+        if event["type"] == "result":
+            result = UKSimulationResult.model_validate(event["result"])
+    assert result is not None
+    return result

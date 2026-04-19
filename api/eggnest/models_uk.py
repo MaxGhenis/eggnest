@@ -193,15 +193,6 @@ class UKSimulationResult(BaseModel):
     year_breakdown: list[UKYearBreakdown]
     initial_withdrawal_rate: float
     prob_10_year_failure: float
-    path_start_years: list[int] | None = Field(
-        default=None,
-        description=(
-            "Calendar start year (e.g. 1966) for each simulated path. Populated "
-            "only when return_source='historical_sequential'; None for gaussian, "
-            "bootstrap, and block_bootstrap (those have no single interpretable "
-            "start year per path)."
-        ),
-    )
     percentile_path_start_years: dict[str, int] | None = Field(
         default=None,
         description=(

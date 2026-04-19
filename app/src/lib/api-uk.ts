@@ -71,9 +71,6 @@ export interface UKSimulationResult {
   percentile_paths: Record<string, number[]>;
   tax_percentile_paths: Record<string, number[]>;
   earnings_percentile_paths: Record<string, number[]>;
-  /** Per-path calendar start year (1871-2020). Only populated when
-   *  return_source is "historical_sequential"; null otherwise. */
-  path_start_years?: number[] | null;
   /** Start year of the representative cohort for each percentile of the
    *  portfolio distribution. Only populated for sequential sampling. */
   percentile_path_start_years?: Record<string, number> | null;
@@ -82,11 +79,15 @@ export interface UKSimulationResult {
   prob_10_year_failure: number;
 }
 
-export async function runUKSimulation(input: UKSimulationInput): Promise<UKSimulationResult> {
+export async function runUKSimulation(
+  input: UKSimulationInput,
+  signal?: AbortSignal,
+): Promise<UKSimulationResult> {
   const response = await fetch(`${API_URL}/simulate-uk`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
+    signal,
   });
   if (!response.ok) {
     throw new Error(`UK simulation failed: ${response.status}`);

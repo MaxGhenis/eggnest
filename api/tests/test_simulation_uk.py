@@ -200,30 +200,24 @@ def test_tfc_lowers_taxes_vs_full_taxable_sipp(basic_input):
     ["gaussian", "historical_bootstrap", "historical_block_bootstrap"],
 )
 def test_sequential_exposes_start_years(basic_input, non_sequential_source):
-    """Sequential mode populates start-year fields; other modes return None."""
+    """Sequential mode populates percentile_path_start_years; other modes don't."""
     seq = run_uk_simulation(
         basic_input.model_copy(update={"return_source": "historical_sequential"})
     )
-    assert seq.path_start_years is not None
-    assert len(seq.path_start_years) == basic_input.n_simulations
     assert seq.percentile_path_start_years is not None
     assert set(seq.percentile_path_start_years.keys()) == {"p5", "p25", "p50", "p75", "p95"}
-    for y in seq.path_start_years:
-        assert 1871 <= y <= 2020, f"start year {y} outside JST range"
     for y in seq.percentile_path_start_years.values():
         assert 1871 <= y <= 2020, f"percentile start year {y} outside JST range"
 
     other = run_uk_simulation(
         basic_input.model_copy(update={"return_source": non_sequential_source})
     )
-    assert other.path_start_years is None
     assert other.percentile_path_start_years is None
 
 
 def test_percentile_start_year_matches_path():
-    """Every per-percentile start year must be a real JST year that also appears
-    in ``path_start_years``, and the reported start years must vary across
-    percentiles."""
+    """Every per-percentile start year must be a real JST year, and the
+    reported start years must vary across percentiles."""
     from eggnest.historical_returns_uk import load_history
 
     inp = UKSimulationInput(
@@ -242,15 +236,11 @@ def test_percentile_start_year_matches_path():
     )
     result = run_uk_simulation(inp)
     assert result.percentile_path_start_years is not None
-    assert result.path_start_years is not None
 
     hist_years = {int(y) for y in load_history().year}
     for label, year in result.percentile_path_start_years.items():
         assert 1871 <= year <= 2020
         assert year in hist_years, f"{label} start year {year} not in JST history"
-        assert year in result.path_start_years, (
-            f"{label} reports year {year} that isn't in any simulated path"
-        )
 
     reported = list(result.percentile_path_start_years.values())
     assert len(set(reported)) > 1, (

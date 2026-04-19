@@ -134,27 +134,24 @@ export default function UKSimulatorPage() {
   const debouncedInput = useDebouncedValue(input, 250);
 
   useEffect(() => {
-    let cancelled = false;
-    runUKSimulation(debouncedInput)
+    const controller = new AbortController();
+    runUKSimulation(debouncedInput, controller.signal)
       .then((r) => {
-        if (!cancelled) setSim({ forInput: debouncedInput, result: r, error: null });
+        if (!controller.signal.aborted) {
+          setSim({ forInput: debouncedInput, result: r, error: null });
+        }
       })
       .catch((e) => {
-        if (!cancelled) {
-          setSim({
-            forInput: debouncedInput,
-            result: null,
-            error: e instanceof Error ? e.message : "Simulation failed",
-          });
-        }
+        if (controller.signal.aborted) return;
+        setSim({
+          forInput: debouncedInput,
+          result: null,
+          error: e instanceof Error ? e.message : "Simulation failed",
+        });
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [debouncedInput]);
 
-  // "Updating" = user is still typing, OR the latest successful result is for a
-  // different input than what's currently debounced.
   const isRunning = sim.forInput !== debouncedInput || input !== debouncedInput;
   const result = sim.result;
   const error = sim.error;
@@ -243,13 +240,33 @@ export default function UKSimulatorPage() {
                 error={error}
                 totalPortfolio={totalPortfolio}
               />
-              <PortfolioChart result={result} startAge={input.current_age + 1} />
-              <TaxChart result={result} startAge={input.current_age + 1} />
+              <PercentileFanChart
+                title="Portfolio value over time"
+                description="Median + 25/75 + 5/95 percentiles"
+                paths={result?.percentile_paths}
+                startAge={input.current_age + 1}
+                yTitle="Portfolio (£)"
+                height={380}
+                cohorts={result?.percentile_path_start_years}
+                withZeroLine
+              />
+              <PercentileFanChart
+                title="HMRC tax by year"
+                description="Median + 25/75 + 5/95 percentiles"
+                paths={result?.tax_percentile_paths}
+                startAge={input.current_age + 1}
+                yTitle="Annual tax (£)"
+                height={300}
+              />
               {input.current_age < (input.retirement_age ?? 67) && (
-                <EarningsChart
-                  result={result}
+                <PercentileFanChart
+                  title="Earnings while working"
+                  description="Median + 25/75 + 5/95 percentiles"
+                  paths={result?.earnings_percentile_paths}
                   startAge={input.current_age + 1}
-                  retirementAge={input.retirement_age ?? 67}
+                  yTitle="Gross earnings (£)"
+                  height={260}
+                  maxAge={input.retirement_age ?? 67}
                 />
               )}
             </div>
@@ -371,7 +388,8 @@ function InputsPanel({
       </Section>
 
       <Section title="Return model">
-        <ReturnSourceToggle
+        <OptionToggle
+          options={RETURN_SOURCE_OPTIONS}
           value={input.return_source ?? "historical_block_bootstrap"}
           onChange={(v) => updateField("return_source", v)}
         />
@@ -478,7 +496,10 @@ function InputsPanel({
             max={80}
             format={(v) => String(v)}
           />
-          <EarningsModelToggle
+          <OptionToggle
+            label="Earnings model"
+            columns={3}
+            options={EARNINGS_MODEL_OPTIONS}
             value={input.earnings_model ?? "flat"}
             onChange={(v) => updateField("earnings_model", v)}
           />
@@ -637,82 +658,50 @@ function SkeletonHero() {
   );
 }
 
-function PortfolioChart({
-  result,
-  startAge,
-}: {
-  result: UKSimulationResult | null;
-  startAge: number;
-}) {
-  const chartData = useMemo(() => {
-    if (!result) return [];
-    const ages = result.percentile_paths.p50.map((_, i) => startAge + i);
-    // In sequential mode, annotate each percentile's legend entry with the
-    // real historical cohort that drove that outcome (e.g. "Median — 1987
-    // cohort"). The backend picks one representative sim per percentile.
-    const cohorts = result.percentile_path_start_years ?? null;
-    const cohortSuffix = (key: "p5" | "p25" | "p50" | "p75" | "p95") =>
-      cohorts?.[key] != null ? ` — ${cohorts[key]} cohort` : "";
-    return [
-      {
-        x: ages,
-        y: result.percentile_paths.p95,
-        type: "scatter" as const,
-        mode: "lines" as const,
-        line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" as const },
-        name: `95th${cohortSuffix("p95")}`,
-        hoverinfo: "skip" as const,
-      },
-      {
-        x: ages,
-        y: result.percentile_paths.p5,
-        type: "scatter" as const,
-        mode: "lines" as const,
-        fill: "tonexty" as const,
-        fillcolor: "rgba(217,119,6,0.08)",
-        line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" as const },
-        name: `5th${cohortSuffix("p5")}`,
-        hoverinfo: "skip" as const,
-      },
-      {
-        x: ages,
-        y: result.percentile_paths.p75,
-        type: "scatter" as const,
-        mode: "lines" as const,
-        line: { color: "rgba(217,119,6,0.6)", width: 1.5 },
-        name: `75th${cohortSuffix("p75")}`,
-        hoverinfo: "skip" as const,
-      },
-      {
-        x: ages,
-        y: result.percentile_paths.p25,
-        type: "scatter" as const,
-        mode: "lines" as const,
-        fill: "tonexty" as const,
-        fillcolor: "rgba(217,119,6,0.15)",
-        line: { color: "rgba(217,119,6,0.6)", width: 1.5 },
-        name: `25th${cohortSuffix("p25")}`,
-        hoverinfo: "skip" as const,
-      },
-      {
-        x: ages,
-        y: result.percentile_paths.p50,
-        type: "scatter" as const,
-        mode: "lines" as const,
-        line: { color: chartColors.primary, width: 3 },
-        name: `Median${cohortSuffix("p50")}`,
-      },
-    ];
-  }, [result, startAge]);
+type PercentileKey = "p5" | "p25" | "p50" | "p75" | "p95";
 
-  const layout = {
+/** Build the five-trace Plotly fan chart shared by Portfolio / Tax / Earnings. */
+function buildPercentileFan(
+  paths: Record<string, number[]>,
+  ages: number[],
+  sliceRange?: [number, number],
+  cohorts?: Record<string, number> | null,
+): Plotly.Data[] {
+  const [s, e] = sliceRange ?? [0, ages.length];
+  const x = ages.slice(s, e);
+  const y = (k: PercentileKey) => paths[k].slice(s, e);
+  const suffix = (k: PercentileKey) =>
+    cohorts?.[k] != null ? ` — ${cohorts[k]} cohort` : "";
+  return [
+    { x, y: y("p95"), type: "scatter", mode: "lines",
+      line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" },
+      name: `95th${suffix("p95")}`, hoverinfo: "skip" },
+    { x, y: y("p5"), type: "scatter", mode: "lines", fill: "tonexty",
+      fillcolor: "rgba(217,119,6,0.08)",
+      line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" },
+      name: `5th${suffix("p5")}`, hoverinfo: "skip" },
+    { x, y: y("p75"), type: "scatter", mode: "lines",
+      line: { color: "rgba(217,119,6,0.6)", width: 1.5 },
+      name: `75th${suffix("p75")}`, hoverinfo: "skip" },
+    { x, y: y("p25"), type: "scatter", mode: "lines", fill: "tonexty",
+      fillcolor: "rgba(217,119,6,0.15)",
+      line: { color: "rgba(217,119,6,0.6)", width: 1.5 },
+      name: `25th${suffix("p25")}`, hoverinfo: "skip" },
+    { x, y: y("p50"), type: "scatter", mode: "lines",
+      line: { color: chartColors.primary, width: 3 },
+      name: `Median${suffix("p50")}` },
+  ];
+}
+
+function buildFanLayout(yTitle: string, height: number, withZeroLine = false) {
+  return {
     autosize: true,
-    height: 380,
+    height,
     margin: { l: 70, r: 20, t: 30, b: 50 },
     font: { family: "DM Sans, system-ui, sans-serif", size: 12 },
     xaxis: { title: { text: "Age" }, gridcolor: colors.gray200, showgrid: true, zeroline: false },
     yaxis: {
-      title: { text: "Portfolio (£)" },
+      title: { text: yTitle },
       gridcolor: colors.gray200,
       tickprefix: "£",
       tickformat: "~s",
@@ -728,249 +717,65 @@ function PortfolioChart({
     },
     paper_bgcolor: "transparent",
     plot_bgcolor: "transparent",
-    shapes: result
-      ? [
-          {
-            type: "line" as const,
-            xref: "paper" as const,
-            x0: 0,
-            x1: 1,
-            y0: 0,
-            y1: 0,
-            line: { color: colors.gray300, width: 1 },
-          },
-        ]
+    shapes: withZeroLine
+      ? [{ type: "line" as const, xref: "paper" as const,
+          x0: 0, x1: 1, y0: 0, y1: 0,
+          line: { color: colors.gray300, width: 1 } }]
       : [],
   };
-
-  return (
-    <div className="section-card">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h3 className="text-lg font-semibold">Portfolio value over time</h3>
-        <span className="text-xs text-[var(--color-text-light)]">Median + 25/75 + 5/95 percentiles</span>
-      </div>
-      {result ? (
-        <div className="plotly-chart-wrapper -mx-2">
-          <Plot data={chartData} layout={layout} config={{ responsive: true, displayModeBar: false }} style={{ width: "100%" }} />
-        </div>
-      ) : (
-        <div className="h-[380px] animate-pulse rounded-[var(--radius-md)] bg-[var(--color-gray-100)]" />
-      )}
-    </div>
-  );
 }
 
-function TaxChart({
-  result,
+function PercentileFanChart({
+  title,
+  description,
+  paths,
   startAge,
+  yTitle,
+  height,
+  cohorts,
+  /** Restrict the visible x-range by age. Used for earnings (drop retirement years). */
+  maxAge,
+  withZeroLine = false,
 }: {
-  result: UKSimulationResult | null;
+  title: string;
+  description: string;
+  paths: Record<string, number[]> | null | undefined;
   startAge: number;
+  yTitle: string;
+  height: number;
+  cohorts?: Record<string, number> | null;
+  maxAge?: number;
+  withZeroLine?: boolean;
 }) {
   const chartData = useMemo(() => {
-    if (!result?.tax_percentile_paths) return [];
-    const paths = result.tax_percentile_paths;
+    if (!paths) return [];
     const ages = paths.p50.map((_, i) => startAge + i);
-    return [
-      {
-        x: ages,
-        y: paths.p95,
-        type: "scatter" as const,
-        mode: "lines" as const,
-        line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" as const },
-        name: "95th",
-        hoverinfo: "skip" as const,
-      },
-      {
-        x: ages,
-        y: paths.p5,
-        type: "scatter" as const,
-        mode: "lines" as const,
-        fill: "tonexty" as const,
-        fillcolor: "rgba(217,119,6,0.08)",
-        line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" as const },
-        name: "5th",
-        hoverinfo: "skip" as const,
-      },
-      {
-        x: ages,
-        y: paths.p75,
-        type: "scatter" as const,
-        mode: "lines" as const,
-        line: { color: "rgba(217,119,6,0.6)", width: 1.5 },
-        name: "75th",
-        hoverinfo: "skip" as const,
-      },
-      {
-        x: ages,
-        y: paths.p25,
-        type: "scatter" as const,
-        mode: "lines" as const,
-        fill: "tonexty" as const,
-        fillcolor: "rgba(217,119,6,0.15)",
-        line: { color: "rgba(217,119,6,0.6)", width: 1.5 },
-        name: "25th",
-        hoverinfo: "skip" as const,
-      },
-      {
-        x: ages,
-        y: paths.p50,
-        type: "scatter" as const,
-        mode: "lines" as const,
-        line: { color: chartColors.primary, width: 3 },
-        name: "Median",
-      },
-    ];
-  }, [result, startAge]);
+    let range: [number, number] | undefined;
+    if (maxAge !== undefined) {
+      const cut = ages.findIndex((a) => a >= maxAge);
+      const endIdx = cut === -1 ? ages.length : cut;
+      range = [0, Math.max(endIdx, 1)];
+    }
+    return buildPercentileFan(paths, ages, range, cohorts);
+  }, [paths, startAge, cohorts, maxAge]);
 
-  const layout = {
-    autosize: true,
-    height: 300,
-    margin: { l: 70, r: 20, t: 30, b: 50 },
-    font: { family: "DM Sans, system-ui, sans-serif", size: 12 },
-    xaxis: { title: { text: "Age" }, gridcolor: colors.gray200, showgrid: true, zeroline: false },
-    yaxis: {
-      title: { text: "Annual tax (£)" },
-      gridcolor: colors.gray200,
-      tickprefix: "£",
-      tickformat: "~s",
-      rangemode: "tozero" as const,
-      showgrid: true,
-    },
-    legend: {
-      x: 0.5,
-      y: 1.12,
-      xanchor: "center" as const,
-      orientation: "h" as const,
-      bgcolor: "rgba(255,255,255,0.85)",
-    },
-    paper_bgcolor: "transparent",
-    plot_bgcolor: "transparent",
-  };
-
-  return (
-    <div className="section-card">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h3 className="text-lg font-semibold">HMRC tax by year</h3>
-        <span className="text-xs text-[var(--color-text-light)]">Median + 25/75 + 5/95 percentiles</span>
-      </div>
-      {result?.tax_percentile_paths ? (
-        <div className="plotly-chart-wrapper -mx-2">
-          <Plot data={chartData} layout={layout} config={{ responsive: true, displayModeBar: false }} style={{ width: "100%" }} />
-        </div>
-      ) : (
-        <div className="h-[300px] animate-pulse rounded-[var(--radius-md)] bg-[var(--color-gray-100)]" />
-      )}
-    </div>
+  const layout = useMemo(
+    () => buildFanLayout(yTitle, height, withZeroLine),
+    [yTitle, height, withZeroLine],
   );
-}
-
-function EarningsChart({
-  result,
-  startAge,
-  retirementAge,
-}: {
-  result: UKSimulationResult | null;
-  startAge: number;
-  retirementAge: number;
-}) {
-  const chartData = useMemo(() => {
-    if (!result?.earnings_percentile_paths) return [];
-    const paths = result.earnings_percentile_paths;
-    const ages = paths.p50.map((_, i) => startAge + i);
-    // Drop retirement years to keep the chart focused on working life
-    const lastWorkingIdx = ages.findIndex((a) => a >= retirementAge);
-    const endIdx = lastWorkingIdx === -1 ? ages.length : lastWorkingIdx;
-    const slice = <T,>(arr: T[]): T[] => arr.slice(0, Math.max(endIdx, 1));
-    const x = slice(ages);
-    return [
-      {
-        x,
-        y: slice(paths.p95),
-        type: "scatter" as const,
-        mode: "lines" as const,
-        line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" as const },
-        name: "95th",
-        hoverinfo: "skip" as const,
-      },
-      {
-        x,
-        y: slice(paths.p5),
-        type: "scatter" as const,
-        mode: "lines" as const,
-        fill: "tonexty" as const,
-        fillcolor: "rgba(217,119,6,0.08)",
-        line: { color: "rgba(217,119,6,0.4)", width: 1, dash: "dot" as const },
-        name: "5th",
-        hoverinfo: "skip" as const,
-      },
-      {
-        x,
-        y: slice(paths.p75),
-        type: "scatter" as const,
-        mode: "lines" as const,
-        line: { color: "rgba(217,119,6,0.6)", width: 1.5 },
-        name: "75th",
-        hoverinfo: "skip" as const,
-      },
-      {
-        x,
-        y: slice(paths.p25),
-        type: "scatter" as const,
-        mode: "lines" as const,
-        fill: "tonexty" as const,
-        fillcolor: "rgba(217,119,6,0.15)",
-        line: { color: "rgba(217,119,6,0.6)", width: 1.5 },
-        name: "25th",
-        hoverinfo: "skip" as const,
-      },
-      {
-        x,
-        y: slice(paths.p50),
-        type: "scatter" as const,
-        mode: "lines" as const,
-        line: { color: chartColors.primary, width: 3 },
-        name: "Median",
-      },
-    ];
-  }, [result, startAge, retirementAge]);
-
-  const layout = {
-    autosize: true,
-    height: 260,
-    margin: { l: 70, r: 20, t: 30, b: 50 },
-    font: { family: "DM Sans, system-ui, sans-serif", size: 12 },
-    xaxis: { title: { text: "Age" }, gridcolor: colors.gray200, showgrid: true, zeroline: false },
-    yaxis: {
-      title: { text: "Gross earnings (£)" },
-      gridcolor: colors.gray200,
-      tickprefix: "£",
-      tickformat: "~s",
-      rangemode: "tozero" as const,
-    },
-    legend: {
-      x: 0.5,
-      y: 1.15,
-      xanchor: "center" as const,
-      orientation: "h" as const,
-      bgcolor: "rgba(255,255,255,0.85)",
-    },
-    paper_bgcolor: "transparent",
-    plot_bgcolor: "transparent",
-  };
 
   return (
     <div className="section-card">
       <div className="mb-3 flex items-baseline justify-between">
-        <h3 className="text-lg font-semibold">Earnings while working</h3>
-        <span className="text-xs text-[var(--color-text-light)]">Median + 25/75 + 5/95 percentiles</span>
+        <h3 className="text-lg font-semibold">{title}</h3>
+        <span className="text-xs text-[var(--color-text-light)]">{description}</span>
       </div>
-      {result?.earnings_percentile_paths ? (
+      {paths ? (
         <div className="plotly-chart-wrapper -mx-2">
           <Plot data={chartData} layout={layout} config={{ responsive: true, displayModeBar: false }} style={{ width: "100%" }} />
         </div>
       ) : (
-        <div className="h-[260px] animate-pulse rounded-[var(--radius-md)] bg-[var(--color-gray-100)]" />
+        <div className="animate-pulse rounded-[var(--radius-md)] bg-[var(--color-gray-100)]" style={{ height }} />
       )}
     </div>
   );
@@ -1013,18 +818,35 @@ function ScenarioProbes({
 const selectCls =
   "w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none";
 
-function ReturnSourceToggle({
+interface ToggleOption<T extends string> {
+  value: T;
+  label: string;
+  detail: string;
+}
+
+function OptionToggle<T extends string>({
+  label,
+  options,
   value,
   onChange,
+  columns = 2,
 }: {
-  value: NonNullable<UKSimulationInput["return_source"]>;
-  onChange: (v: NonNullable<UKSimulationInput["return_source"]>) => void;
+  /** Small caption above the grid. Omit for legacy no-label layout. */
+  label?: string;
+  options: ReadonlyArray<ToggleOption<T>>;
+  value: T;
+  onChange: (v: T) => void;
+  columns?: 2 | 3;
 }) {
-  const current = RETURN_SOURCE_OPTIONS.find((o) => o.value === value);
+  const current = options.find((o) => o.value === value);
+  const gridCls = columns === 3 ? "grid-cols-3" : "grid-cols-2";
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-1.5">
-        {RETURN_SOURCE_OPTIONS.map((o) => {
+      {label && (
+        <label className="text-xs font-medium text-[var(--color-text-muted)]">{label}</label>
+      )}
+      <div className={`grid ${gridCls} gap-1.5`}>
+        {options.map((o) => {
           const active = o.value === value;
           return (
             <button
@@ -1046,43 +868,6 @@ function ReturnSourceToggle({
         <p className="text-[0.7rem] leading-snug text-[var(--color-text-light)]">
           {current.detail}
         </p>
-      )}
-    </div>
-  );
-}
-
-function EarningsModelToggle({
-  value,
-  onChange,
-}: {
-  value: NonNullable<UKSimulationInput["earnings_model"]>;
-  onChange: (v: NonNullable<UKSimulationInput["earnings_model"]>) => void;
-}) {
-  const current = EARNINGS_MODEL_OPTIONS.find((o) => o.value === value);
-  return (
-    <div className="space-y-2">
-      <label className="text-xs font-medium text-[var(--color-text-muted)]">Earnings model</label>
-      <div className="grid grid-cols-3 gap-1.5">
-        {EARNINGS_MODEL_OPTIONS.map((o) => {
-          const active = o.value === value;
-          return (
-            <button
-              key={o.value}
-              type="button"
-              onClick={() => onChange(o.value)}
-              className={`rounded-[var(--radius-sm)] border px-2.5 py-1.5 text-left text-[0.72rem] font-medium leading-tight transition-colors ${
-                active
-                  ? "border-[var(--color-primary)] bg-[var(--color-primary-50)] text-[var(--color-primary)]"
-                  : "border-[var(--color-border-light)] bg-white text-[var(--color-text-muted)] hover:border-[var(--color-border)]"
-              }`}
-            >
-              {o.label}
-            </button>
-          );
-        })}
-      </div>
-      {current && (
-        <p className="text-[0.7rem] leading-snug text-[var(--color-text-light)]">{current.detail}</p>
       )}
     </div>
   );
