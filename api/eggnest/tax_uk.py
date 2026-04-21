@@ -11,7 +11,6 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-
 from policyengine_uk_compiled import Simulation
 from policyengine_uk_compiled.engine import (
     BENUNIT_DEFAULTS,
@@ -47,39 +46,40 @@ class UKYearResults:
     total_tax: np.ndarray  # income tax + NI + dividend tax, £
 
 
+def _defaults_frame(defaults: dict, n: int) -> dict[str, np.ndarray]:
+    """Broadcast the PE-UK scalar defaults into n-row columns."""
+    return {key: np.full(n, value) for key, value in defaults.items()}
+
+
 def calculate_uk_tax(inputs: UKYearInputs) -> UKYearResults:
     """Run a single batched UK tax calculation for all paths in one year."""
     n = int(inputs.state_pension.shape[0])
+    ids = np.arange(n)
+    id_strs = ids.astype(str)
 
-    persons = [
-        {
-            **PERSON_DEFAULTS,
-            "person_id": i,
-            "benunit_id": i,
-            "household_id": i,
-            "age": int(inputs.age),
-            "state_pension": float(inputs.state_pension[i]),
-            "private_pension_income": float(inputs.private_pension_income[i]),
-            "savings_interest": float(inputs.savings_interest[i]),
-            "dividend_income": float(inputs.dividend_income[i]),
-            "employment_income": float(inputs.employment_income[i]),
-        }
-        for i in range(n)
-    ]
-    benunits = [
-        {**BENUNIT_DEFAULTS, "benunit_id": i, "household_id": i, "person_ids": str(i)}
-        for i in range(n)
-    ]
-    households = [
-        {
-            **HOUSEHOLD_DEFAULTS,
-            "household_id": i,
-            "benunit_ids": str(i),
-            "person_ids": str(i),
-            "region": inputs.region,
-        }
-        for i in range(n)
-    ]
+    persons = _defaults_frame(PERSON_DEFAULTS, n)
+    persons.update(
+        person_id=ids,
+        benunit_id=ids,
+        household_id=ids,
+        age=np.full(n, int(inputs.age)),
+        state_pension=inputs.state_pension.astype(float),
+        private_pension_income=inputs.private_pension_income.astype(float),
+        savings_interest=inputs.savings_interest.astype(float),
+        dividend_income=inputs.dividend_income.astype(float),
+        employment_income=inputs.employment_income.astype(float),
+    )
+
+    benunits = _defaults_frame(BENUNIT_DEFAULTS, n)
+    benunits.update(benunit_id=ids, household_id=ids, person_ids=id_strs)
+
+    households = _defaults_frame(HOUSEHOLD_DEFAULTS, n)
+    households.update(
+        household_id=ids,
+        benunit_ids=id_strs,
+        person_ids=id_strs,
+        region=np.full(n, inputs.region),
+    )
 
     sim = Simulation(
         year=min(inputs.year, LATEST_PARAMETER_YEAR),

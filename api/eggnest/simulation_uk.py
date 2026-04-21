@@ -8,9 +8,9 @@ yet — those land as follow-ups.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterator
 
 import numpy as np
 
@@ -414,7 +414,9 @@ def _assemble_result(
     median_inflation_path = float(
         np.prod([1.0 + b.inflation_rate for b in year_breakdown])
     )
-    percentiles = {f"p{p}": float(q) for p, q in zip(_PERCENTILES, final_quantiles)}
+    percentiles = {
+        f"p{p}": float(q) for p, q in zip(_PERCENTILES, final_quantiles, strict=True)
+    }
     percentiles_real = {k: v / median_inflation_path for k, v in percentiles.items()}
 
     total_portfolio_start = (
