@@ -22,7 +22,12 @@ import pandas as pd
 
 JST_URL = "https://www.macrohistory.net/app/download/9834512469/JSTdatasetR6.dta"
 CACHE_PATH = Path("/tmp/jst_uk_historical.dta")
-OUT_PATH = Path(__file__).resolve().parent.parent / "eggnest" / "data" / "uk_historical_returns.csv"
+OUT_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "eggnest"
+    / "data"
+    / "uk_historical_returns.csv"
+)
 
 
 def _download(url: str, dest: Path) -> None:
@@ -50,7 +55,9 @@ def main() -> None:
             "cpi_return": "cpi_inflation",
         }
     )
-    out = out.dropna(subset=["equity_return_nominal", "bond_return_nominal", "cpi_inflation"])
+    out = out.dropna(
+        subset=["equity_return_nominal", "bond_return_nominal", "cpi_inflation"]
+    )
     out["year"] = out["year"].astype(int)
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)

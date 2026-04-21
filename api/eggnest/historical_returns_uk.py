@@ -77,9 +77,7 @@ def _block_bootstrap_indices(
 ) -> np.ndarray:
     """Moving-block bootstrap: concatenate random contiguous blocks."""
     n_blocks = (n_years + BLOCK_SIZE - 1) // BLOCK_SIZE
-    block_starts = rng.integers(
-        0, n_history - BLOCK_SIZE + 1, size=(n_sims, n_blocks)
-    )
+    block_starts = rng.integers(0, n_history - BLOCK_SIZE + 1, size=(n_sims, n_blocks))
     offsets = np.arange(BLOCK_SIZE)
     # Shape (n_sims, n_blocks, BLOCK_SIZE)
     idx = block_starts[:, :, None] + offsets[None, None, :]

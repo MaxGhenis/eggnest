@@ -162,7 +162,9 @@ def _withdraw(
 def _iterate_years(
     inputs: UKSimulationInput,
     rng: np.random.Generator,
-) -> Iterator[tuple[int, UKYearBreakdown, _PathState, np.ndarray, np.ndarray, np.ndarray | None]]:
+) -> Iterator[
+    tuple[int, UKYearBreakdown, _PathState, np.ndarray, np.ndarray, np.ndarray | None]
+]:
     """Iterate year-by-year over the simulation.
 
     Yields ``(year_idx, breakdown, state, tax_array, earnings_array, start_years)``
@@ -218,7 +220,9 @@ def _iterate_years(
         age = inputs.current_age + year_idx
         calendar_year = start_year + year_idx
 
-        cumulative_inflation = cumulative_inflation * (1.0 + inflation_paths[:, year_idx])
+        cumulative_inflation = cumulative_inflation * (
+            1.0 + inflation_paths[:, year_idx]
+        )
         spending_target_nominal = inputs.annual_spending * (
             cumulative_inflation if inputs.spending_mode == "real" else np.ones(n_sims)
         )
@@ -290,9 +294,7 @@ def _iterate_years(
             # Inner np.where on sipp_take avoids divide-by-zero warnings even
             # though the outer np.where masks those paths to 0.0.
             safe_sipp = np.where(sipp_take > 0, sipp_take, 1.0)
-            taxable_fraction = np.where(
-                sipp_take > 0, 1.0 - tfc_cap / safe_sipp, 0.0
-            )
+            taxable_fraction = np.where(sipp_take > 0, 1.0 - tfc_cap / safe_sipp, 0.0)
             # First-cut gross-up: assume the taxable 75 % clears at UK basic
             # rate. Blended net-per-£ = (1 - τ) + τ·(1 - BASIC_RATE).
             net_per_pound = (1.0 - taxable_fraction) + taxable_fraction * (
@@ -334,7 +336,11 @@ def _iterate_years(
         state.sipp = state.sipp * growth_factor
 
         total_portfolio = state.gia + state.isa + state.sipp
-        newly_depleted = (total_portfolio <= 0) & (state.depleted_year == -1) & alive_mask[:, year_idx]
+        newly_depleted = (
+            (total_portfolio <= 0)
+            & (state.depleted_year == -1)
+            & alive_mask[:, year_idx]
+        )
         state.depleted_year = np.where(newly_depleted, year_idx, state.depleted_year)
 
         breakdown = UKYearBreakdown(
@@ -342,7 +348,8 @@ def _iterate_years(
             age=age,
             portfolio_start=float(
                 np.median(
-                    (state.gia + state.isa + state.sipp) / growth_factor + total_withdrawn
+                    (state.gia + state.isa + state.sipp) / growth_factor
+                    + total_withdrawn
                 )
             ),
             portfolio_end=float(np.median(state.gia + state.isa + state.sipp)),
@@ -448,7 +455,9 @@ def _assemble_result(
         },
         success_rate=float(np.mean(final_state.depleted_year == -1)),
         median_final_value=float(np.median(final_portfolio)),
-        median_final_value_real=float(np.median(final_portfolio) / median_inflation_path),
+        median_final_value_real=float(
+            np.median(final_portfolio) / median_inflation_path
+        ),
         percentiles=percentiles,
         percentiles_real=percentiles_real,
         percentile_paths=_bands(portfolio_over_time),
@@ -482,7 +491,12 @@ def run_uk_simulation_with_progress(inputs: UKSimulationInput):
     start_years: np.ndarray | None = None
 
     for (
-        year_idx, breakdown, state, tax_arr, earnings_arr, sy,
+        year_idx,
+        breakdown,
+        state,
+        tax_arr,
+        earnings_arr,
+        sy,
     ) in _iterate_years(inputs, rng):
         year_breakdown.append(breakdown)
         portfolio_over_time[:, year_idx] = state.gia + state.isa + state.sipp

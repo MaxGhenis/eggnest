@@ -66,7 +66,9 @@ def test_run_uk_simulation_returns_structured_result(basic_input):
     result = run_uk_simulation(basic_input)
     assert isinstance(result, UKSimulationResult)
     assert 0.0 <= result.success_rate <= 1.0
-    assert len(result.year_breakdown) == basic_input.max_age - basic_input.current_age + 1
+    assert (
+        len(result.year_breakdown) == basic_input.max_age - basic_input.current_age + 1
+    )
     for key in ("p5", "p25", "p50", "p75", "p95"):
         assert key in result.percentile_paths
         assert len(result.percentile_paths[key]) == len(result.year_breakdown)
@@ -140,9 +142,7 @@ def test_flat_earnings_model_reproduces_old_behaviour(basic_input):
     """With earnings_model='flat' and savings_rate=0, result matches default."""
     default = run_uk_simulation(basic_input)
     flat = run_uk_simulation(
-        basic_input.model_copy(
-            update={"earnings_model": "flat", "savings_rate": 0.0}
-        )
+        basic_input.model_copy(update={"earnings_model": "flat", "savings_rate": 0.0})
     )
     assert default.success_rate == flat.success_rate
 
@@ -165,11 +165,16 @@ def test_historical_return_sources_produce_valid_result(basic_input, return_sour
 
 def test_historical_bootstrap_differs_from_gaussian(basic_input):
     """The two return models should diverge on the same seed (different draws)."""
-    gaus = run_uk_simulation(basic_input.model_copy(update={"return_source": "gaussian"}))
+    gaus = run_uk_simulation(
+        basic_input.model_copy(update={"return_source": "gaussian"})
+    )
     hist = run_uk_simulation(
         basic_input.model_copy(update={"return_source": "historical_bootstrap"})
     )
-    assert gaus.success_rate != hist.success_rate or gaus.median_final_value != hist.median_final_value
+    assert (
+        gaus.success_rate != hist.success_rate
+        or gaus.median_final_value != hist.median_final_value
+    )
 
 
 def test_tfc_lowers_taxes_vs_full_taxable_sipp(basic_input):
@@ -205,7 +210,13 @@ def test_sequential_exposes_start_years(basic_input, non_sequential_source):
         basic_input.model_copy(update={"return_source": "historical_sequential"})
     )
     assert seq.percentile_path_start_years is not None
-    assert set(seq.percentile_path_start_years.keys()) == {"p5", "p25", "p50", "p75", "p95"}
+    assert set(seq.percentile_path_start_years.keys()) == {
+        "p5",
+        "p25",
+        "p50",
+        "p75",
+        "p95",
+    }
     for y in seq.percentile_path_start_years.values():
         assert 1871 <= y <= 2020, f"percentile start year {y} outside JST range"
 
@@ -243,6 +254,6 @@ def test_percentile_start_year_matches_path():
         assert year in hist_years, f"{label} start year {year} not in JST history"
 
     reported = list(result.percentile_path_start_years.values())
-    assert len(set(reported)) > 1, (
-        "every percentile returned the same start year — path selection broken"
-    )
+    assert (
+        len(set(reported)) > 1
+    ), "every percentile returned the same start year — path selection broken"
