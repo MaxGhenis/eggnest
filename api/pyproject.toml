@@ -28,6 +28,7 @@ dependencies = [
     "scipy>=1.10.0",
     "httpx>=0.26.0",
     "policyengine-us>=1.0.0",
+    "policyengine-uk-compiled>=0.20.0",
     # CLI dependencies
     "click>=8.0",
     "rich>=13.0",
