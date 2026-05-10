@@ -16,7 +16,7 @@
   --color-primary-100: #ffedd5;
   --color-primary-200: #fed7aa;
 
-  /* Secondary - Warm Gold */
+  /* Secondary - Warm Gold (FILL only — use --color-gold-text on bg for text) */
   --color-gold: #d97706;
   --color-gold-light: #fbbf24;
   --color-gold-pale: #fef3c7;
@@ -26,13 +26,23 @@
   --color-sage-light: #84cc16;
   --color-sage-pale: #ecfccb;
 
-  /* Semantic */
+  /* Semantic FILL colors (backgrounds, badges, status dots) */
   --color-success: #16a34a;
   --color-success-light: #dcfce7;
   --color-warning: #ca8a04;
   --color-warning-light: #fef9c3;
   --color-danger: #dc2626;
   --color-danger-light: #fee2e2;
+
+  /* Accessible TEXT variants for paragraph copy.
+     The brand fills above intentionally fail AA as text; these darker
+     shades meet WCAG AA (>=4.5:1) on BOTH the cream canvas (--color-bg)
+     and the matching tinted fill (e.g. --color-success-text on
+     --color-success-light). */
+  --color-gold-text: #9a3412;     /* amber-800;  7.1:1 on bg */
+  --color-success-text: #166534;  /* green-800;  5.5:1 on bg, 4.7:1 on success-light */
+  --color-warning-text: #713f12;  /* yellow-900; 9.5:1 on bg, 7.9:1 on warning-light */
+  --color-danger-text: #991b1b;   /* red-800;    7.5:1 on bg, 6.6:1 on danger-light */
 
   /* Neutrals - Warm tinted (stone) */
   --color-gray-50: #fafaf9;
@@ -53,8 +63,14 @@
   --color-bg: #fffbf5;
   --color-bg-alt: #fef7ed;
   --color-bg-card: #ffffff;
+  /* --color-border is decorative (1.22:1). For form input borders,
+     focus outlines, and other meaningful UI boundaries (WCAG SC 1.4.11),
+     use --color-border-strong instead. */
   --color-border: #e7e5e4;
   --color-border-light: #f5f5f4;
+  --color-border-strong: #78716c; /* stone-500, 4.7:1 on bg */
+  /* Canonical focus indicator (7.1:1 on bg) */
+  --color-focus-ring: #9a3412;
 
   /* Shadows - layered for realism */
   --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.04), 0 0 0 1px rgba(28, 25, 23, 0.02);
@@ -112,7 +128,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 

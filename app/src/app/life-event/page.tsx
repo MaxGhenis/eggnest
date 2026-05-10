@@ -64,7 +64,7 @@ function formatPercentLocal(value: number): string {
 
 const fieldCls = "space-y-1.5";
 const labelCls = "block text-sm font-medium text-[var(--color-text-muted)]";
-const inputCls = "w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm transition-colors focus:border-[var(--color-primary)] focus:outline-none";
+const inputCls = "w-full rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white px-3 py-2.5 text-sm transition-colors focus:border-[var(--color-primary)] focus:outline-none";
 const selectCls = inputCls;
 const sectionCls = "section-card";
 
@@ -160,7 +160,7 @@ export default function LifeEventPage() {
                 onChange={(e) => updateBasePerson("age", Number(e.target.value))}
                 onBlur={() => markTouched("people[0].age")} min={18} max={100} className={inputCls}
                 aria-invalid={fieldError("people[0].age") ? "true" : undefined} />
-              {fieldError("people[0].age") && <p className="text-xs text-[var(--color-danger)]" role="alert">{fieldError("people[0].age")}</p>}
+              {fieldError("people[0].age") && <p className="text-xs text-[var(--color-danger-text)]" role="alert">{fieldError("people[0].age")}</p>}
             </div>
             <div className={fieldCls}>
               <label htmlFor="person-state" className={labelCls}>State</label>
@@ -169,19 +169,19 @@ export default function LifeEventPage() {
                 onBlur={() => markTouched("state")} className={selectCls}>
                 {US_STATES.map((st) => <option key={st} value={st}>{st}</option>)}
               </select>
-              {fieldError("state") && <p className="text-xs text-[var(--color-danger)]" role="alert">{fieldError("state")}</p>}
+              {fieldError("state") && <p className="text-xs text-[var(--color-danger-text)]" role="alert">{fieldError("state")}</p>}
             </div>
           </div>
           <div className={fieldCls}>
             <label htmlFor="person-income" className={labelCls}>Annual employment income</label>
-            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white focus-within:border-[var(--color-primary)]">
               <span className="pl-3 text-sm text-[var(--color-text-light)]" aria-hidden="true">$</span>
               <input id="person-income" type="number" value={baseHousehold.people[0].employment_income || 0}
                 onChange={(e) => updateBasePerson("employment_income", Number(e.target.value))}
                 onBlur={() => markTouched("people[0].employment_income")} min={0} step={5000}
                 className="w-full border-none bg-transparent px-2 py-2.5 text-sm focus:outline-none" />
             </div>
-            {fieldError("people[0].employment_income") && <p className="text-xs text-[var(--color-danger)]" role="alert">{fieldError("people[0].employment_income")}</p>}
+            {fieldError("people[0].employment_income") && <p className="text-xs text-[var(--color-danger-text)]" role="alert">{fieldError("people[0].employment_income")}</p>}
           </div>
           <div className={fieldCls}>
             <label htmlFor="filing-status" className={labelCls}>Filing status</label>
@@ -240,7 +240,7 @@ export default function LifeEventPage() {
       </div>
 
       {error && (
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-danger)] bg-[var(--color-danger-light)] p-4 text-sm text-[var(--color-danger)]" role="alert">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-danger)] bg-[var(--color-danger-light)] p-4 text-sm text-[var(--color-danger-text)]" role="alert">
           <strong>Error:</strong> {error}
         </div>
       )}
@@ -272,7 +272,7 @@ export default function LifeEventPage() {
           <div className="h-1" style={{ background: isBetterOff ? "var(--color-success)" : "var(--color-danger)" }} />
           <div className={`p-6 ${isBetterOff ? "bg-[var(--color-success-light)]" : "bg-[var(--color-danger-light)]"}`}>
             <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">Net income impact</div>
-            <div className={`mt-2 text-3xl font-bold tabular-nums ${isBetterOff ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}`}>
+            <div className={`mt-2 text-3xl font-bold tabular-nums ${isBetterOff ? "text-[var(--color-success-text)]" : "text-[var(--color-danger-text)]"}`}>
               {net_income_change >= 0 ? "+" : ""}{formatCurrencyLocal(net_income_change)}
               <span className="ml-1 text-base font-normal">{isBetterOff ? " more" : " less"} per year</span>
             </div>
@@ -331,7 +331,7 @@ export default function LifeEventPage() {
                         <span>{formatCurrencyLocal(beforeVal)}</span>
                         <span className="text-[var(--color-text-light)]" aria-hidden="true">&rarr;</span>
                         <span>{formatCurrencyLocal(afterVal)}</span>
-                        <span className={`font-medium ${change > 0 ? "text-[var(--color-success)]" : change < 0 ? "text-[var(--color-danger)]" : ""}`}>
+                        <span className={`font-medium ${change > 0 ? "text-[var(--color-success-text)]" : change < 0 ? "text-[var(--color-danger-text)]" : ""}`}>
                           {change >= 0 ? "+" : ""}{formatCurrencyLocal(change)}
                         </span>
                       </div>
