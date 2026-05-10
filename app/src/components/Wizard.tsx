@@ -91,7 +91,7 @@ export function Wizard({
                   isCurrent
                     ? "bg-white text-[var(--color-primary)] shadow-[var(--shadow-sm)]"
                     : isCompleted
-                      ? "text-[var(--color-success)]"
+                      ? "text-[var(--color-success-text)]"
                       : "text-[var(--color-text-light)]"
                 } ${isClickable ? "cursor-pointer hover:bg-white/80" : "cursor-default opacity-50"}`}
                 onClick={() => handleStepClick(index)}
@@ -104,7 +104,7 @@ export function Wizard({
                     isCurrent
                       ? "bg-[var(--color-primary)] text-white shadow-[var(--shadow-glow-sm)]"
                       : isCompleted
-                        ? "bg-[var(--color-success)] text-white"
+                        ? "bg-[var(--color-success-text)] text-white"
                         : "bg-[var(--color-gray-200)] text-[var(--color-text-muted)]"
                   }`}
                   aria-hidden="true"

@@ -117,7 +117,7 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
                 id={`account-type-${index}`}
                 value={holding.account_type}
                 onChange={(e) => updateHolding(index, "account_type", e.target.value as AccountType)}
-                className="w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm transition-colors focus:border-[var(--color-primary)] focus:outline-none"
+                className="w-full rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white px-3 py-2 text-sm transition-colors focus:border-[var(--color-primary)] focus:outline-none"
               >
                 {Object.entries(ACCOUNT_TYPE_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
@@ -133,7 +133,7 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
                 id={`fund-${index}`}
                 value={holding.fund}
                 onChange={(e) => updateHolding(index, "fund", e.target.value as FundType)}
-                className="w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm transition-colors focus:border-[var(--color-primary)] focus:outline-none"
+                className="w-full rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white px-3 py-2 text-sm transition-colors focus:border-[var(--color-primary)] focus:outline-none"
               >
                 {Object.entries(FUND_TYPE_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
@@ -145,7 +145,7 @@ export function HoldingsEditor({ holdings, onChange }: HoldingsEditorProps) {
               <label htmlFor={balanceFieldId} className="mb-1 block text-xs font-medium text-[var(--color-text-muted)]">
                 Balance
               </label>
-              <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white transition-colors focus-within:border-[var(--color-primary)]">
+              <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white transition-colors focus-within:border-[var(--color-primary)]">
                 <span className="pl-3 text-sm text-[var(--color-text-light)]" aria-hidden="true">$</span>
                 <input
                   id={balanceFieldId}

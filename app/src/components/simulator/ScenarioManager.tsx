@@ -26,7 +26,7 @@ export function ScenarioManager() {
         </button>
         {savedScenarios.length > 0 && (
           <select
-            className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text-muted)] transition-colors focus:border-[var(--color-primary)] focus:outline-none"
+            className="rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white px-3 py-2 text-sm text-[var(--color-text-muted)] transition-colors focus:border-[var(--color-primary)] focus:outline-none"
             value=""
             onChange={(e) => {
               const scenario = savedScenarios.find(s => s.name === e.target.value);
@@ -58,7 +58,7 @@ export function ScenarioManager() {
               }
             }}
             autoFocus
-            className="flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
+            className="flex-1 rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white px-3 py-2 text-sm focus:border-[var(--color-primary)] focus:outline-none"
           />
           <button
             className="rounded-[var(--radius-sm)] bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white transition-all hover:brightness-110 disabled:opacity-40"

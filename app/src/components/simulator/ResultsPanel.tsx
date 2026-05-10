@@ -130,7 +130,7 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
 
       {result.median_depletion_age && (
         <div className="flex gap-3 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">
-          <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-warning)] text-xs font-bold text-white">!</span>
+          <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-warning-text)] text-xs font-bold text-white">!</span>
           <div>
             <strong>Depletion risk:</strong> In scenarios where the portfolio is depleted, the median depletion occurs at age {result.median_depletion_age}. Consider reducing spending or increasing savings.
           </div>

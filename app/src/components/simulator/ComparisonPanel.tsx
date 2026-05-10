@@ -97,7 +97,7 @@ export function StateComparison({
                   selectedCompareStates.includes(state)
                     ? "bg-[var(--color-primary)] text-white"
                     : NO_TAX_STATES.includes(state)
-                      ? "bg-[var(--color-success-light)] text-[var(--color-success)] hover:bg-[var(--color-success)] hover:text-white"
+                      ? "bg-[var(--color-success-light)] text-[var(--color-success-text)] hover:bg-[var(--color-success-text)] hover:text-white"
                       : "bg-[var(--color-gray-100)] text-[var(--color-text-muted)] hover:bg-[var(--color-gray-200)]"
                 }`}
                 onClick={() => onToggleCompareState(state)}
@@ -231,7 +231,7 @@ export function SSTimingComparison({
             </div>
             <div className="rounded-[var(--radius-md)] bg-[var(--color-success-light)] px-4 py-2 text-sm">
               <span className="text-[var(--color-text-muted)]">Optimal: </span>
-              <span className="font-semibold text-[var(--color-success)]">Claim at age {ssTimingResult.optimal_claiming_age}</span>
+              <span className="font-semibold text-[var(--color-success-text)]">Claim at age {ssTimingResult.optimal_claiming_age}</span>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -246,7 +246,7 @@ export function SSTimingComparison({
                     <td className="font-medium">
                       {r.claiming_age}
                       {r.claiming_age === Math.round(ssTimingResult.full_retirement_age) && <span className="ml-1 rounded bg-[var(--color-primary-100)] px-1.5 py-0.5 text-[0.6rem] font-bold text-[var(--color-primary)]">FRA</span>}
-                      {r.claiming_age === ssTimingResult.optimal_claiming_age && <span className="ml-1 rounded bg-[var(--color-success)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Best</span>}
+                      {r.claiming_age === ssTimingResult.optimal_claiming_age && <span className="ml-1 rounded bg-[var(--color-success-text)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Best</span>}
                     </td>
                     <td>${r.monthly_benefit.toLocaleString()}/mo</td>
                     <td style={{ color: r.adjustment_factor < 1 ? "#ef4444" : r.adjustment_factor > 1 ? "#10b981" : "inherit" }}>
@@ -300,7 +300,7 @@ export function AllocationComparison({
           <div className="flex flex-wrap gap-4">
             <div className="rounded-[var(--radius-md)] bg-[var(--color-success-light)] px-4 py-2 text-sm">
               <span className="text-[var(--color-text-muted)]">Optimal for success: </span>
-              <span className="font-semibold text-[var(--color-success)]">{Math.round(allocationResult.optimal_for_success * 100)}% Stocks</span>
+              <span className="font-semibold text-[var(--color-success-text)]">{Math.round(allocationResult.optimal_for_success * 100)}% Stocks</span>
             </div>
             {allocationResult.optimal_for_safety !== allocationResult.optimal_for_success && (
               <div className="rounded-[var(--radius-md)] bg-[var(--color-primary-50)] px-4 py-2 text-sm">
@@ -319,7 +319,7 @@ export function AllocationComparison({
                   <tr key={r.stock_allocation} className={r.stock_allocation === allocationResult.optimal_for_success ? "!bg-[var(--color-success-light)]" : ""}>
                     <td className="font-medium">
                       {Math.round(r.stock_allocation * 100)}% / {Math.round(r.bond_allocation * 100)}%
-                      {r.stock_allocation === allocationResult.optimal_for_success && <span className="ml-1 rounded bg-[var(--color-success)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Best</span>}
+                      {r.stock_allocation === allocationResult.optimal_for_success && <span className="ml-1 rounded bg-[var(--color-success-text)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Best</span>}
                     </td>
                     <td style={{
                       color: r.success_rate >= 0.9 ? "#10b981" : r.success_rate >= 0.8 ? "#84cc16" : r.success_rate >= 0.7 ? "#eab308" : "#ef4444"
