@@ -13,18 +13,27 @@ export const colors = {
   primary100: '#ffedd5',
   primary200: '#fed7aa',
 
-  // Secondary - Warm Gold
+  // Secondary - Warm Gold (FILL only — see goldText for body copy on bg)
   gold: '#d97706',
   goldLight: '#fbbf24',
   goldPale: '#fef3c7',
 
-  // Semantic
+  // Semantic FILL colors (used for backgrounds, badges, status dots)
   success: '#16a34a',
   successLight: '#dcfce7',
   warning: '#ca8a04',
   warningLight: '#fef9c3',
   danger: '#dc2626',
   dangerLight: '#fee2e2',
+
+  // Accessible TEXT variants for paragraph copy.
+  // The brand fills above intentionally fail AA as text; these darker
+  // shades meet WCAG AA (>=4.5:1) on BOTH the cream canvas (--color-bg)
+  // and on the matching tinted fill (e.g. successText on success-light).
+  goldText: '#9a3412',     // amber-800;  7.1:1 on bg
+  successText: '#166534',  // green-800;  5.5:1 on bg, 4.7:1 on success-light
+  warningText: '#713f12',  // yellow-900; 9.5:1 on bg, 7.9:1 on warning-light
+  dangerText: '#991b1b',   // red-800;    7.5:1 on bg, 6.6:1 on danger-light
 
   // Neutrals - Warm tinted
   gray50: '#fafaf9',
@@ -44,7 +53,13 @@ export const colors = {
   bg: '#fffbf5',
   bgAlt: '#fef7ed',
   bgCard: '#ffffff',
+  // `border` is decorative (1.22:1) — passes WCAG SC 1.4.11 only as a
+  // non-essential boundary. Use `borderStrong` (3:1+) for input borders
+  // and other UI components where the border conveys state.
   border: '#e7e5e4',
+  borderStrong: '#78716c', // stone-500, 4.7:1 on bg — meets SC 1.4.11
+  // Canonical focus indicator (7.1:1 on bg, comfortable AA margin)
+  focusRing: '#9a3412',
 } as const;
 
 // Chart colors for Plotly, Recharts, etc.

@@ -394,7 +394,7 @@ export default function ThesisPage() {
     };
 
   const Check = ({ ok }: { ok: boolean }) => (
-    <span className={ok ? "font-semibold text-[var(--color-success)]" : "text-[var(--color-gray-400)]"}>
+    <span className={ok ? "font-semibold text-[var(--color-success-text)]" : "text-[var(--color-gray-500)]"}>
       {ok ? "\u2713" : "\u2717"}
     </span>
   );
@@ -496,7 +496,7 @@ export default function ThesisPage() {
               benefits creates perverse incentives:
             </p>
             <div className="rounded-[var(--radius-sm)] bg-white p-4">
-              <p className="mb-3 font-mono text-lg font-semibold text-[var(--color-danger)]">
+              <p className="mb-3 font-mono text-lg font-semibold text-[var(--color-danger-text)]">
                 Earn $1 more &rarr; Lose $3 in benefits &rarr; Net: -$2
               </p>
               <p className="text-sm text-[var(--color-text-muted)]">
@@ -997,7 +997,7 @@ export default function ThesisPage() {
               {[true, true, true, true].map((_, i) => (
                 <span
                   key={i}
-                  className="bg-[var(--color-primary-50)] py-2 font-semibold text-[var(--color-success)]"
+                  className="bg-[var(--color-primary-50)] py-2 font-semibold text-[var(--color-success-text)]"
                 >
                   &#10003;
                 </span>
@@ -1007,16 +1007,16 @@ export default function ThesisPage() {
               <span className="px-3 py-2 text-left font-medium text-[var(--color-text)]">
                 All 13 competitors
               </span>
-              <span className="py-2 font-medium text-[var(--color-warning)]">
+              <span className="py-2 font-medium text-[var(--color-warning-text)]">
                 9/13
               </span>
-              <span className="py-2 font-semibold text-[var(--color-danger)]">
+              <span className="py-2 font-semibold text-[var(--color-danger-text)]">
                 0/13
               </span>
-              <span className="py-2 font-semibold text-[var(--color-danger)]">
+              <span className="py-2 font-semibold text-[var(--color-danger-text)]">
                 0/13
               </span>
-              <span className="py-2 font-medium text-[var(--color-warning)]">
+              <span className="py-2 font-medium text-[var(--color-warning-text)]">
                 2/13
               </span>
             </div>
@@ -1112,7 +1112,7 @@ export default function ThesisPage() {
                         <ul className="space-y-1 text-sm text-[var(--color-text-muted)]">
                           {comp.strengths.map((s) => (
                             <li key={s} className="flex gap-2">
-                              <span className="text-[var(--color-success)]">
+                              <span className="text-[var(--color-success-text)]">
                                 &rarr;
                               </span>
                               {s}

@@ -20,7 +20,7 @@ import {
 /* Shared field wrapper classes */
 const fieldCls = "space-y-1.5";
 const labelCls = "block text-sm font-medium text-[var(--color-text-muted)]";
-const inputCls = "w-full rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm transition-colors focus:border-[var(--color-primary)] focus:outline-none";
+const inputCls = "w-full rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white px-3 py-2.5 text-sm transition-colors focus:border-[var(--color-primary)] focus:outline-none";
 const selectCls = inputCls;
 const hintCls = "text-xs text-[var(--color-text-light)]";
 const rowCls = "grid gap-4 sm:grid-cols-2";
@@ -188,7 +188,7 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
         <>
           <div className={fieldCls}>
             <label className={labelCls}>Current portfolio value</label>
-            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white focus-within:border-[var(--color-primary)]">
               <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
               <input type="number" value={params.initial_capital}
                 onChange={(e) => updateParam("initial_capital", Number(e.target.value))}
@@ -234,7 +234,7 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
 
       <div className={fieldCls}>
         <label className={labelCls}>Home equity</label>
-        <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+        <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.home_value}
             onChange={(e) => updateParam("home_value", Number(e.target.value))}
@@ -246,7 +246,7 @@ function MoneyStep({ params, updateParam, portfolioMode, setPortfolioMode, holdi
 
       <div className={fieldCls}>
         <label className={labelCls}>Annual spending need</label>
-        <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+        <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.annual_spending}
             onChange={(e) => updateParam("annual_spending", Number(e.target.value))}
@@ -276,7 +276,7 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
     <div className="space-y-5">
       <div className={fieldCls}>
         <label className={labelCls}>Monthly Social Security benefit</label>
-        <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+        <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.social_security_monthly}
             onChange={(e) => updateParam("social_security_monthly", Number(e.target.value))}
@@ -291,7 +291,7 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
         <label className="flex items-center gap-2 cursor-pointer text-sm text-[var(--color-text)]">
           <input type="checkbox" checked={isReceivingSS}
             onChange={(e) => { setIsReceivingSS(e.target.checked); if (e.target.checked) updateParam("social_security_start_age", params.current_age); }}
-            className="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
+            className="h-4 w-4 rounded border-[var(--color-border-strong)] accent-[var(--color-primary)]" />
           Already receiving Social Security
         </label>
       )}
@@ -316,7 +316,7 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
       )}
       <div className={fieldCls}>
         <label className={labelCls}>Annual pension</label>
-        <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+        <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.pension_annual}
             onChange={(e) => updateParam("pension_annual", Number(e.target.value))}
@@ -327,7 +327,7 @@ function IncomeStep({ params, updateParam, isReceivingSS, setIsReceivingSS }: {
       </div>
       <div className={fieldCls}>
         <label className={labelCls}>Current employment income</label>
-        <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+        <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white focus-within:border-[var(--color-primary)]">
           <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
           <input type="number" value={params.employment_income}
             onChange={(e) => updateParam("employment_income", Number(e.target.value))}
@@ -362,7 +362,7 @@ function SpouseStep({ params, updateParam, spouse, setSpouse, isSpouseReceivingS
       <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] p-4 transition-colors hover:bg-[var(--color-gray-50)]">
         <input type="checkbox" checked={params.has_spouse}
           onChange={(e) => updateParam("has_spouse", e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
+          className="mt-0.5 h-4 w-4 rounded border-[var(--color-border-strong)] accent-[var(--color-primary)]" />
         <div>
           <div className="text-sm font-semibold text-[var(--color-text)]">Include spouse</div>
           <div className="text-xs text-[var(--color-text-muted)]">Model finances for both of you together</div>
@@ -390,7 +390,7 @@ function SpouseStep({ params, updateParam, spouse, setSpouse, isSpouseReceivingS
           </div>
           <div className={fieldCls}>
             <label className={labelCls}>Spouse monthly Social Security</label>
-            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white focus-within:border-[var(--color-primary)]">
               <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
               <input type="number" value={spouse.social_security_monthly}
                 onChange={(e) => setSpouse({ ...spouse, social_security_monthly: Number(e.target.value) })}
@@ -402,7 +402,7 @@ function SpouseStep({ params, updateParam, spouse, setSpouse, isSpouseReceivingS
             <label className="flex items-center gap-2 cursor-pointer text-sm">
               <input type="checkbox" checked={isSpouseReceivingSS}
                 onChange={(e) => { setIsSpouseReceivingSS(e.target.checked); if (e.target.checked) setSpouse({ ...spouse, social_security_start_age: spouse.age }); }}
-                className="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
+                className="h-4 w-4 rounded border-[var(--color-border-strong)] accent-[var(--color-primary)]" />
               Already receiving Social Security
             </label>
           )}
@@ -420,7 +420,7 @@ function SpouseStep({ params, updateParam, spouse, setSpouse, isSpouseReceivingS
           )}
           <div className={fieldCls}>
             <label className={labelCls}>Spouse annual pension</label>
-            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white focus-within:border-[var(--color-primary)]">
               <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
               <input type="number" value={spouse.pension_annual}
                 onChange={(e) => setSpouse({ ...spouse, pension_annual: Number(e.target.value) })}
@@ -445,7 +445,7 @@ function AnnuityStep({ params, updateParam, annuity, setAnnuity }: {
       <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-light)] p-4 transition-colors hover:bg-[var(--color-gray-50)]">
         <input type="checkbox" checked={params.has_annuity}
           onChange={(e) => updateParam("has_annuity", e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
+          className="mt-0.5 h-4 w-4 rounded border-[var(--color-border-strong)] accent-[var(--color-primary)]" />
         <div>
           <div className="text-sm font-semibold text-[var(--color-text)]">Compare to annuity</div>
           <div className="text-xs text-[var(--color-text-muted)]">See if buying an annuity might be better than investing</div>
@@ -456,7 +456,7 @@ function AnnuityStep({ params, updateParam, annuity, setAnnuity }: {
         <div className="space-y-5 pt-2">
           <div className={fieldCls}>
             <label className={labelCls}>Monthly annuity payment</label>
-            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-white focus-within:border-[var(--color-primary)]">
+            <div className="flex items-center rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-white focus-within:border-[var(--color-primary)]">
               <span className="pl-3 text-sm text-[var(--color-text-light)]">$</span>
               <input type="number" value={annuity.monthly_payment}
                 onChange={(e) => setAnnuity({ ...annuity, monthly_payment: Number(e.target.value) })}
