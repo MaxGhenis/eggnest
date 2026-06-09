@@ -31,8 +31,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: api/uv.lock
 
+      # uv sync gives `uv run` one project venv built from uv.lock with all
+      # extras; mixing a --system install with uv run's own venv left tools
+      # resolving from two different environments.
       - name: Install dependencies
-        run: uv pip install -e ".[dev]" --system
+        run: uv sync --all-extras
 
       - name: Run linting
         run: |
