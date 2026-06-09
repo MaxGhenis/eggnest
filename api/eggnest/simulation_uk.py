@@ -57,7 +57,8 @@ class _PathState:
     isa: np.ndarray
     sipp: np.ndarray
     tfc_used: np.ndarray  # tax-free cash taken so far, capped by LSA_CAP
-    depleted_year: np.ndarray  # -1 until depleted
+    depleted_year: np.ndarray  # -1 until depleted while alive
+    horizon_depleted_year: np.ndarray  # -1 until depleted, ignoring mortality
 
 
 def _simulate_returns_gaussian(
@@ -213,6 +214,7 @@ def _iterate_years(
         sipp=np.full(n_sims, float(inputs.sipp_balance)),
         tfc_used=np.zeros(n_sims),
         depleted_year=np.full(n_sims, -1),
+        horizon_depleted_year=np.full(n_sims, -1),
     )
     cumulative_inflation = np.ones(n_sims)
 
@@ -336,6 +338,14 @@ def _iterate_years(
         state.sipp = state.sipp * growth_factor
 
         total_portfolio = state.gia + state.isa + state.sipp
+        newly_depleted_by_horizon = (total_portfolio <= 0) & (
+            state.horizon_depleted_year == -1
+        )
+        state.horizon_depleted_year = np.where(
+            newly_depleted_by_horizon,
+            year_idx,
+            state.horizon_depleted_year,
+        )
         newly_depleted = (
             (total_portfolio <= 0)
             & (state.depleted_year == -1)
@@ -454,6 +464,9 @@ def _assemble_result(
             "random_seed": inputs.random_seed,
         },
         success_rate=float(np.mean(final_state.depleted_year == -1)),
+        strict_horizon_success_rate=float(
+            np.mean(final_state.horizon_depleted_year == -1)
+        ),
         median_final_value=float(np.median(final_portfolio)),
         median_final_value_real=float(
             np.median(final_portfolio) / median_inflation_path

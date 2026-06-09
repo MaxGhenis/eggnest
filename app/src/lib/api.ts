@@ -1,4 +1,10 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export function normalizeApiUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+const API_URL = normalizeApiUrl(
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+);
 
 /** Default timeout for API requests (30 seconds) */
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -348,6 +354,7 @@ export interface SimulationInput {
 
   // Simulation settings
   n_simulations: number;
+  random_seed?: number | null;
   include_mortality: boolean;
 
   // Market assumptions
@@ -408,6 +415,9 @@ export interface ProgressEvent {
   type: "progress";
   year: number;
   total_years: number;
+  progress?: number;
+  message?: string | null;
+  year_summary?: YearProgressSummary | null;
 }
 
 export interface CompleteEvent {
@@ -416,6 +426,61 @@ export interface CompleteEvent {
 }
 
 export type SimulationEvent = ProgressEvent | CompleteEvent;
+
+export interface YearProgressSummary {
+  year: number;
+  age: number;
+  median_portfolio: number;
+  p25_portfolio: number;
+  p75_portfolio: number;
+  active_paths: number;
+  median_tax: number;
+  median_withdrawal: number;
+}
+
+export interface SimulationJobStatus {
+  job_id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  current_year: number;
+  total_years: number;
+  progress: number;
+  message?: string | null;
+  year_summary?: YearProgressSummary | null;
+  result?: SimulationResult | null;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+}
+
+interface CoreScenario<TInputs> {
+  schema_version: "eggnest.scenario.v1";
+  engine: "us_retirement";
+  country: "USA";
+  inputs: TInputs;
+  tags?: Record<string, string>;
+}
+
+interface CoreResult<TOutputs> {
+  schema_version: string;
+  scenario_schema_version: string;
+  engine: string;
+  country: string;
+  outputs: TOutputs;
+}
+
+type USRetirementCoreResult = CoreResult<{
+  us_simulation_result: SimulationResult;
+}>;
+
+function buildUSRetirementScenario(params: SimulationInput): CoreScenario<SimulationInput> {
+  return {
+    schema_version: "eggnest.scenario.v1",
+    engine: "us_retirement",
+    country: "USA",
+    inputs: params,
+  };
+}
 
 // ============================================
 // API functions
@@ -426,16 +491,106 @@ export async function runSimulation(
   token?: string,
   signal?: AbortSignal
 ): Promise<SimulationResult> {
-  return apiFetch<SimulationResult>("/simulate", {
+  const coreResult = await apiFetch<USRetirementCoreResult>("/core/simulate", {
     method: "POST",
-    body: params,
+    body: buildUSRetirementScenario(params),
     token,
     signal,
     timeoutMs: LONG_TIMEOUT_MS,
   });
+  return coreResult.outputs.us_simulation_result;
 }
 
 export async function* runSimulationWithProgress(
+  params: SimulationInput,
+  token?: string
+): AsyncGenerator<SimulationEvent, void, unknown> {
+  try {
+    for await (const event of runSimulationJobWithProgress(params, token)) {
+      yield event;
+    }
+    return;
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.statusCode !== 404) {
+      throw error;
+    }
+  }
+
+  for await (const event of runSimulationStreamWithProgress(params, token)) {
+    yield event;
+  }
+}
+
+export async function createSimulationJob(
+  params: SimulationInput,
+  token?: string
+): Promise<SimulationJobStatus> {
+  return apiFetch<SimulationJobStatus>("/simulate/jobs", {
+    method: "POST",
+    body: params,
+    token,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+  });
+}
+
+export async function getSimulationJob(
+  jobId: string,
+  token?: string
+): Promise<SimulationJobStatus> {
+  return apiFetch<SimulationJobStatus>(`/simulate/jobs/${jobId}`, {
+    token,
+    timeoutMs: DEFAULT_TIMEOUT_MS,
+  });
+}
+
+function jobStatusToProgressEvent(status: SimulationJobStatus): ProgressEvent {
+  const event: ProgressEvent = {
+    type: "progress",
+    year: status.current_year,
+    total_years: status.total_years,
+    progress: status.progress,
+    message: status.message,
+  };
+  if (status.year_summary) {
+    event.year_summary = status.year_summary;
+  }
+  return event;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function* runSimulationJobWithProgress(
+  params: SimulationInput,
+  token?: string
+): AsyncGenerator<SimulationEvent, void, unknown> {
+  const startedAt = Date.now();
+  const pollIntervalMs = 1_000;
+  const maxWaitMs = 10 * 60_000;
+
+  let status = await createSimulationJob(params, token);
+  yield jobStatusToProgressEvent(status);
+
+  while (status.status === "queued" || status.status === "running") {
+    if (Date.now() - startedAt > maxWaitMs) {
+      throw new TimeoutError("The simulation took too long. Please try again.");
+    }
+
+    await sleep(pollIntervalMs);
+    status = await getSimulationJob(status.job_id, token);
+    yield jobStatusToProgressEvent(status);
+  }
+
+  if (status.status === "succeeded" && status.result) {
+    yield { type: "complete", result: status.result };
+    return;
+  }
+
+  throw new SimulationError(status.error || "The simulation failed.");
+}
+
+async function* runSimulationStreamWithProgress(
   params: SimulationInput,
   token?: string
 ): AsyncGenerator<SimulationEvent, void, unknown> {
@@ -522,7 +677,7 @@ export async function compareAnnuity(
   annuity_total_guaranteed: number;
   probability_simulation_beats_annuity: number;
   simulation_median_total_income: number;
-  recommendation: string;
+  comparison_summary: string;
 }> {
   return apiFetch("/compare-annuity", {
     method: "POST",
@@ -586,8 +741,8 @@ export interface SSTimingComparisonResult {
   full_retirement_age: number;
   pia_monthly: number;
   results: SSTimingResult[];
-  optimal_claiming_age: number;
-  optimal_for_longevity: number;
+  highest_success_claiming_age: number;
+  highest_lifetime_income_claiming_age: number;
 }
 
 export async function compareSSTimings(
@@ -624,9 +779,9 @@ export interface AllocationResult {
 
 export interface AllocationComparisonResult {
   results: AllocationResult[];
-  optimal_for_success: number;
-  optimal_for_safety: number;
-  recommendation: string;
+  highest_success_allocation: number;
+  lowest_volatility_allocation: number;
+  comparison_summary: string;
 }
 
 export async function compareAllocations(

@@ -183,6 +183,7 @@ class UKSimulationResult(BaseModel):
 
     metadata: dict
     success_rate: float
+    strict_horizon_success_rate: float
     median_final_value: float
     median_final_value_real: float
     percentiles: dict[str, float]

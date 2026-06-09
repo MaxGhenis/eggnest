@@ -82,6 +82,9 @@ function SimulatorShell() {
               <SimulationProgress
                 currentYear={sim.simulation.progress.currentYear}
                 totalYears={sim.simulation.progress.totalYears}
+                progress={sim.simulation.progress.progress}
+                message={sim.simulation.progress.message}
+                yearSummary={sim.simulation.progress.yearSummary}
               />
             }
           />
@@ -94,6 +97,9 @@ function SimulatorShell() {
         <ResultsSkeleton
           currentYear={sim.simulation.progress.currentYear}
           totalYears={sim.simulation.progress.totalYears}
+          progress={sim.simulation.progress.progress}
+          message={sim.simulation.progress.message}
+          yearSummary={sim.simulation.progress.yearSummary}
         />
       );
     }

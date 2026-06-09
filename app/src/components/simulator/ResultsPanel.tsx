@@ -132,7 +132,7 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
         <div className="flex gap-3 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">
           <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-warning)] text-xs font-bold text-white">!</span>
           <div>
-            <strong>Depletion risk:</strong> In scenarios where the portfolio is depleted, the median depletion occurs at age {result.median_depletion_age}. Consider reducing spending or increasing savings.
+            <strong>Depletion risk:</strong> In scenarios where the portfolio is depleted, the median depletion occurs at age {result.median_depletion_age}. Modeled alternatives to test include lower spending, later retirement, or higher guaranteed income.
           </div>
         </div>
       )}
@@ -363,9 +363,9 @@ function NextStepsCTA({ hasAnnuity }: { hasAnnuity: boolean }) {
       <h3 className="text-lg font-semibold mb-4">Take the next step</h3>
       <div className="space-y-3">
         {[
-          { href: "https://www.nerdwallet.com/best/investing/financial-advisors-for-retirement", icon: "\uD83D\uDC64", title: "Talk to a fiduciary advisor", desc: "Get personalized advice from a fee-only advisor who works in your interest." },
-          { href: "https://investor.vanguard.com/investment-products/index-funds", icon: "\uD83D\uDCC8", title: "Low-cost index funds", desc: "Simple, diversified investing with minimal fees." },
-          ...(hasAnnuity ? [{ href: "https://www.immediateannuities.com/", icon: "\uD83D\uDEE1\uFE0F", title: "Compare annuity quotes", desc: "Get quotes from multiple insurers for guaranteed income." }] : []),
+          { href: "https://www.ssa.gov/prepare/plan-retirement", icon: "\uD83D\uDCC4", title: "Social Security rules", desc: "Read the official claiming-age and benefit-adjustment documentation." },
+          { href: "https://www.irs.gov/retirement-plans", icon: "\uD83D\uDCCA", title: "Retirement tax rules", desc: "Review IRS material on retirement plans and taxable distributions." },
+          ...(hasAnnuity ? [{ href: "https://www.consumerfinance.gov/consumer-tools/retirement/before-you-claim/", icon: "\uD83D\uDEE1\uFE0F", title: "Retirement income resources", desc: "See public consumer education material before comparing income products." }] : []),
         ].map(({ href, icon, title, desc }) => (
           <a key={href} href={href} target="_blank" rel="noopener noreferrer"
             className="group flex items-center gap-4 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-white p-4 transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-md)]">
@@ -379,7 +379,7 @@ function NextStepsCTA({ hasAnnuity }: { hasAnnuity: boolean }) {
         ))}
       </div>
       <p className="mt-4 text-xs text-[var(--color-text-light)]">
-        These are educational resources, not endorsements. We may receive referral fees from some links, which helps keep EggNest free.
+        These are educational resources, not endorsements.
       </p>
     </div>
   );

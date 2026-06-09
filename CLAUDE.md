@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-EggNest is a retirement and financial planning simulator that uses Monte Carlo simulation with real tax calculations via PolicyEngine-US. The project uses a unified Next.js frontend with a Python FastAPI backend.
+EggNest is an agent-callable household finance calculator suite with real tax calculations via PolicyEngine-US and PolicyEngine UK. Retirement simulation is one product surface; the emerging core is stable CLI/API contracts for AI agents to compute household resources, compare scenarios, and cite assumptions without putting policy logic outside PolicyEngine. The project uses a unified Next.js frontend with a Python FastAPI backend.
 
 ## Development Commands
 
@@ -23,13 +23,13 @@ uv run black .
 uv run ruff check .
 ```
 
-### Frontend (Next.js 15 + Tailwind v4)
+### Frontend (Next.js + Tailwind v4)
 ```bash
 cd app
 bun install
 bun run dev              # Runs on port 5174
 bun run build            # Next.js build
-bun run lint             # ESLint via next lint
+bun run lint             # ESLint flat config
 bun run test             # Vitest watch mode
 bun run test:run         # Vitest single run
 ```
@@ -44,17 +44,22 @@ eggnest/
 ├── api/                     # Python FastAPI backend
 │   ├── main.py              # FastAPI app with endpoints
 │   └── eggnest/             # Core simulation package
-│       ├── simulation.py    # MonteCarloSimulator (vectorized NumPy)
+│       ├── core/            # Versioned scenario/result engine boundary
+│       ├── simulation.py    # US MonteCarloSimulator (vectorized NumPy)
+│       ├── simulation_uk.py # UK Monte Carlo simulator
 │       ├── tax.py           # PolicyEngine-US integration
+│       ├── tax_uk.py        # PolicyEngine UK compiled integration
 │       ├── mortality.py     # SSA mortality tables
 │       └── models.py        # Pydantic request/response models
-├── app/                     # Next.js 15 frontend (unified)
+├── app/                     # Next.js frontend (unified)
 │   └── src/
 │       ├── app/             # Next.js App Router pages
 │       │   ├── (marketing)/ # Landing page & thesis (route group)
-│       │   ├── simulator/   # Monte Carlo simulator
-│       │   └── life-event/  # Tax & benefits calculator
-│       ├── lib/api.ts       # API client with SSE streaming
+│       │   ├── simulator/   # US Monte Carlo simulator
+│       │   ├── life-event/  # Tax & benefits calculator
+│       │   └── uk-simulator/# UK simulator
+│       ├── lib/api.ts       # US API client with SSE streaming
+│       ├── lib/api-uk.ts    # UK API client
 │       ├── hooks/           # Custom React hooks
 │       └── components/      # UI components
 └── supabase/                # Database migrations
@@ -74,10 +79,18 @@ eggnest/
 - Calculates federal + state income tax on capital gains, SS, dividends, employment income
 
 ### API Endpoints
-- `POST /simulate` - Run simulation, returns full result
+- `GET /programs` - List agent-callable programs, primary outputs, caveats, and CLI entry points
+- `POST /core/simulate` - Run a versioned core scenario envelope (`us_household_resources`, `us_retirement`, `uk_retirement`)
+- `POST /simulate` - Run US simulation, returns legacy result shape via the core engine
 - `POST /simulate/stream` - SSE streaming with progress events
 - `GET /mortality/{gender}` - Mortality rates and survival curves
-- `POST /compare-annuity` - Compare investment vs annuity option
+- `POST /household/validate` - Validate partial household intake and return missing fields plus next questions
+- `POST /household/resources` - Calculate annual US taxes, refundable credits, selected benefits, and net resources
+- `POST /compare-earnings-grid` - Compare household resources over an annual earnings grid and flag cliffs
+- `POST /compare-annuity` - Compare portfolio withdrawals vs annuity cash flows
+- `POST /compare-withdrawal-strategies` - Compare holdings withdrawal orders under shared market/tax assumptions
+- `POST /compare-historical-cohorts` - Compare contiguous historical market cohorts under shared tax assumptions
+- `POST /simulate-uk` - Run UK simulation
 
 ### Frontend API Client (`app/src/lib/api.ts`)
 - `runSimulation()` - Standard POST request
@@ -87,7 +100,12 @@ eggnest/
 ## Conventions
 
 - Backend uses Pydantic v2 models with `Field()` validators
-- Frontend uses Next.js 15 (App Router) with React 19, TypeScript, and Tailwind CSS v4
+- New product surfaces should use `eggnest.core` scenario/result envelopes before adding API- or UI-specific contracts
+- CLI/MCP-style callers should prefer `GET /programs`, `POST /core/simulate`, or `uv run eggnest core run ... --output-format envelope`; legacy product endpoints are compatibility shims
+- For low- and middle-income household work, use `eggnest household validate`, `eggnest household run`, and `eggnest compare earnings-grid`; do not add tax or benefit policy formulas to EggNest
+- Household resources report federal income tax after non-refundable credits and before refundable credits; refundable credits and cash benefits are counted in `total_benefits`
+- Agent-facing household outputs expose FinBot-style citations as `citations: [{id, url}]`; `HouseholdResult.output_citations` maps fields like `benefits.snap` to supporting sources
+- Frontend uses Next.js App Router with React 19, TypeScript, and Tailwind CSS v4
 - Styling uses Tailwind utility classes plus CSS custom properties defined in `globals.css`
 - Tests use pytest (backend) and Vitest (frontend)
 - `app/` is the unified frontend (marketing pages, simulator, and tools)

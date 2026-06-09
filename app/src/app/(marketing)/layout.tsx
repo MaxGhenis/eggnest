@@ -83,8 +83,8 @@ export default function MarketingLayout({
           </p>
           <p className="mx-auto mt-2 max-w-lg text-xs opacity-60">
             EggNest provides educational projections only and is not financial
-            advice. Consult a qualified financial advisor for personalized
-            recommendations.
+            advice. Use independent professional judgment before making
+            financial decisions.
           </p>
         </div>
       </footer>

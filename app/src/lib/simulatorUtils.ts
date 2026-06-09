@@ -40,7 +40,7 @@ export interface AnnuityComparisonResult {
   annuity_total_guaranteed: number;
   probability_simulation_beats_annuity: number;
   simulation_median_total_income: number;
-  recommendation: string;
+  comparison_summary: string;
 }
 
 export interface Persona {
@@ -87,7 +87,7 @@ export const EXAMPLE_PERSONAS: Persona[] = [
       filing_status: "single",
       has_spouse: false,
       has_annuity: false,
-      n_simulations: 10000,
+      n_simulations: 1000,
       include_mortality: true,
       expected_return: 0.07,
       return_volatility: 0.16,
@@ -117,7 +117,7 @@ export const EXAMPLE_PERSONAS: Persona[] = [
       filing_status: "married_filing_jointly",
       has_spouse: true,
       has_annuity: false,
-      n_simulations: 10000,
+      n_simulations: 1000,
       include_mortality: true,
       expected_return: 0.07,
       return_volatility: 0.16,
@@ -157,7 +157,7 @@ export const EXAMPLE_PERSONAS: Persona[] = [
       filing_status: "single",
       has_spouse: false,
       has_annuity: false,
-      n_simulations: 10000,
+      n_simulations: 1000,
       include_mortality: true,
       expected_return: 0.07,
       return_volatility: 0.16,
@@ -187,7 +187,7 @@ export const EXAMPLE_PERSONAS: Persona[] = [
       filing_status: "married_filing_jointly",
       has_spouse: true,
       has_annuity: false,
-      n_simulations: 10000,
+      n_simulations: 1000,
       include_mortality: true,
       expected_return: 0.07,
       return_volatility: 0.16,
@@ -233,37 +233,37 @@ export function getSuccessRateInterpretation(rate: number): { label: string; des
   if (rate >= 0.95) {
     return {
       label: "Excellent",
-      description: "Very high confidence your money will last. You may even be able to spend more.",
+      description: "Very high modeled likelihood of avoiding portfolio depletion under these assumptions.",
       color: "#16a34a",
     };
   } else if (rate >= 0.90) {
     return {
       label: "Good",
-      description: "Strong likelihood of success. This is generally considered a safe plan.",
+      description: "Strong modeled likelihood of avoiding portfolio depletion under these assumptions.",
       color: "#22c55e",
     };
   } else if (rate >= 0.80) {
     return {
       label: "Adequate",
-      description: "Reasonable odds, but consider a small buffer. Minor adjustments could help.",
+      description: "Moderate modeled likelihood of avoiding portfolio depletion.",
       color: "#84cc16",
     };
   } else if (rate >= 0.70) {
     return {
       label: "Marginal",
-      description: "Some risk of running short. Consider reducing spending or increasing savings.",
+      description: "The model shows a meaningful chance of portfolio depletion.",
       color: "#eab308",
     };
   } else if (rate >= 0.50) {
     return {
       label: "Risky",
-      description: "Significant chance of depletion. Strongly consider adjusting your plan.",
+      description: "The model shows a substantial chance of portfolio depletion.",
       color: "#f97316",
     };
   } else {
     return {
       label: "High risk",
-      description: "More likely than not to run out of money. Substantial changes recommended.",
+      description: "More likely than not to run out of money under these assumptions.",
       color: "#ef4444",
     };
   }
@@ -271,15 +271,15 @@ export function getSuccessRateInterpretation(rate: number): { label: string; des
 
 export function getWithdrawalRateContext(rate: number): { warning: boolean; message: string } {
   if (rate <= 3) {
-    return { warning: false, message: "Conservative - historically very safe" };
+    return { warning: false, message: "Low relative to common historical withdrawal-rate benchmarks" };
   } else if (rate <= 4) {
-    return { warning: false, message: "The classic '4% rule' - generally considered safe" };
+    return { warning: false, message: "Near the classic 4% withdrawal-rate benchmark" };
   } else if (rate <= 5) {
-    return { warning: true, message: "Slightly aggressive - monitor carefully" };
+    return { warning: true, message: "Above the classic 4% withdrawal-rate benchmark" };
   } else if (rate <= 6) {
-    return { warning: true, message: "Aggressive - may require flexibility" };
+    return { warning: true, message: "High relative to common historical withdrawal-rate benchmarks" };
   } else {
-    return { warning: true, message: "Very high - requires careful monitoring" };
+    return { warning: true, message: "Very high relative to common historical withdrawal-rate benchmarks" };
   }
 }
 

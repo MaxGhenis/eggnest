@@ -66,6 +66,8 @@ def test_run_uk_simulation_returns_structured_result(basic_input):
     result = run_uk_simulation(basic_input)
     assert isinstance(result, UKSimulationResult)
     assert 0.0 <= result.success_rate <= 1.0
+    assert 0.0 <= result.strict_horizon_success_rate <= 1.0
+    assert result.strict_horizon_success_rate <= result.success_rate
     assert (
         len(result.year_breakdown) == basic_input.max_age - basic_input.current_age + 1
     )
@@ -105,6 +107,14 @@ def test_pre_mpa_paths_cannot_touch_sipp():
     # the spending target is far above the accessible ISA/GIA (both zero).
     for b in result.year_breakdown:
         assert b.sipp_withdrawal == 0.0, f"SIPP withdrawn at age {b.age} (pre-MPA)"
+
+
+def test_strict_success_matches_success_without_mortality(basic_input):
+    """Without mortality, success rate is the strict horizon success rate."""
+    result = run_uk_simulation(
+        basic_input.model_copy(update={"include_mortality": False})
+    )
+    assert result.strict_horizon_success_rate == result.success_rate
 
 
 def test_stochastic_earnings_build_up_wealth_pre_retirement():

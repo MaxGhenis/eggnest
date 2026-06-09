@@ -4,6 +4,7 @@ import {
   compareAnnuity,
   type SimulationInput,
   type SimulationResult,
+  type YearProgressSummary,
   type SpouseInput,
   type AnnuityInput,
   type Holding,
@@ -18,6 +19,9 @@ import type { PortfolioMode, WithdrawalStrategy } from "./usePortfolio";
 export interface SimulationProgress {
   currentYear: number;
   totalYears: number;
+  progress?: number;
+  message?: string | null;
+  yearSummary?: YearProgressSummary | null;
 }
 
 export interface UseSimulationReturn {
@@ -60,7 +64,13 @@ export function useSimulation(): UseSimulationReturn {
   const runStreaming = useCallback(async (fullParams: SimulationInput) => {
     for await (const event of runSimulationWithProgress(fullParams)) {
       if (event.type === "progress") {
-        setProgress({ currentYear: event.year, totalYears: event.total_years });
+        setProgress({
+          currentYear: event.year,
+          totalYears: event.total_years,
+          progress: event.progress,
+          message: event.message,
+          yearSummary: event.year_summary,
+        });
       } else if (event.type === "complete") {
         setResult(event.result);
       }

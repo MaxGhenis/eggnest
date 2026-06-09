@@ -14,6 +14,39 @@ from .tax import TaxCalculator
 START_YEAR = datetime.now().year
 
 
+def _display_progress_year(raw_year: float, total_years: int) -> int:
+    """Convert fractional internal progress into a human-readable year number."""
+    if raw_year <= 0:
+        return 0
+    if raw_year >= total_years:
+        return total_years
+    if float(raw_year).is_integer():
+        return int(raw_year)
+    return min(total_years, int(raw_year) + 1)
+
+
+def _year_progress_summary(
+    paths: np.ndarray,
+    year_index: int,
+    age: int,
+    active: np.ndarray,
+    taxes: np.ndarray,
+    withdrawals: np.ndarray,
+) -> dict[str, float | int]:
+    """Build a small progress payload from the latest completed simulated year."""
+    values = paths[:, year_index]
+    return {
+        "year": year_index,
+        "age": age,
+        "median_portfolio": float(np.median(values)),
+        "p25_portfolio": float(np.percentile(values, 25)),
+        "p75_portfolio": float(np.percentile(values, 75)),
+        "active_paths": int(np.sum(active)),
+        "median_tax": float(np.median(taxes)),
+        "median_withdrawal": float(np.median(withdrawals)),
+    }
+
+
 def _combine_primary_and_spouse(
     n_sims: int,
     primary_value: float,
@@ -40,11 +73,16 @@ class MonteCarloSimulator:
     - Multiple income sources (employment, SS, pension, annuity)
     """
 
-    def __init__(self, params: SimulationInput):
+    def __init__(
+        self,
+        params: SimulationInput,
+        return_paths: tuple[np.ndarray, np.ndarray] | None = None,
+    ):
         """Initialize simulator with input parameters."""
         self.params = params
-        self._rng = np.random.default_rng()
+        self._rng = np.random.default_rng(params.random_seed)
         self.tax_calc = TaxCalculator(state=params.state)
+        self.return_paths: tuple[np.ndarray, np.ndarray] | None = None
 
         # Create holdings tracker if holdings are provided
         n_years = params.max_age - params.current_age
@@ -54,6 +92,25 @@ class MonteCarloSimulator:
             n_years=n_years,
             rng=self._rng,
         )
+        if return_paths is not None:
+            if self.tracker:
+                raise ValueError(
+                    "return_paths are only supported for simple portfolio mode"
+                )
+            price_growth, div_yields = (
+                np.asarray(return_paths[0], dtype=float),
+                np.asarray(return_paths[1], dtype=float),
+            )
+            expected_shape = (params.n_simulations, n_years)
+            if (
+                price_growth.shape != expected_shape
+                or div_yields.shape != expected_shape
+            ):
+                raise ValueError(
+                    "return_paths must have shape "
+                    f"{expected_shape}; got {price_growth.shape} and {div_yields.shape}"
+                )
+            self.return_paths = (price_growth, div_yields)
 
     def _simulate_core(self):
         """
@@ -86,17 +143,20 @@ class MonteCarloSimulator:
         # Generate market returns using selected model and allocation
         # Only needed if NOT using tracker (tracker has its own returns)
         if not self.tracker:
-            price_growth, div_yields = generate_blended_returns(
-                n_simulations=n_sims,
-                n_years=n_years,
-                stock_allocation=p.stock_allocation,
-                method=p.return_model,
-                expected_stock_return=p.expected_return,
-                stock_volatility=p.return_volatility,
-                stock_index=p.stock_index,
-                bond_index=p.bond_index,
-                rng=self._rng,
-            )
+            if self.return_paths is not None:
+                price_growth, div_yields = self.return_paths
+            else:
+                price_growth, div_yields = generate_blended_returns(
+                    n_simulations=n_sims,
+                    n_years=n_years,
+                    stock_allocation=p.stock_allocation,
+                    method=p.return_model,
+                    expected_stock_return=p.expected_return,
+                    stock_volatility=p.return_volatility,
+                    stock_index=p.stock_index,
+                    bond_index=p.bond_index,
+                    rng=self._rng,
+                )
         # Generate mortality masks
         if p.include_mortality:
             if p.has_spouse and p.spouse:
@@ -145,7 +205,7 @@ class MonteCarloSimulator:
         )
 
         # Yield initial progress
-        yield ("progress", 0, n_years)
+        yield ("progress", 0, n_years, "Preparing simulation")
 
         # Track year-by-year data for detailed breakdown
         yearly_employment = np.zeros((n_sims, n_years))
@@ -166,8 +226,10 @@ class MonteCarloSimulator:
             # Skip dead or depleted paths
             active = (current_value > 0) & either_alive[:, year]
             if not np.any(active):
-                yield ("progress", year + 1, n_years)
+                yield ("progress", year + 1, n_years, "Year complete")
                 continue
+
+            yield ("progress", year + 0.15, n_years, "Preparing yearly cash flows")
 
             # Calculate income for this year
             # Primary person
@@ -284,6 +346,12 @@ class MonteCarloSimulator:
                 )
                 ordinary_income = employment_total + trad_withdrawals
 
+                yield (
+                    "progress",
+                    year + 0.35,
+                    n_years,
+                    "Calculating PolicyEngine taxes",
+                )
                 tax_results = self.tax_calc.calculate_batch_taxes(
                     capital_gains_array=np.asarray(
                         withdrawal_result["taxable"]
@@ -307,6 +375,12 @@ class MonteCarloSimulator:
 
             else:
                 # Legacy mode: simplified tax treatment (all withdrawals as capital gains)
+                yield (
+                    "progress",
+                    year + 0.35,
+                    n_years,
+                    "Calculating PolicyEngine taxes",
+                )
                 tax_results = self.tax_calc.calculate_batch_taxes(
                     capital_gains_array=np.asarray(net_need).flatten(),
                     social_security_array=np.asarray(ss_income).flatten(),
@@ -368,8 +442,22 @@ class MonteCarloSimulator:
             ).flatten()
             yearly_total_tax[:, year] = estimated_taxes
 
-            # Yield progress after each year
-            yield ("progress", year + 1, n_years)
+            # Yield progress after each year, including a small partial result
+            # so clients can show useful output while the full run continues.
+            yield (
+                "progress",
+                year + 1,
+                n_years,
+                "Year complete",
+                _year_progress_summary(
+                    paths=paths,
+                    year_index=year + 1,
+                    age=current_age + 1,
+                    active=active,
+                    taxes=estimated_taxes,
+                    withdrawals=gross_withdrawal,
+                ),
+            )
 
         # Store per-path arrays for downstream use (e.g., annuity comparison)
         self._total_withdrawn = total_withdrawn
@@ -383,6 +471,11 @@ class MonteCarloSimulator:
             success_mask = (failure_year > n_years) | (~either_alive[:, -1])
         else:
             success_mask = failure_year > n_years
+
+        self._paths = paths
+        self._failure_year = failure_year
+        self._success_mask = success_mask
+        self._final_values = final_values
 
         success_rate = float(np.mean(success_mask))
 
@@ -486,12 +579,22 @@ class MonteCarloSimulator:
         Run the Monte Carlo simulation with progress updates.
 
         Yields progress events during simulation and a complete event at the end.
-        Each progress event: {"type": "progress", "year": int, "total_years": int}
+        Each progress event includes an integer display year plus a fractional
+        progress value.
         Final complete event: {"type": "complete", "result": SimulationResult}
         """
         for event in self._simulate_core():
             if event[0] == "progress":
-                yield {"type": "progress", "year": event[1], "total_years": event[2]}
+                raw_year = float(event[1])
+                progress = raw_year / event[2] if event[2] else 0
+                yield {
+                    "type": "progress",
+                    "year": _display_progress_year(raw_year, event[2]),
+                    "total_years": event[2],
+                    "progress": max(0, min(1, progress)),
+                    "message": event[3] if len(event) > 3 else None,
+                    "year_summary": event[4] if len(event) > 4 else None,
+                }
             elif event[0] == "result":
                 yield {"type": "complete", "result": event[1].model_dump()}
 
@@ -535,21 +638,26 @@ def compare_to_annuity(
         # Fallback: simple estimate from median
         prob_beats = float(sim_total > annuity_total) * 0.5 + 0.25
 
-    # Generate recommendation
+    # Summarize the modeled comparison without suggesting an action.
     if simulation_result.success_rate > 0.9 and prob_beats > 0.6:
-        recommendation = "Consider investing - high probability of exceeding annuity returns with low depletion risk."
+        comparison_summary = (
+            "Portfolio withdrawals exceed the annuity guarantee total in "
+            f"{prob_beats:.0%} of simulated paths, with low modeled depletion risk."
+        )
     elif simulation_result.success_rate < 0.7:
-        recommendation = (
-            "Consider the annuity - simulation shows significant depletion risk."
+        comparison_summary = (
+            "The portfolio simulation shows material depletion risk; the annuity "
+            "guarantee total is shown for comparison."
         )
     else:
-        recommendation = (
-            "Mixed results - consider a hybrid approach or consult a financial advisor."
+        comparison_summary = (
+            "The modeled comparison is mixed: portfolio outcomes vary materially "
+            "across simulated market paths."
         )
 
     return {
         "annuity_total_guaranteed": annuity_total,
         "probability_simulation_beats_annuity": prob_beats,
         "simulation_median_total_income": sim_total,
-        "recommendation": recommendation,
+        "comparison_summary": comparison_summary,
     }

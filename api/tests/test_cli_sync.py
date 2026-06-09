@@ -5,6 +5,7 @@ import yaml
 
 from eggnest.sync import (
     DEFAULT_SCENARIOS_DIR,
+    SIMULATIONS_TABLE,
     EggNestSync,
     get_sync_client,
     scenario_to_yaml,
@@ -265,6 +266,68 @@ class TestEggNestSync:
 
         assert len(scenarios) == 1
         assert scenarios[0]["name"] == "Real Scenario"
+
+    def test_remote_sync_uses_simulations_table(
+        self, temp_scenarios_dir, sample_scenario, monkeypatch
+    ):
+        """Test remote sync methods use the API/migration table name."""
+
+        class FakeResult:
+            data = [sample_scenario]
+
+        class FakeQuery:
+            def select(self, *_args):
+                return self
+
+            def eq(self, *_args):
+                return self
+
+            def update(self, *_args):
+                return self
+
+            def insert(self, *_args):
+                return self
+
+            def execute(self):
+                return FakeResult()
+
+        class FakeClient:
+            def __init__(self):
+                self.table_names = []
+
+            def table(self, table_name):
+                self.table_names.append(table_name)
+                return FakeQuery()
+
+        fake_client = FakeClient()
+        sync = EggNestSync(temp_scenarios_dir)
+        sync.client = fake_client
+        monkeypatch.setattr("eggnest.sync.get_current_user_id", lambda: "user-123")
+
+        sync.pull()
+        sync.list_remote()
+
+        scenario_file = temp_scenarios_dir / "remote.yaml"
+        scenario_file.write_text(
+            """
+name: Remote Scenario
+initial_capital: 500000
+annual_spending: 40000
+current_age: 55
+max_age: 90
+gender: male
+has_spouse: false
+has_annuity: false
+"""
+        )
+        sync.push(scenario_file)
+
+        assert SIMULATIONS_TABLE == "simulations"
+        assert fake_client.table_names == [
+            "simulations",
+            "simulations",
+            "simulations",
+        ]
 
 
 class TestGetSyncClient:

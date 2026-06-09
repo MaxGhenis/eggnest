@@ -575,10 +575,12 @@ function HeroAnswer({
                 {formatPct(result.success_rate)}
               </div>
               <div className="mt-1 max-w-xs text-sm leading-snug text-[var(--color-text-muted)]">
-                of simulated paths last through age {input.max_age}
+                {input.include_mortality ?? true
+                  ? `of simulated paths avoid depletion before death or age ${input.max_age}`
+                  : `of simulated paths last through age ${input.max_age}`}
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 sm:border-l sm:border-[var(--color-border-light)] sm:pl-6 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 sm:border-l sm:border-[var(--color-border-light)] sm:pl-6 lg:grid-cols-5">
               <HeroMetric
                 label="Median ending (real)"
                 value={formatGBP(result.median_final_value_real)}
@@ -588,6 +590,11 @@ function HeroAnswer({
                 label="10-year depletion risk"
                 value={formatPct1(result.prob_10_year_failure)}
                 detail="Running out within a decade"
+              />
+              <HeroMetric
+                label={`Strict age ${input.max_age}`}
+                value={formatPct(result.strict_horizon_success_rate)}
+                detail="Ignores mortality"
               />
               <HeroMetric
                 label="Year-1 withdrawal rate"

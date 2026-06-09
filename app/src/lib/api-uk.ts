@@ -1,6 +1,10 @@
 /** Thin client for the UK simulator endpoints. */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { normalizeApiUrl } from "./api";
+
+const API_URL = normalizeApiUrl(
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+);
 
 export type UKReturnSource =
   | "gaussian"
@@ -64,6 +68,7 @@ export interface UKYearBreakdown {
 export interface UKSimulationResult {
   metadata: Record<string, unknown>;
   success_rate: number;
+  strict_horizon_success_rate: number;
   median_final_value: number;
   median_final_value_real: number;
   percentiles: Record<string, number>;
@@ -79,18 +84,46 @@ export interface UKSimulationResult {
   prob_10_year_failure: number;
 }
 
+interface UKCoreScenario {
+  schema_version: "eggnest.scenario.v1";
+  engine: "uk_retirement";
+  country: "GBR";
+  inputs: UKSimulationInput;
+  tags?: Record<string, string>;
+}
+
+interface UKCoreResult {
+  schema_version: string;
+  scenario_schema_version: string;
+  engine: string;
+  country: string;
+  outputs: {
+    uk_simulation_result: UKSimulationResult;
+  };
+}
+
+function buildUKRetirementScenario(input: UKSimulationInput): UKCoreScenario {
+  return {
+    schema_version: "eggnest.scenario.v1",
+    engine: "uk_retirement",
+    country: "GBR",
+    inputs: input,
+  };
+}
+
 export async function runUKSimulation(
   input: UKSimulationInput,
   signal?: AbortSignal,
 ): Promise<UKSimulationResult> {
-  const response = await fetch(`${API_URL}/simulate-uk`, {
+  const response = await fetch(`${API_URL}/core/simulate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(buildUKRetirementScenario(input)),
     signal,
   });
   if (!response.ok) {
     throw new Error(`UK simulation failed: ${response.status}`);
   }
-  return response.json();
+  const coreResult = (await response.json()) as UKCoreResult;
+  return coreResult.outputs.uk_simulation_result;
 }

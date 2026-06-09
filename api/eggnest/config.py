@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     # Simulation defaults
     default_n_simulations: int = 10_000
     max_n_simulations: int = 100_000
+    simulation_job_workers: int = 2
+    simulation_job_ttl_seconds: int = 3_600
+    simulation_job_max_records: int = 100
 
     # CORS — production origins only; localhost is handled via regex in main.py
     cors_origins: list[str] = [

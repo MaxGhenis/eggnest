@@ -7,7 +7,7 @@
     "dev": "next dev --port 5174",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "vitest",
     "test:run": "vitest run",
     "test:e2e": "playwright test",
@@ -16,10 +16,10 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.86.0",
     "@types/react-plotly.js": "^2.6.3",
-    "next": "^15.3.3",
+    "next": "^16.2.1",
     "plotly.js": "^3.3.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "react-plotly.js": "^2.6.0",
     "recharts": "^3.5.1"
   },

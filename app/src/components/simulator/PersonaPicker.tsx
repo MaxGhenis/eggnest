@@ -2,11 +2,18 @@
 
 import { SimulationProgress } from "../SimulationProgress";
 import { formatCurrency, type Persona } from "../../lib/simulatorUtils";
+import type { YearProgressSummary } from "../../lib/api";
 
 interface PersonaPickerProps {
   personas: Persona[];
   isLoading: boolean;
-  progress: { currentYear: number; totalYears: number };
+  progress: {
+    currentYear: number;
+    totalYears: number;
+    progress?: number;
+    message?: string | null;
+    yearSummary?: YearProgressSummary | null;
+  };
   onLoadPersona: (persona: Persona, runImmediately: boolean) => void;
   onStartFromScratch: () => void;
 }
@@ -96,6 +103,9 @@ export function PersonaPicker({
           <SimulationProgress
             currentYear={progress.currentYear}
             totalYears={progress.totalYears}
+            progress={progress.progress}
+            message={progress.message}
+            yearSummary={progress.yearSummary}
           />
         </div>
       )}
