@@ -52,7 +52,7 @@ export function AnnuityComparison({ annuityResult, guaranteeYears }: AnnuityComp
         </div>
       </div>
       <div className="mt-4 rounded-[var(--radius-md)] bg-[var(--color-bg-alt)] p-3 text-sm">
-        <strong>Recommendation:</strong> {annuityResult.recommendation}
+        <strong>Modeled summary:</strong> {annuityResult.comparison_summary}
       </div>
     </div>
   );
@@ -82,7 +82,7 @@ export function StateComparison({
     <div className={sectionCls}>
       <h3 className="text-lg font-semibold">Compare states</h3>
 
-      <p className="mt-1 text-sm text-[var(--color-text-muted)]">See how relocating could affect your taxes and outcomes.</p>
+      <p className="mt-1 text-sm text-[var(--color-text-muted)]">Compare modeled taxes and outcomes across states.</p>
 
       {!stateComparisonResult && !isComparingStates && (
         <div className="mt-4 space-y-4">
@@ -151,7 +151,7 @@ export function StateComparison({
             </table>
           </div>
           <p className="text-xs text-[var(--color-text-muted)]">
-            Tax savings show lifetime difference compared to {params.state}. Positive values mean you save money by relocating.
+            Tax savings show modeled lifetime tax differences compared to {params.state}. Positive values are lower modeled taxes than the current state.
           </p>
           <button className={btnSecondary} onClick={onResetComparison}>Compare different states</button>
         </div>
@@ -184,7 +184,7 @@ export function SSTimingComparison({
 
   return (
     <div className={sectionCls}>
-      <h3 className="text-lg font-semibold">When should you claim Social Security?</h3>
+      <h3 className="text-lg font-semibold">Compare Social Security claiming ages</h3>
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">Compare how different claiming ages affect your lifetime benefits and portfolio.</p>
 
       {!ssTimingResult && !isComparingSSTiming && (
@@ -230,8 +230,8 @@ export function SSTimingComparison({
               </span>
             </div>
             <div className="rounded-[var(--radius-md)] bg-[var(--color-success-light)] px-4 py-2 text-sm">
-              <span className="text-[var(--color-text-muted)]">Optimal: </span>
-              <span className="font-semibold text-[var(--color-success-text)]">Claim at age {ssTimingResult.optimal_claiming_age}</span>
+              <span className="text-[var(--color-text-muted)]">Highest modeled success: </span>
+              <span className="font-semibold text-[var(--color-success-text)]">Age {ssTimingResult.highest_success_claiming_age}</span>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -242,11 +242,11 @@ export function SSTimingComparison({
               <tbody>
                 {ssTimingResult.results.map((r) => (
                   <tr key={r.claiming_age}
-                    className={r.claiming_age === ssTimingResult.optimal_claiming_age ? "!bg-[var(--color-success-light)]" : r.claiming_age === Math.round(ssTimingResult.full_retirement_age) ? "!bg-[var(--color-primary-50)]" : ""}>
+                    className={r.claiming_age === ssTimingResult.highest_success_claiming_age ? "!bg-[var(--color-success-light)]" : r.claiming_age === Math.round(ssTimingResult.full_retirement_age) ? "!bg-[var(--color-primary-50)]" : ""}>
                     <td className="font-medium">
                       {r.claiming_age}
                       {r.claiming_age === Math.round(ssTimingResult.full_retirement_age) && <span className="ml-1 rounded bg-[var(--color-primary-100)] px-1.5 py-0.5 text-[0.6rem] font-bold text-[var(--color-primary)]">FRA</span>}
-                      {r.claiming_age === ssTimingResult.optimal_claiming_age && <span className="ml-1 rounded bg-[var(--color-success-text)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Best</span>}
+                      {r.claiming_age === ssTimingResult.highest_success_claiming_age && <span className="ml-1 rounded bg-[var(--color-success-text)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Highest success</span>}
                     </td>
                     <td>${r.monthly_benefit.toLocaleString()}/mo</td>
                     <td style={{ color: r.adjustment_factor < 1 ? "#ef4444" : r.adjustment_factor > 1 ? "#10b981" : "inherit" }}>
@@ -287,7 +287,7 @@ export function AllocationComparison({
   return (
     <div className={sectionCls}>
       <h3 className="text-lg font-semibold">How does asset allocation affect your plan?</h3>
-      <p className="mt-1 text-sm text-[var(--color-text-muted)]">Compare different stock/bond mixes for the right balance of growth and safety.</p>
+      <p className="mt-1 text-sm text-[var(--color-text-muted)]">Compare different stock/bond mixes under the same assumptions.</p>
 
       {!allocationResult && (
         <button className={`mt-4 ${btnPrimary}`} onClick={onCompare} disabled={isComparingAllocations}>
@@ -299,27 +299,27 @@ export function AllocationComparison({
         <div className="mt-4 space-y-4">
           <div className="flex flex-wrap gap-4">
             <div className="rounded-[var(--radius-md)] bg-[var(--color-success-light)] px-4 py-2 text-sm">
-              <span className="text-[var(--color-text-muted)]">Optimal for success: </span>
-              <span className="font-semibold text-[var(--color-success-text)]">{Math.round(allocationResult.optimal_for_success * 100)}% Stocks</span>
+              <span className="text-[var(--color-text-muted)]">Highest modeled success: </span>
+              <span className="font-semibold text-[var(--color-success-text)]">{Math.round(allocationResult.highest_success_allocation * 100)}% Stocks</span>
             </div>
-            {allocationResult.optimal_for_safety !== allocationResult.optimal_for_success && (
+            {allocationResult.lowest_volatility_allocation !== allocationResult.highest_success_allocation && (
               <div className="rounded-[var(--radius-md)] bg-[var(--color-primary-50)] px-4 py-2 text-sm">
-                <span className="text-[var(--color-text-muted)]">Optimal for safety: </span>
-                <span className="font-semibold text-[var(--color-primary)]">{Math.round(allocationResult.optimal_for_safety * 100)}% Stocks</span>
+                <span className="text-[var(--color-text-muted)]">Lowest modeled volatility: </span>
+                <span className="font-semibold text-[var(--color-primary)]">{Math.round(allocationResult.lowest_volatility_allocation * 100)}% Stocks</span>
               </div>
             )}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full table-auto-style">
               <thead>
-                <tr><th>Allocation</th><th>Success</th><th>Median final</th><th>Worst (5th)</th><th>Best (95th)</th><th>Volatility</th></tr>
+                <tr><th>Allocation</th><th>Success</th><th>Median final</th><th>5th percentile</th><th>95th percentile</th><th>Volatility</th></tr>
               </thead>
               <tbody>
                 {allocationResult.results.map((r) => (
-                  <tr key={r.stock_allocation} className={r.stock_allocation === allocationResult.optimal_for_success ? "!bg-[var(--color-success-light)]" : ""}>
+                  <tr key={r.stock_allocation} className={r.stock_allocation === allocationResult.highest_success_allocation ? "!bg-[var(--color-success-light)]" : ""}>
                     <td className="font-medium">
                       {Math.round(r.stock_allocation * 100)}% / {Math.round(r.bond_allocation * 100)}%
-                      {r.stock_allocation === allocationResult.optimal_for_success && <span className="ml-1 rounded bg-[var(--color-success-text)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Best</span>}
+                      {r.stock_allocation === allocationResult.highest_success_allocation && <span className="ml-1 rounded bg-[var(--color-success-text)] px-1.5 py-0.5 text-[0.6rem] font-bold text-white">Highest success</span>}
                     </td>
                     <td style={{
                       color: r.success_rate >= 0.9 ? "#10b981" : r.success_rate >= 0.8 ? "#84cc16" : r.success_rate >= 0.7 ? "#eab308" : "#ef4444"
@@ -333,7 +333,7 @@ export function AllocationComparison({
               </tbody>
             </table>
           </div>
-          <p className="text-sm text-[var(--color-text-muted)]">{allocationResult.recommendation}</p>
+          <p className="text-sm text-[var(--color-text-muted)]">{allocationResult.comparison_summary}</p>
           <button className={btnSecondary} onClick={onReset}>Hide results</button>
         </div>
       )}

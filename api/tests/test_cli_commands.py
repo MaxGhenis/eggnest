@@ -9,6 +9,15 @@ from click.testing import CliRunner
 from eggnest.cli import main
 
 
+def core_us_response(result: dict) -> dict:
+    """Wrap a legacy simulation result in the core HTTP response shape."""
+    return {
+        "engine": "us_retirement",
+        "country": "USA",
+        "outputs": {"us_simulation_result": result},
+    }
+
+
 @pytest.fixture
 def runner():
     """Click CLI test runner."""
@@ -225,6 +234,99 @@ class TestSyncCommands:
         assert "Not logged in" in result.output
 
 
+class TestCoreCommands:
+    """Tests for machine-readable core engine commands."""
+
+    def test_core_schema_outputs_json_schema(self, runner):
+        """Test core schema emits parseable JSON Schema."""
+        result = runner.invoke(main, ["core", "schema", "scenario"])
+
+        assert result.exit_code == 0
+        schema = json.loads(result.output)
+        assert schema["title"] == "EngineScenario"
+        assert "engine" in schema["properties"]
+
+    def test_core_run_accepts_raw_us_input_from_stdin(self, runner):
+        """Test core run supports stdin and legacy JSON output."""
+        scenario_content = """
+initial_capital: 1000000
+annual_spending: 60000
+current_age: 60
+max_age: 95
+gender: male
+state: CA
+filing_status: single
+n_simulations: 100
+has_spouse: false
+has_annuity: false
+"""
+        core_response = core_us_response(
+            {
+                "success_rate": 0.95,
+                "median_final_value": 2000000,
+                "initial_withdrawal_rate": 3.0,
+                "percentiles": {"p5": 0, "p25": 1, "p50": 2, "p75": 3, "p95": 4},
+            }
+        )
+
+        with patch("eggnest.cli.run_core_scenario", return_value=core_response):
+            result = runner.invoke(
+                main,
+                [
+                    "core",
+                    "run",
+                    "-",
+                    "--engine",
+                    "us_retirement",
+                    "--output-format",
+                    "legacy",
+                ],
+                input=scenario_content,
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["success_rate"] == 0.95
+
+    def test_core_run_writes_envelope_to_output_file(self, runner, tmp_path):
+        """Test core run can write the full envelope for tool callers."""
+        scenario_file = tmp_path / "scenario.yaml"
+        scenario_file.write_text("""
+initial_capital: 1000000
+annual_spending: 60000
+current_age: 60
+max_age: 95
+state: CA
+n_simulations: 100
+""")
+        output_file = tmp_path / "result.json"
+        core_response = core_us_response(
+            {
+                "success_rate": 0.95,
+                "median_final_value": 2000000,
+                "initial_withdrawal_rate": 3.0,
+                "percentiles": {"p5": 0, "p25": 1, "p50": 2, "p75": 3, "p95": 4},
+            }
+        )
+
+        with patch("eggnest.cli.run_core_scenario", return_value=core_response):
+            result = runner.invoke(
+                main,
+                [
+                    "core",
+                    "run",
+                    str(scenario_file),
+                    "--output",
+                    str(output_file),
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert result.output == ""
+        payload = json.loads(output_file.read_text())
+        assert payload["engine"] == "us_retirement"
+
+
 class TestSimulateCommand:
     """Tests for the simulate command."""
 
@@ -235,6 +337,7 @@ class TestSimulateCommand:
         assert "scenario" in result.output.lower()
         assert "--output" in result.output
         assert "--api-url" in result.output
+        assert "--job" in result.output
 
     def test_simulate_no_scenarios(self, runner, temp_scenarios_dir):
         """Test simulate with no scenarios available."""
@@ -277,25 +380,27 @@ has_annuity: false
 
         # Mock the httpx.post call
         mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "success_rate": 0.95,
-            "median_final_value": 2000000,
-            "mean_final_value": 2500000,
-            "initial_withdrawal_rate": 3.0,
-            "percentiles": {
-                "p5": 100000,
-                "p25": 1000000,
-                "p50": 2000000,
-                "p75": 3500000,
-                "p95": 6000000,
-            },
-            "percentile_paths": {},
-            "total_withdrawn_median": 1500000,
-            "total_taxes_median": 300000,
-        }
+        mock_response.json.return_value = core_us_response(
+            {
+                "success_rate": 0.95,
+                "median_final_value": 2000000,
+                "mean_final_value": 2500000,
+                "initial_withdrawal_rate": 3.0,
+                "percentiles": {
+                    "p5": 100000,
+                    "p25": 1000000,
+                    "p50": 2000000,
+                    "p75": 3500000,
+                    "p95": 6000000,
+                },
+                "percentile_paths": {},
+                "total_withdrawn_median": 1500000,
+                "total_taxes_median": 300000,
+            }
+        )
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.post", return_value=mock_response):
+        with patch("httpx.post", return_value=mock_response) as mock_post:
             result = runner.invoke(
                 main,
                 [
@@ -307,8 +412,100 @@ has_annuity: false
             )
 
         assert result.exit_code == 0
+        call = mock_post.call_args
+        assert call.args[0] == "http://localhost:8000/core/simulate"
+        assert call.kwargs["json"]["engine"] == "us_retirement"
+        assert call.kwargs["json"]["inputs"]["current_age"] == 60
         assert "95.0% success rate" in result.output
         assert "2,000,000" in result.output
+
+    def test_simulate_with_remote_job_output(self, runner, temp_scenarios_dir):
+        """Test simulate can use the pollable core job API."""
+        scenario_content = """
+name: Test Scenario
+initial_capital: 1000000
+annual_spending: 60000
+current_age: 60
+max_age: 95
+gender: male
+has_spouse: false
+has_annuity: false
+n_simulations: 100
+"""
+        scenario_file = temp_scenarios_dir / "test.yaml"
+        scenario_file.write_text(scenario_content)
+
+        job_response = MagicMock()
+        job_response.json.return_value = {
+            "job_id": "job-1",
+            "status": "queued",
+            "progress": 0,
+            "message": "Queued",
+        }
+        job_response.raise_for_status = MagicMock()
+
+        running_response = MagicMock()
+        running_response.json.return_value = {
+            "job_id": "job-1",
+            "status": "running",
+            "progress": 0.35,
+            "message": "Calculating PolicyEngine taxes",
+        }
+        running_response.raise_for_status = MagicMock()
+
+        complete_response = MagicMock()
+        complete_response.json.return_value = {
+            "job_id": "job-1",
+            "status": "succeeded",
+            "progress": 1,
+            "message": "Complete",
+            "result": core_us_response(
+                {
+                    "success_rate": 0.95,
+                    "median_final_value": 2000000,
+                    "mean_final_value": 2500000,
+                    "initial_withdrawal_rate": 3.0,
+                    "percentiles": {
+                        "p5": 100000,
+                        "p25": 1000000,
+                        "p50": 2000000,
+                        "p75": 3500000,
+                        "p95": 6000000,
+                    },
+                    "percentile_paths": {},
+                    "total_withdrawn_median": 1500000,
+                    "total_taxes_median": 300000,
+                }
+            ),
+        }
+        complete_response.raise_for_status = MagicMock()
+
+        with (
+            patch("httpx.post", return_value=job_response) as mock_post,
+            patch(
+                "httpx.get", side_effect=[running_response, complete_response]
+            ) as mock_get,
+            patch("time.sleep"),
+        ):
+            result = runner.invoke(
+                main,
+                [
+                    "--scenarios-dir",
+                    str(temp_scenarios_dir),
+                    "simulate",
+                    str(scenario_file),
+                    "--job",
+                    "--output-format",
+                    "result",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert mock_post.call_args.args[0] == "http://localhost:8000/core/jobs"
+        assert mock_get.call_args.args[0] == "http://localhost:8000/core/jobs/job-1"
+        payload = json.loads(result.output)
+        assert payload["success_rate"] == 0.95
+        assert payload["median_final_value"] == 2000000
 
     def test_simulate_api_connection_error(self, runner, temp_scenarios_dir):
         """Test simulate handles API connection error gracefully."""
@@ -360,22 +557,24 @@ has_annuity: false
         output_file = tmp_path / "results.json"
 
         mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "success_rate": 0.95,
-            "median_final_value": 2000000,
-            "mean_final_value": 2500000,
-            "initial_withdrawal_rate": 3.0,
-            "percentiles": {
-                "p5": 0,
-                "p25": 1000000,
-                "p50": 2000000,
-                "p75": 3000000,
-                "p95": 5000000,
-            },
-            "percentile_paths": {},
-            "total_withdrawn_median": 1500000,
-            "total_taxes_median": 300000,
-        }
+        mock_response.json.return_value = core_us_response(
+            {
+                "success_rate": 0.95,
+                "median_final_value": 2000000,
+                "mean_final_value": 2500000,
+                "initial_withdrawal_rate": 3.0,
+                "percentiles": {
+                    "p5": 0,
+                    "p25": 1000000,
+                    "p50": 2000000,
+                    "p75": 3000000,
+                    "p95": 5000000,
+                },
+                "percentile_paths": {},
+                "total_withdrawn_median": 1500000,
+                "total_taxes_median": 300000,
+            }
+        )
         mock_response.raise_for_status = MagicMock()
 
         with patch("httpx.post", return_value=mock_response):
@@ -396,3 +595,46 @@ has_annuity: false
 
         saved_results = json.loads(output_file.read_text())
         assert saved_results["success_rate"] == 0.95
+
+    def test_simulate_local_machine_readable_envelope(self, runner, temp_scenarios_dir):
+        """Test simulate can emit pure JSON without requiring the API server."""
+        scenario_file = temp_scenarios_dir / "test.yaml"
+        scenario_file.write_text("""
+name: Test
+initial_capital: 1000000
+annual_spending: 60000
+current_age: 60
+max_age: 95
+gender: male
+state: CA
+n_simulations: 100
+has_spouse: false
+has_annuity: false
+""")
+        core_response = core_us_response(
+            {
+                "success_rate": 0.95,
+                "median_final_value": 2000000,
+                "initial_withdrawal_rate": 3.0,
+                "percentiles": {"p5": 0, "p25": 1, "p50": 2, "p75": 3, "p95": 4},
+            }
+        )
+
+        with patch("eggnest.cli.run_core_scenario", return_value=core_response):
+            result = runner.invoke(
+                main,
+                [
+                    "--scenarios-dir",
+                    str(temp_scenarios_dir),
+                    "simulate",
+                    str(scenario_file),
+                    "--local",
+                    "--output-format",
+                    "envelope",
+                ],
+            )
+
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["engine"] == "us_retirement"
+        assert payload["outputs"]["us_simulation_result"]["success_rate"] == 0.95

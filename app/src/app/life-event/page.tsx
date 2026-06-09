@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Image from "next/image";
 import Link from "next/link";
+import { IconBabyCarriage, IconHeartHandshake, IconTrendingUp, IconBeach, type Icon } from "@tabler/icons-react";
 import {
   compareLifeEvent,
   calculateHousehold,
@@ -23,29 +25,29 @@ interface LifeEventScenario {
   id: string;
   name: string;
   description: string;
-  emoji: string;
+  icon: Icon;
   beforeSetup: (base: HouseholdInput) => HouseholdInput;
   afterSetup: (base: HouseholdInput) => HouseholdInput;
 }
 
 const LIFE_EVENT_SCENARIOS: LifeEventScenario[] = [
   {
-    id: "having-child", name: "Having a child", description: "See how a new child affects your taxes and benefits", emoji: "\uD83D\uDC76",
+    id: "having-child", name: "Having a child", description: "See how a new child affects your taxes and benefits", icon: IconBabyCarriage,
     beforeSetup: (base) => ({ ...base, filing_status: "single" as FilingStatus, people: [{ ...base.people[0], is_tax_unit_head: true }] }),
     afterSetup: (base) => ({ ...base, filing_status: "head_of_household" as FilingStatus, people: [{ ...base.people[0], is_tax_unit_head: true }, { age: 0, employment_income: 0, is_tax_unit_dependent: true }] }),
   },
   {
-    id: "getting-married", name: "Getting married", description: "Compare single vs married filing jointly", emoji: "\uD83D\uDC92",
+    id: "getting-married", name: "Getting married", description: "Compare single vs married filing jointly", icon: IconHeartHandshake,
     beforeSetup: (base) => ({ ...base, filing_status: "single" as FilingStatus, people: [{ ...base.people[0], is_tax_unit_head: true }] }),
     afterSetup: (base) => ({ ...base, filing_status: "married_filing_jointly" as FilingStatus, people: [{ ...base.people[0], is_tax_unit_head: true }, { age: base.people[0].age - 2, employment_income: Math.round((base.people[0].employment_income || 50000) * 0.8), is_tax_unit_spouse: true }] }),
   },
   {
-    id: "income-change", name: "Getting a raise", description: "See how higher income changes your taxes", emoji: "\uD83D\uDCC8",
+    id: "income-change", name: "Getting a raise", description: "See how higher income changes your taxes", icon: IconTrendingUp,
     beforeSetup: (base) => base,
     afterSetup: (base) => ({ ...base, people: base.people.map((p, i) => i === 0 ? { ...p, employment_income: Math.round((p.employment_income || 50000) * 1.25) } : p) }),
   },
   {
-    id: "retirement", name: "Retiring", description: "Compare working vs retirement income", emoji: "\uD83C\uDFD6\uFE0F",
+    id: "retirement", name: "Retiring", description: "Compare working vs retirement income", icon: IconBeach,
     beforeSetup: (base) => base,
     afterSetup: (base) => ({ ...base, people: base.people.map((p, i) => i === 0 ? { ...p, employment_income: 0, social_security: 30000, pension_income: 24000 } : p) }),
   },
@@ -231,7 +233,7 @@ export default function LifeEventPage() {
               className="flex flex-col items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-5 text-center transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5 disabled:opacity-50"
               onClick={() => runScenario(scenario)} disabled={isLoading || hasErrors}
               aria-label={`${scenario.name}: ${scenario.description}`}>
-              <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-50)] text-xl" aria-hidden="true">{scenario.emoji}</span>
+              <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-50)] text-[var(--color-primary)]" aria-hidden="true"><scenario.icon size={24} stroke={1.75} /></span>
               <span className="text-sm font-semibold text-[var(--color-text)]">{scenario.name}</span>
               <span className="text-xs text-[var(--color-text-muted)]">{scenario.description}</span>
             </button>
@@ -261,7 +263,7 @@ export default function LifeEventPage() {
         </button>
 
         <div className="text-center">
-          <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-50)] text-3xl" aria-hidden="true">{selectedScenario.emoji}</span>
+          <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary-50)] text-[var(--color-primary)]" aria-hidden="true"><selectedScenario.icon size={30} stroke={1.75} /></span>
           <h2 className="text-2xl font-semibold">{selectedScenario.name}</h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">{selectedScenario.description}</p>
         </div>
@@ -370,7 +372,7 @@ export default function LifeEventPage() {
               <button key={scenario.id}
                 className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-white px-4 py-2.5 text-sm font-medium shadow-[var(--shadow-sm)] transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5 disabled:opacity-50"
                 onClick={() => runScenario(scenario)} disabled={isLoading}>
-                <span className="flex h-6 w-6 items-center justify-center rounded bg-[var(--color-primary-50)] text-xs" aria-hidden="true">{scenario.emoji}</span>
+                <span className="flex h-6 w-6 items-center justify-center rounded bg-[var(--color-primary-50)] text-[var(--color-primary)]" aria-hidden="true"><scenario.icon size={14} stroke={1.75} /></span>
                 <span>{scenario.name}</span>
               </button>
             ))}
@@ -389,7 +391,7 @@ export default function LifeEventPage() {
       <header className="header-glass sticky top-0 z-50 border-b border-[var(--color-border-light)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
           <Link href="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80" aria-label="EggNest home">
-            <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
+            <Image src="/logo.svg" alt="EggNest" width={140} height={28} className="h-7 w-auto" priority />
           </Link>
           <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Tax & benefits calculator</span>
           <Link href="/simulator" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">

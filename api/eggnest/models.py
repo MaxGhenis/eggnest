@@ -1,8 +1,11 @@
 """Pydantic models for API requests and responses."""
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from eggnest.citations import Citation
+from eggnest.constants import STATE_FIPS
 
 # Account types for tax treatment
 AccountType = Literal[
@@ -15,6 +18,10 @@ AccountType = Literal[
 
 # Supported funds/indexes
 FundType = Literal["vt", "sp500", "bnd", "treasury"]
+
+WithdrawalStrategy = Literal[
+    "traditional_first", "roth_first", "taxable_first", "pro_rata"
+]
 
 
 class Holding(BaseModel):
@@ -74,9 +81,7 @@ class SimulationInput(BaseModel):
         default=None,
         description="List of holdings with account types and funds. If provided, overrides initial_capital and stock_allocation.",
     )
-    withdrawal_strategy: Literal[
-        "traditional_first", "roth_first", "taxable_first", "pro_rata"
-    ] = Field(
+    withdrawal_strategy: WithdrawalStrategy = Field(
         default="taxable_first",
         description="Order to withdraw from accounts: taxable_first (most common), traditional_first, roth_first, or pro_rata",
     )
@@ -145,8 +150,24 @@ class SimulationInput(BaseModel):
     n_simulations: int = Field(
         default=10_000, ge=100, le=100_000, description="Number of Monte Carlo paths"
     )
+    random_seed: int | None = Field(
+        default=None,
+        ge=0,
+        description="Optional seed for reproducible Monte Carlo paths",
+    )
     include_mortality: bool = Field(
         default=True, description="Account for probability of death each year"
+    )
+    inflation_rate: float = Field(
+        default=0.025,
+        ge=0.0,
+        le=0.10,
+        description=(
+            "Assumed annual inflation rate. Spending and Social Security grow "
+            "at this rate; pension and annuity payments stay fixed in nominal "
+            "dollars. The simulation runs in nominal terms to match nominal "
+            "historical returns and PolicyEngine tax brackets."
+        ),
     )
     return_model: Literal["bootstrap", "block_bootstrap", "historical", "normal"] = (
         Field(
@@ -155,15 +176,25 @@ class SimulationInput(BaseModel):
         )
     )
 
-    # Market assumptions (real returns, after inflation)
-    # Note: expected_return and return_volatility are only used when return_model="normal"
+    # Market assumptions (nominal returns; the engine and historical data are nominal)
+    # Note: expected_return, return_volatility, and dividend_yield are only used
+    # when return_model="normal"; historical models use historical series.
     expected_return: float = Field(
-        default=0.07, description="Expected real annual return (only for normal model)"
+        default=0.07,
+        description="Expected nominal annual total return (only for normal model)",
     )
     return_volatility: float = Field(
         default=0.16, description="Annual return volatility (only for normal model)"
     )
-    dividend_yield: float = Field(default=0.02, description="Annual dividend yield")
+    dividend_yield: float = Field(
+        default=0.02,
+        ge=0.0,
+        le=0.10,
+        description=(
+            "Annual dividend yield (only for normal model; historical models "
+            "use historical dividend yields)"
+        ),
+    )
 
     # Asset allocation
     stock_allocation: float = Field(
@@ -182,6 +213,28 @@ class SimulationInput(BaseModel):
         default="bnd",
         description="Bond index: 'treasury' (10-Year, 1928-2024) or 'bnd' (Total Bond Market, 2007-2024)",
     )
+
+    @field_validator("state")
+    @classmethod
+    def validate_state(cls, state: str) -> str:
+        """Normalize and validate US state codes before tax calculation."""
+        normalized = state.upper()
+        if normalized not in STATE_FIPS:
+            raise ValueError(f"Unsupported state code: {state}")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_cross_fields(self) -> "SimulationInput":
+        """Validate fields whose correctness depends on other inputs."""
+        if self.max_age <= self.current_age:
+            raise ValueError("max_age must be greater than current_age")
+        if not self.holdings and self.initial_capital is None:
+            raise ValueError("Either holdings or initial_capital must be provided")
+        if self.has_spouse and self.spouse is None:
+            raise ValueError("spouse is required when has_spouse is true")
+        if self.has_annuity and self.annuity is None:
+            raise ValueError("annuity is required when has_annuity is true")
+        return self
 
     @property
     def total_capital(self) -> float:
@@ -294,6 +347,46 @@ class SimulationResult(BaseModel):
     )
 
 
+SimulationJobState = Literal["queued", "running", "succeeded", "failed"]
+
+
+class SimulationJobStatus(BaseModel):
+    """Status snapshot for a background simulation job."""
+
+    job_id: str = Field(..., description="Opaque simulation job identifier")
+    status: SimulationJobState = Field(..., description="Current job state")
+    current_year: float = Field(
+        default=0,
+        ge=0,
+        description="Human-readable current simulated year number",
+    )
+    total_years: int = Field(..., ge=0, description="Total simulated years")
+    progress: float = Field(
+        default=0,
+        ge=0,
+        le=1,
+        description="Progress fraction from 0 to 1",
+    )
+    message: str | None = Field(
+        default=None, description="Short human-readable progress message"
+    )
+    year_summary: dict[str, Any] | None = Field(
+        default=None,
+        description="Latest completed simulated year preview, when available",
+    )
+    result: SimulationResult | None = Field(
+        default=None, description="Simulation result when status is succeeded"
+    )
+    error: str | None = Field(
+        default=None, description="Error message when status is failed"
+    )
+    created_at: str = Field(..., description="ISO timestamp when the job was created")
+    updated_at: str = Field(..., description="ISO timestamp for the latest job update")
+    completed_at: str | None = Field(
+        default=None, description="ISO timestamp when the job finished"
+    )
+
+
 class AnnuityComparison(BaseModel):
     """Input for comparing simulation to an annuity."""
 
@@ -313,7 +406,7 @@ class AnnuityComparisonResult(BaseModel):
     annuity_total_guaranteed: float
     probability_simulation_beats_annuity: float
     simulation_median_total_income: float
-    recommendation: str
+    comparison_summary: str
 
 
 class SavedSimulation(BaseModel):
@@ -343,6 +436,16 @@ class StateComparisonInput(BaseModel):
         ..., min_length=1, max_length=10, description="List of state codes to compare"
     )
 
+    @field_validator("compare_states")
+    @classmethod
+    def validate_compare_states(cls, states: list[str]) -> list[str]:
+        """Normalize and validate comparison state codes."""
+        normalized_states = [state.upper() for state in states]
+        unsupported = sorted(set(normalized_states) - set(STATE_FIPS))
+        if unsupported:
+            raise ValueError(f"Unsupported state code(s): {', '.join(unsupported)}")
+        return normalized_states
+
 
 class StateResult(BaseModel):
     """Summary result for a single state."""
@@ -361,7 +464,8 @@ class StateComparisonResult(BaseModel):
     base_state: str
     results: list[StateResult]
     tax_savings_vs_base: dict[str, float] = Field(
-        ..., description="Tax savings relative to base state (positive = saves money)"
+        ...,
+        description="Modeled tax difference relative to base state (positive = lower modeled taxes)",
     )
 
 
@@ -415,11 +519,12 @@ class SSTimingComparisonResult(BaseModel):
     full_retirement_age: float
     pia_monthly: float
     results: list[SSTimingResult]
-    optimal_claiming_age: int = Field(
-        ..., description="Claiming age with highest success rate"
+    highest_success_claiming_age: int = Field(
+        ..., description="Claiming age with the highest modeled success rate"
     )
-    optimal_for_longevity: int = Field(
-        ..., description="Claiming age optimal if living to max_age"
+    highest_lifetime_income_claiming_age: int = Field(
+        ...,
+        description="Claiming age with the highest modeled lifetime Social Security income",
     )
 
 
@@ -462,15 +567,144 @@ class AllocationComparisonResult(BaseModel):
     """Results comparing asset allocation strategies."""
 
     results: list[AllocationResult]
-    optimal_for_success: float = Field(
-        ..., description="Stock allocation with highest success rate"
+    highest_success_allocation: float = Field(
+        ..., description="Stock allocation with the highest modeled success rate"
     )
-    optimal_for_safety: float = Field(
+    lowest_volatility_allocation: float = Field(
         ...,
-        description="Stock allocation with lowest volatility among high-success options",
+        description="Stock allocation with lowest volatility among tested options that meet the success threshold",
     )
-    recommendation: str = Field(
-        ..., description="Plain language recommendation based on results"
+    comparison_summary: str = Field(
+        ..., description="Plain language factual summary of the modeled comparison"
+    )
+
+
+class WithdrawalStrategyComparisonInput(BaseModel):
+    """Input for comparing holdings withdrawal-order strategies."""
+
+    base_input: SimulationInput
+    strategies: list[WithdrawalStrategy] = Field(
+        default=["taxable_first", "traditional_first", "roth_first", "pro_rata"],
+        min_length=1,
+        max_length=4,
+        description="Withdrawal strategies to compare. The base input strategy is always included.",
+    )
+    random_seed: int | None = Field(
+        default=0,
+        ge=0,
+        description="Shared seed used for all strategy runs so differences reflect withdrawal order rather than different market paths. Set null to use the base input seed.",
+    )
+
+    @model_validator(mode="after")
+    def require_holdings(self) -> "WithdrawalStrategyComparisonInput":
+        """Withdrawal-order comparisons are only meaningful with holdings mode."""
+        if not self.base_input.holdings:
+            raise ValueError("holdings are required to compare withdrawal strategies")
+        return self
+
+
+class WithdrawalStrategyResult(BaseModel):
+    """Summary result for one withdrawal strategy."""
+
+    withdrawal_strategy: WithdrawalStrategy
+    success_rate: float
+    median_final_value: float
+    total_taxes_median: float
+    total_withdrawn_median: float
+    median_depletion_age: int | None = None
+    initial_withdrawal_rate: float
+    success_rate_delta_vs_base: float
+    median_final_value_delta_vs_base: float
+    total_taxes_delta_vs_base: float
+
+
+class WithdrawalStrategyComparisonResult(BaseModel):
+    """Results comparing withdrawal-order strategies under shared assumptions."""
+
+    base_strategy: WithdrawalStrategy
+    shared_random_seed: int | None
+    results: list[WithdrawalStrategyResult]
+    comparison_summary: str = Field(
+        ..., description="Plain language factual summary of the modeled comparison"
+    )
+
+
+class HistoricalCohortComparisonInput(BaseModel):
+    """Input for comparing contiguous historical market cohorts."""
+
+    base_input: SimulationInput
+    start_years: list[int] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        description="Optional historical cohort start years. If omitted, all valid start years are used.",
+    )
+    stock_index: Literal["sp500", "vt"] = Field(
+        default="sp500",
+        description="Stock index for historical cohorts. S&P 500 has the longest built-in history.",
+    )
+    bond_index: Literal["treasury", "bnd"] = Field(
+        default="treasury",
+        description="Bond index for historical cohorts. 10-year Treasury has the longest built-in history.",
+    )
+    include_mortality: bool = Field(
+        default=False,
+        description="Whether to include stochastic mortality in cohort outcomes. Defaults false to isolate market sequences.",
+    )
+
+    @field_validator("start_years")
+    @classmethod
+    def validate_start_years(cls, start_years: list[int] | None) -> list[int] | None:
+        """Reject duplicate start years so each result row is a distinct cohort."""
+        if start_years is None:
+            return None
+        duplicates = sorted(
+            year for year in set(start_years) if start_years.count(year) > 1
+        )
+        if duplicates:
+            raise ValueError(
+                "Duplicate start year(s): "
+                f"{', '.join(str(year) for year in duplicates)}"
+            )
+        return start_years
+
+    @model_validator(mode="after")
+    def require_simple_portfolio(self) -> "HistoricalCohortComparisonInput":
+        """Historical cohorts currently use simple stock/bond allocation mode."""
+        if self.base_input.holdings:
+            raise ValueError(
+                "historical cohort comparison currently requires simple stock/bond portfolio mode"
+            )
+        return self
+
+
+class HistoricalCohortResult(BaseModel):
+    """Summary result for one historical cohort start year."""
+
+    start_year: int
+    end_year: int
+    success: bool
+    final_value: float
+    total_taxes: float
+    total_withdrawn: float
+    depletion_age: int | None = None
+
+
+class HistoricalCohortComparisonResult(BaseModel):
+    """Results comparing contiguous historical market cohorts."""
+
+    stock_index: Literal["sp500", "vt"]
+    bond_index: Literal["treasury", "bnd"]
+    stock_allocation: float
+    n_years: int
+    cohort_success_rate: float
+    results: list[HistoricalCohortResult]
+    worst_start_year: int
+    best_start_year: int
+    worst_final_value: float
+    best_final_value: float
+    comparison_summary: str = Field(
+        ..., description="Plain language factual summary of the modeled comparison"
     )
 
 
@@ -528,6 +762,15 @@ class HouseholdInput(BaseModel):
         ..., min_length=1, description="People in the household"
     )
 
+    @field_validator("state")
+    @classmethod
+    def validate_household_state(cls, state: str) -> str:
+        """Normalize and validate state codes before PolicyEngine calls."""
+        normalized = state.upper()
+        if normalized not in STATE_FIPS:
+            raise ValueError(f"Unsupported state code: {state}")
+        return normalized
+
     def model_post_init(self, __context) -> None:
         """Auto-infer filing status from household composition."""
         spouses = sum(1 for p in self.people if p.is_tax_unit_spouse)
@@ -545,14 +788,21 @@ class HouseholdResult(BaseModel):
     """Results from a household tax calculation."""
 
     # Taxes
-    federal_income_tax: float = Field(..., description="Federal income tax liability")
+    federal_income_tax: float = Field(
+        ...,
+        description=(
+            "Federal income tax after non-refundable credits and before refundable "
+            "credits; refundable credits are counted in benefits."
+        ),
+    )
     state_income_tax: float = Field(..., description="State income tax liability")
     payroll_tax: float = Field(default=0, description="FICA/payroll taxes")
     total_taxes: float = Field(..., description="Total tax liability")
 
     # Benefits
     benefits: dict[str, float] = Field(
-        default_factory=dict, description="Benefits by program"
+        default_factory=dict,
+        description="Cash benefits and refundable tax credits by program",
     )
     total_benefits: float = Field(default=0, description="Total benefits received")
 
@@ -566,6 +816,14 @@ class HouseholdResult(BaseModel):
     )
     marginal_tax_rate: float = Field(default=0, description="Marginal tax rate")
     effective_tax_rate: float = Field(default=0, description="Effective tax rate")
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="Deduplicated source links for the fields in this result",
+    )
+    output_citations: dict[str, list[Citation]] = Field(
+        default_factory=dict,
+        description="Source links keyed by result field, e.g. benefits.snap",
+    )
 
 
 class LifeEventComparisonInput(BaseModel):
@@ -591,3 +849,106 @@ class LifeEventComparison(BaseModel):
     net_income_change: float = Field(
         ..., description="Change in net income (positive = better off)"
     )
+
+
+class ProgramOutput(BaseModel):
+    """A machine-readable output exposed by an EggNest program."""
+
+    name: str
+    label: str
+    kind: Literal["scalar", "judgment", "object", "series"]
+    description: str
+    unit: str | None = None
+
+
+class ProgramSpec(BaseModel):
+    """A program or engine an AI agent can safely call."""
+
+    id: str
+    display_name: str
+    country: str
+    jurisdiction: str
+    scope: str
+    engine: str
+    cli: str
+    primary_output: str
+    outputs: list[ProgramOutput]
+    caveats: list[str] = Field(default_factory=list)
+
+
+class HouseholdValidationResult(BaseModel):
+    """Validation response designed for agent intake loops."""
+
+    status: Literal["ready", "needs_input", "invalid"]
+    missing_inputs: list[str] = Field(default_factory=list)
+    high_impact_questions: list[str] = Field(default_factory=list)
+    safe_defaults_used: dict[str, Any] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
+
+
+class EarningsGridInput(BaseModel):
+    """Input for comparing household resources across earned-income levels."""
+
+    base_input: HouseholdInput
+    person_index: int = Field(
+        default=0,
+        ge=0,
+        description="Index of the person whose employment income varies.",
+    )
+    income_min: float = Field(default=0, ge=0, description="Lowest annual earnings.")
+    income_max: float = Field(
+        default=80_000, ge=0, description="Highest annual earnings."
+    )
+    step: float = Field(default=1_000, gt=0, description="Annual earnings increment.")
+
+    @model_validator(mode="after")
+    def validate_grid(self) -> "EarningsGridInput":
+        """Keep grids bounded and aligned with the household shape."""
+        if self.person_index >= len(self.base_input.people):
+            raise ValueError("person_index must refer to an existing household member")
+        if self.income_max < self.income_min:
+            raise ValueError("income_max must be greater than or equal to income_min")
+        n_rows = int((self.income_max - self.income_min) / self.step) + 1
+        if n_rows > 501:
+            raise ValueError("earnings grid cannot exceed 501 rows")
+        return self
+
+
+class EarningsGridPoint(BaseModel):
+    """Household resources at one annual earnings level."""
+
+    employment_income: float
+    total_income: float
+    net_income: float
+    total_taxes: float
+    total_benefits: float
+    benefits: dict[str, float] = Field(default_factory=dict)
+    delta_net_income: float | None = None
+    effective_marginal_rate: float | None = None
+
+
+class EarningsGridCliff(BaseModel):
+    """A grid interval where higher earnings reduce net resources."""
+
+    from_income: float
+    to_income: float
+    net_income_change: float
+    tax_change: float
+    benefit_change: float
+    effective_marginal_rate: float
+    benefit_changes: dict[str, float] = Field(default_factory=dict)
+
+
+class EarningsGridComparisonResult(BaseModel):
+    """Results comparing household resources across earned-income levels."""
+
+    person_index: int
+    income_min: float
+    income_max: float
+    step: float
+    rows: list[EarningsGridPoint]
+    cliffs: list[EarningsGridCliff] = Field(default_factory=list)
+    largest_cliff: EarningsGridCliff | None = None
+    comparison_summary: str
+    citations: list[Citation] = Field(default_factory=list)
+    output_citations: dict[str, list[Citation]] = Field(default_factory=dict)
