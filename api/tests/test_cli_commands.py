@@ -291,16 +291,14 @@ has_annuity: false
     def test_core_run_writes_envelope_to_output_file(self, runner, tmp_path):
         """Test core run can write the full envelope for tool callers."""
         scenario_file = tmp_path / "scenario.yaml"
-        scenario_file.write_text(
-            """
+        scenario_file.write_text("""
 initial_capital: 1000000
 annual_spending: 60000
 current_age: 60
 max_age: 95
 state: CA
 n_simulations: 100
-"""
-        )
+""")
         output_file = tmp_path / "result.json"
         core_response = core_us_response(
             {
@@ -601,8 +599,7 @@ has_annuity: false
     def test_simulate_local_machine_readable_envelope(self, runner, temp_scenarios_dir):
         """Test simulate can emit pure JSON without requiring the API server."""
         scenario_file = temp_scenarios_dir / "test.yaml"
-        scenario_file.write_text(
-            """
+        scenario_file.write_text("""
 name: Test
 initial_capital: 1000000
 annual_spending: 60000
@@ -613,8 +610,7 @@ state: CA
 n_simulations: 100
 has_spouse: false
 has_annuity: false
-"""
-        )
+""")
         core_response = core_us_response(
             {
                 "success_rate": 0.95,

@@ -121,8 +121,7 @@ def test_compare_withdrawal_strategies_cli_outputs_json(
     monkeypatch.setattr("eggnest.comparisons.MonteCarloSimulator", FakeSimulator)
     FakeSimulator.seen = []
     scenario_file = tmp_path / "scenario.yaml"
-    scenario_file.write_text(
-        """
+    scenario_file.write_text("""
 holdings:
   - account_type: traditional_401k
     fund: vt
@@ -139,8 +138,7 @@ max_age: 90
 state: CA
 n_simulations: 100
 withdrawal_strategy: taxable_first
-"""
-    )
+""")
 
     result = CliRunner().invoke(
         cli_main,

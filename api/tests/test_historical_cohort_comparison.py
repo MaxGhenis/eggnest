@@ -205,8 +205,7 @@ def test_compare_historical_cohorts_cli_outputs_json(tmp_path, monkeypatch):
         "eggnest.comparisons.MonteCarloSimulator", FakeHistoricalSimulator
     )
     scenario_file = tmp_path / "scenario.yaml"
-    scenario_file.write_text(
-        """
+    scenario_file.write_text("""
 initial_capital: 500000
 annual_spending: 40000
 current_age: 65
@@ -214,8 +213,7 @@ max_age: 67
 state: CA
 n_simulations: 100
 stock_allocation: 0.6
-"""
-    )
+""")
 
     result = CliRunner().invoke(
         cli_main,

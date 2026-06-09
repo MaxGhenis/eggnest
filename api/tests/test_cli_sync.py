@@ -308,8 +308,7 @@ class TestEggNestSync:
         sync.list_remote()
 
         scenario_file = temp_scenarios_dir / "remote.yaml"
-        scenario_file.write_text(
-            """
+        scenario_file.write_text("""
 name: Remote Scenario
 initial_capital: 500000
 annual_spending: 40000
@@ -318,8 +317,7 @@ max_age: 90
 gender: male
 has_spouse: false
 has_annuity: false
-"""
-        )
+""")
         sync.push(scenario_file)
 
         assert SIMULATIONS_TABLE == "simulations"

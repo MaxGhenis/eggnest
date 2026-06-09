@@ -107,12 +107,10 @@ def test_programs_list_cli_outputs_json():
 
 def test_household_validate_cli_outputs_json(tmp_path):
     household_file = tmp_path / "household.yaml"
-    household_file.write_text(
-        """
+    household_file.write_text("""
 people:
   - age: 30
-"""
-    )
+""")
 
     result = CliRunner().invoke(
         cli_main,
@@ -127,8 +125,7 @@ people:
 
 def test_household_run_cli_outputs_legacy_json(tmp_path):
     household_file = tmp_path / "household.yaml"
-    household_file.write_text(
-        """
+    household_file.write_text("""
 state: TX
 year: 2025
 people:
@@ -137,8 +134,7 @@ people:
     is_tax_unit_head: true
   - age: 4
     is_tax_unit_dependent: true
-"""
-    )
+""")
 
     result = CliRunner().invoke(
         cli_main,
@@ -153,8 +149,7 @@ people:
 
 def test_compare_earnings_grid_cli_outputs_json(tmp_path):
     household_file = tmp_path / "household.yaml"
-    household_file.write_text(
-        """
+    household_file.write_text("""
 state: TX
 year: 2025
 people:
@@ -163,8 +158,7 @@ people:
     is_tax_unit_head: true
   - age: 4
     is_tax_unit_dependent: true
-"""
-    )
+""")
 
     result = CliRunner().invoke(
         cli_main,
