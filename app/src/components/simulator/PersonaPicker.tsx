@@ -1,6 +1,7 @@
 "use client";
 
 import { SimulationProgress } from "../SimulationProgress";
+import { IconBeach, IconUsers, IconBuildingBank, IconBriefcase, IconUser, type Icon } from "@tabler/icons-react";
 import { formatCurrency, type Persona } from "../../lib/simulatorUtils";
 import type { YearProgressSummary } from "../../lib/api";
 
@@ -50,7 +51,7 @@ export function PersonaPicker({
             style={{ animationDelay: `${i * 80}ms` }}
           >
             <div className="mb-3 flex items-start gap-3">
-              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-50)] text-xl" aria-hidden="true">{persona.emoji}</span>
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-50)] text-[var(--color-primary)]" aria-hidden="true"><PersonaIcon id={persona.id} /></span>
               <div>
                 <h3 className="font-semibold text-[var(--color-text)]">{persona.name}</h3>
                 <p className="text-sm text-[var(--color-text-muted)]">{persona.description}</p>
@@ -111,4 +112,16 @@ export function PersonaPicker({
       )}
     </div>
   );
+}
+
+const PERSONA_ICONS: Record<string, Icon> = {
+  "early-retiree": IconBeach,
+  "retiring-couple": IconUsers,
+  "conservative-saver": IconBuildingBank,
+  "high-earner": IconBriefcase,
+};
+
+function PersonaIcon({ id }: { id: string }) {
+  const Component = PERSONA_ICONS[id] ?? IconUser;
+  return <Component size={22} stroke={1.75} />;
 }

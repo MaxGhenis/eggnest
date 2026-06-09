@@ -80,9 +80,22 @@ describe("runUKSimulation", () => {
     );
   });
 
-  it("throws on non-2xx responses", async () => {
+  it("surfaces the FastAPI error detail on non-2xx responses", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: "max_age must be at least current_age" }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(runUKSimulation(input)).rejects.toThrow(
+      "max_age must be at least current_age",
+    );
+  });
+
+  it("throws on non-2xx responses without a JSON body", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("nope", { status: 500 }));
 
-    await expect(runUKSimulation(input)).rejects.toThrow("UK simulation failed: 500");
+    await expect(runUKSimulation(input)).rejects.toThrow();
   });
 });

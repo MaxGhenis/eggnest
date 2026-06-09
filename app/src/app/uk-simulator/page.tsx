@@ -152,7 +152,12 @@ export default function UKSimulatorPage() {
     return () => controller.abort();
   }, [debouncedInput]);
 
-  const isRunning = sim.forInput !== debouncedInput || input !== debouncedInput;
+  // Fetching = a request is in flight for the debounced input; the result
+  // identity check works because completion stores that exact reference.
+  // The status pill shows for fetching or pending debounce, but the heavy
+  // blur only applies while fetching so typing doesn't flicker per keystroke.
+  const isFetching = sim.forInput !== debouncedInput;
+  const isRunning = isFetching || input !== debouncedInput;
   const result = sim.result;
   const error = sim.error;
 
@@ -230,7 +235,7 @@ export default function UKSimulatorPage() {
             )}
             <div
               className={`space-y-6 transition-all duration-300 ${
-                isRunning && result ? "opacity-40 blur-[1px]" : ""
+                isFetching && result ? "opacity-40 blur-[1px]" : ""
               }`}
             >
               <HeroAnswer
@@ -958,7 +963,12 @@ function RangeField({
             type="number"
             autoFocus
             value={value}
-            onChange={(e) => onChange(Number(e.target.value))}
+            onChange={(e) => {
+              // A cleared field parses to NaN; keep the last valid value
+              // instead of sending NaN to the API.
+              const next = Number(e.target.value);
+              if (!Number.isNaN(next)) onChange(Math.max(min, Math.min(max, next)));
+            }}
             onBlur={() => setIsEditing(false)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === "Escape") setIsEditing(false);
@@ -1052,7 +1062,12 @@ function LogRangeField({
             type="number"
             autoFocus
             value={value}
-            onChange={(e) => onChange(Math.max(min, Math.min(max, Number(e.target.value))))}
+            onChange={(e) => {
+              // Math.min/max propagate NaN from a partially-typed value, so
+              // guard before clamping.
+              const next = Number(e.target.value);
+              if (!Number.isNaN(next)) onChange(Math.max(min, Math.min(max, next)));
+            }}
             onBlur={() => setIsEditing(false)}
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === "Escape") setIsEditing(false);

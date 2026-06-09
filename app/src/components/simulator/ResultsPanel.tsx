@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { IconArrowDown, IconArrowUp, IconPigMoney, IconClock, IconFileText, IconChartBar, IconShield, type Icon } from "@tabler/icons-react";
 import dynamic from "next/dynamic";
 import type { SimulationInput, SimulationResult } from "../../lib/api";
 import { colors, chartColors } from "../../lib/design-tokens";
@@ -43,7 +44,10 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
     if (result.success_rate >= 0.75) return "#f59e0b";
     return "#ef4444";
   }, [result.success_rate]);
-  const ages = useMemo(() => result.percentile_paths.p50.map((_, i) => params.current_age + i), [result.percentile_paths.p50, params.current_age]);
+  // Guard against a degenerate result with missing path data so the panel
+  // degrades to an empty chart instead of crashing the results view.
+  const medianPath = useMemo(() => result.percentile_paths?.p50 ?? [], [result.percentile_paths]);
+  const ages = useMemo(() => medianPath.map((_, i) => params.current_age + i), [medianPath, params.current_age]);
 
   return (
     <div className="space-y-6">
@@ -99,7 +103,9 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
       </div>
 
       {/* Portfolio chart */}
-      <PortfolioChart result={result} ages={ages} selectedYearIndex={selectedYearIndex} setSelectedYearIndex={setSelectedYearIndex} />
+      {medianPath.length > 0 && (
+        <PortfolioChart result={result} ages={ages} selectedYearIndex={selectedYearIndex} setSelectedYearIndex={setSelectedYearIndex} />
+      )}
 
       {/* Year detail */}
       {selectedYearIndex !== null && result.year_breakdown[selectedYearIndex] && (
@@ -332,6 +338,10 @@ function YearBreakdownTable({ result }: { result: SimulationResult }) {
   );
 }
 
+function ScenarioIcon({ icon: Component }: { icon: Icon }) {
+  return <Component size={20} stroke={1.75} />;
+}
+
 function WhatIfScenarios({ params, onWhatIf }: { params: SimulationInput; onWhatIf: (mod: Partial<SimulationInput>) => void }) {
   return (
     <div className={sectionCls}>
@@ -339,15 +349,15 @@ function WhatIfScenarios({ params, onWhatIf }: { params: SimulationInput; onWhat
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">See how changes affect your success rate</p>
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
-          { label: "Spend 10% less", value: `${formatCurrency(Math.round(params.annual_spending * 0.9))}/yr`, icon: "\u2193", mod: { annual_spending: Math.round(params.annual_spending * 0.9) } },
-          { label: "Spend 10% more", value: `${formatCurrency(Math.round(params.annual_spending * 1.1))}/yr`, icon: "\u2191", mod: { annual_spending: Math.round(params.annual_spending * 1.1) } },
-          { label: "10% more savings", value: formatCurrency(Math.round((params.initial_capital ?? 0) * 1.1)), icon: "\uD83D\uDCB0", mod: { initial_capital: Math.round((params.initial_capital ?? 0) * 1.1) } },
-          ...(params.social_security_start_age < 70 ? [{ label: "Delay SS to 70", value: "+24% benefit", icon: "\uD83D\uDD50", mod: { social_security_start_age: 70 } }] : []),
+          { label: "Spend 10% less", value: `${formatCurrency(Math.round(params.annual_spending * 0.9))}/yr`, icon: IconArrowDown, mod: { annual_spending: Math.round(params.annual_spending * 0.9) } },
+          { label: "Spend 10% more", value: `${formatCurrency(Math.round(params.annual_spending * 1.1))}/yr`, icon: IconArrowUp, mod: { annual_spending: Math.round(params.annual_spending * 1.1) } },
+          { label: "10% more savings", value: formatCurrency(Math.round((params.initial_capital ?? 0) * 1.1)), icon: IconPigMoney, mod: { initial_capital: Math.round((params.initial_capital ?? 0) * 1.1) } },
+          ...(params.social_security_start_age < 70 ? [{ label: "Delay SS to 70", value: "+24% benefit", icon: IconClock, mod: { social_security_start_age: 70 } }] : []),
         ].map(({ label, value, icon, mod }) => (
           <button key={label}
             className="flex flex-col items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-4 text-center transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-md)] hover:-translate-y-0.5"
             onClick={() => onWhatIf(mod)}>
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-primary-50)] text-base" aria-hidden="true">{icon}</span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-primary-50)] text-[var(--color-primary)]" aria-hidden="true"><ScenarioIcon icon={icon} /></span>
             <span className="text-sm font-medium text-[var(--color-text)]">{label}</span>
             <span className="text-xs font-semibold text-[var(--color-primary)]">{value}</span>
           </button>
@@ -363,13 +373,13 @@ function NextStepsCTA({ hasAnnuity }: { hasAnnuity: boolean }) {
       <h3 className="text-lg font-semibold mb-4">Take the next step</h3>
       <div className="space-y-3">
         {[
-          { href: "https://www.ssa.gov/prepare/plan-retirement", icon: "\uD83D\uDCC4", title: "Social Security rules", desc: "Read the official claiming-age and benefit-adjustment documentation." },
-          { href: "https://www.irs.gov/retirement-plans", icon: "\uD83D\uDCCA", title: "Retirement tax rules", desc: "Review IRS material on retirement plans and taxable distributions." },
-          ...(hasAnnuity ? [{ href: "https://www.consumerfinance.gov/consumer-tools/retirement/before-you-claim/", icon: "\uD83D\uDEE1\uFE0F", title: "Retirement income resources", desc: "See public consumer education material before comparing income products." }] : []),
+          { href: "https://www.ssa.gov/prepare/plan-retirement", icon: IconFileText, title: "Social Security rules", desc: "Read the official claiming-age and benefit-adjustment documentation." },
+          { href: "https://www.irs.gov/retirement-plans", icon: IconChartBar, title: "Retirement tax rules", desc: "Review IRS material on retirement plans and taxable distributions." },
+          ...(hasAnnuity ? [{ href: "https://www.consumerfinance.gov/consumer-tools/retirement/before-you-claim/", icon: IconShield, title: "Retirement income resources", desc: "See public consumer education material before comparing income products." }] : []),
         ].map(({ href, icon, title, desc }) => (
           <a key={href} href={href} target="_blank" rel="noopener noreferrer"
             className="group flex items-center gap-4 rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-white p-4 transition-all hover:border-[var(--color-primary-200)] hover:shadow-[var(--shadow-md)]">
-            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-50)] text-xl transition-colors group-hover:bg-[var(--color-primary-100)]" aria-hidden="true">{icon}</span>
+            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--color-primary-50)] text-[var(--color-primary)] transition-colors group-hover:bg-[var(--color-primary-100)]" aria-hidden="true"><ScenarioIcon icon={icon} /></span>
             <div className="flex-1">
               <div className="font-semibold text-[var(--color-text)]">{title}</div>
               <div className="text-sm text-[var(--color-text-muted)]">{desc}</div>

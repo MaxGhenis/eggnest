@@ -47,7 +47,6 @@ export interface Persona {
   id: string;
   name: string;
   description: string;
-  emoji: string;
   params: SimulationInput;
   spouse?: SpouseInput;
 }
@@ -69,7 +68,6 @@ export const EXAMPLE_PERSONAS: Persona[] = [
     id: "early-retiree",
     name: "Early retiree",
     description: "55-year-old leaving tech with $1.5M saved",
-    emoji: "\u{1F3D6}\u{FE0F}",
     params: {
       initial_capital: 1500000,
       annual_spending: 80000,
@@ -99,7 +97,6 @@ export const EXAMPLE_PERSONAS: Persona[] = [
     id: "retiring-couple",
     name: "Retiring couple",
     description: "Both 62, $800K saved, ready to retire",
-    emoji: "\u{1F46B}",
     params: {
       initial_capital: 800000,
       annual_spending: 70000,
@@ -139,7 +136,6 @@ export const EXAMPLE_PERSONAS: Persona[] = [
     id: "conservative-saver",
     name: "Conservative saver",
     description: "67-year-old with pension and modest savings",
-    emoji: "\u{1F3E6}",
     params: {
       initial_capital: 400000,
       annual_spending: 50000,
@@ -169,7 +165,6 @@ export const EXAMPLE_PERSONAS: Persona[] = [
     id: "high-earner",
     name: "High earner",
     description: "50-year-old still working, $2M saved",
-    emoji: "\u{1F4BC}",
     params: {
       initial_capital: 2000000,
       annual_spending: 120000,

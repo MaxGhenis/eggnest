@@ -1,10 +1,6 @@
 /** Thin client for the UK simulator endpoints. */
 
-import { normalizeApiUrl } from "./api";
-
-const API_URL = normalizeApiUrl(
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-);
+import { apiFetch, LONG_TIMEOUT_MS } from "./api";
 
 export type UKReturnSource =
   | "gaussian"
@@ -115,15 +111,13 @@ export async function runUKSimulation(
   input: UKSimulationInput,
   signal?: AbortSignal,
 ): Promise<UKSimulationResult> {
-  const response = await fetch(`${API_URL}/core/simulate`, {
+  // apiFetch adds a timeout and surfaces the FastAPI error detail (e.g. the
+  // 422 validation message) instead of a bare status code.
+  const coreResult = await apiFetch<UKCoreResult>("/core/simulate", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildUKRetirementScenario(input)),
+    body: buildUKRetirementScenario(input),
     signal,
+    timeoutMs: LONG_TIMEOUT_MS,
   });
-  if (!response.ok) {
-    throw new Error(`UK simulation failed: ${response.status}`);
-  }
-  const coreResult = (await response.json()) as UKCoreResult;
   return coreResult.outputs.uk_simulation_result;
 }

@@ -9,8 +9,8 @@ const API_URL = normalizeApiUrl(
 /** Default timeout for API requests (30 seconds) */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** Longer timeout for comparison endpoints that run multiple simulations */
-const LONG_TIMEOUT_MS = 120_000;
+/** Longer timeout for endpoints that run full simulations */
+export const LONG_TIMEOUT_MS = 120_000;
 
 // ============================================
 // Custom error classes for better error handling
@@ -220,8 +220,9 @@ interface ApiFetchOptions {
 /**
  * Generic fetch helper that standardizes base URL handling, error parsing,
  * AbortController support, and timeout handling for all API calls.
+ * Exported for sibling API clients (e.g. the UK simulator client).
  */
-async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const {
     method = "GET",
     body,
@@ -356,8 +357,10 @@ export interface SimulationInput {
   n_simulations: number;
   random_seed?: number | null;
   include_mortality: boolean;
+  // Spending and Social Security grow at this rate (default 2.5% server-side)
+  inflation_rate?: number;
 
-  // Market assumptions
+  // Market assumptions (normal model only; historical models use history)
   expected_return: number;
   return_volatility: number;
   dividend_yield: number;
@@ -367,7 +370,6 @@ export interface SimulationInput {
 
   // Legacy fields for backward compatibility
   n_years?: number;
-  inflation_rate?: number;
 }
 
 export interface YearBreakdown {
@@ -390,6 +392,14 @@ export interface YearBreakdown {
   net_income: number;
 }
 
+export interface PercentileBands {
+  p5: number[];
+  p25: number[];
+  p50: number[];
+  p75: number[];
+  p95: number[];
+}
+
 export interface SimulationResult {
   success_rate: number;
   median_final_value: number;
@@ -399,7 +409,7 @@ export interface SimulationResult {
   median_depletion_year: number | null;
   total_withdrawn_median: number;
   total_taxes_median: number;
-  percentile_paths: Record<string, number[]>;
+  percentile_paths: PercentileBands;
   year_breakdown: YearBreakdown[];
   initial_withdrawal_rate: number;
   prob_10_year_failure: number;
@@ -503,42 +513,49 @@ export async function runSimulation(
 
 export async function* runSimulationWithProgress(
   params: SimulationInput,
-  token?: string
+  token?: string,
+  signal?: AbortSignal
 ): AsyncGenerator<SimulationEvent, void, unknown> {
+  // Only a 404 on job *creation* means the backend predates the job API and
+  // we should fall back to SSE streaming. A 404 mid-poll is a real failure
+  // (e.g. the job was evicted) and must not silently relaunch the whole
+  // simulation.
+  let firstStatus: SimulationJobStatus;
   try {
-    for await (const event of runSimulationJobWithProgress(params, token)) {
-      yield event;
-    }
-    return;
+    firstStatus = await createSimulationJob(params, token, signal);
   } catch (error) {
-    if (!(error instanceof ApiError) || error.statusCode !== 404) {
-      throw error;
+    if (error instanceof ApiError && error.statusCode === 404) {
+      yield* runSimulationStreamWithProgress(params, token, signal);
+      return;
     }
+    throw error;
   }
 
-  for await (const event of runSimulationStreamWithProgress(params, token)) {
-    yield event;
-  }
+  yield* pollSimulationJob(firstStatus, token, signal);
 }
 
 export async function createSimulationJob(
   params: SimulationInput,
-  token?: string
+  token?: string,
+  signal?: AbortSignal
 ): Promise<SimulationJobStatus> {
   return apiFetch<SimulationJobStatus>("/simulate/jobs", {
     method: "POST",
     body: params,
     token,
+    signal,
     timeoutMs: DEFAULT_TIMEOUT_MS,
   });
 }
 
 export async function getSimulationJob(
   jobId: string,
-  token?: string
+  token?: string,
+  signal?: AbortSignal
 ): Promise<SimulationJobStatus> {
   return apiFetch<SimulationJobStatus>(`/simulate/jobs/${jobId}`, {
     token,
+    signal,
     timeoutMs: DEFAULT_TIMEOUT_MS,
   });
 }
@@ -557,19 +574,38 @@ function jobStatusToProgressEvent(status: SimulationJobStatus): ProgressEvent {
   return event;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new TimeoutError("The request was cancelled."));
+      return;
+    }
+    const id = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(id);
+      reject(new TimeoutError("The request was cancelled."));
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
-async function* runSimulationJobWithProgress(
-  params: SimulationInput,
-  token?: string
+async function* pollSimulationJob(
+  initialStatus: SimulationJobStatus,
+  token?: string,
+  signal?: AbortSignal
 ): AsyncGenerator<SimulationEvent, void, unknown> {
   const startedAt = Date.now();
-  const pollIntervalMs = 1_000;
   const maxWaitMs = 10 * 60_000;
+  // Mild backoff keeps early progress snappy without polling a busy
+  // backend every second for the whole run.
+  const minPollMs = 1_000;
+  const maxPollMs = 3_000;
+  let pollIntervalMs = minPollMs;
 
-  let status = await createSimulationJob(params, token);
+  let status = initialStatus;
   yield jobStatusToProgressEvent(status);
 
   while (status.status === "queued" || status.status === "running") {
@@ -577,8 +613,9 @@ async function* runSimulationJobWithProgress(
       throw new TimeoutError("The simulation took too long. Please try again.");
     }
 
-    await sleep(pollIntervalMs);
-    status = await getSimulationJob(status.job_id, token);
+    await sleep(pollIntervalMs, signal);
+    pollIntervalMs = Math.min(maxPollMs, pollIntervalMs * 1.25);
+    status = await getSimulationJob(status.job_id, token, signal);
     yield jobStatusToProgressEvent(status);
   }
 
@@ -592,7 +629,8 @@ async function* runSimulationJobWithProgress(
 
 async function* runSimulationStreamWithProgress(
   params: SimulationInput,
-  token?: string
+  token?: string,
+  signal?: AbortSignal
 ): AsyncGenerator<SimulationEvent, void, unknown> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -607,6 +645,7 @@ async function* runSimulationStreamWithProgress(
       method: "POST",
       headers,
       body: JSON.stringify(params),
+      signal,
     });
   } catch (error) {
     throw createFetchError(error);
@@ -822,6 +861,11 @@ export interface HouseholdInput {
   people: PersonInput[];
 }
 
+export interface Citation {
+  id: string;
+  url: string;
+}
+
 export interface HouseholdResult {
   federal_income_tax: number;
   state_income_tax: number;
@@ -834,6 +878,8 @@ export interface HouseholdResult {
   tax_breakdown: Record<string, number>;
   marginal_tax_rate: number;
   effective_tax_rate: number;
+  citations: Citation[];
+  output_citations: Record<string, Citation[]>;
 }
 
 export interface LifeEventComparison {

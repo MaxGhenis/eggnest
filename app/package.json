@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.86.0",
+    "@tabler/icons-react": "^3.44.0",
     "@types/react-plotly.js": "^2.6.3",
     "next": "^16.2.1",
     "plotly.js": "^3.3.0",

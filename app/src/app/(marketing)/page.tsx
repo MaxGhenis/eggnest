@@ -5,6 +5,13 @@ export const metadata: Metadata = {
   title: "EggNest - Know if your money will last",
   description:
     "Monte Carlo simulation meets real tax law. See thousands of possible futures for your finances — the full range of possibilities.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "EggNest - Know if your money will last",
+    description:
+      "Monte Carlo simulation meets real tax law. See thousands of possible futures for your finances.",
+    url: "/",
+  },
 };
 
 export default function HomePage() {
