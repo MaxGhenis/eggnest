@@ -40,6 +40,30 @@ def _add_positive(values: dict[str, float], key: str, value: float) -> None:
         values[key] = value
 
 
+def _primary_earner_id(household) -> str:
+    """Situation id of the adult whose earnings should carry the marginal $1k.
+
+    Picks the non-dependent person with the highest earned income, falling
+    back to the tax-unit head, so a child listed first does not become the
+    marginal earner.
+    """
+    candidates = [
+        (i, person)
+        for i, person in enumerate(household.people)
+        if not person.is_tax_unit_dependent
+    ]
+    if not candidates:
+        return "person_0"
+    best_index = max(
+        candidates,
+        key=lambda item: (
+            item[1].employment_income + item[1].self_employment_income,
+            item[1].is_tax_unit_head,
+        ),
+    )[0]
+    return f"person_{best_index}"
+
+
 class HouseholdCalculator:
     """Calculate taxes and benefits for a household using PolicyEngine-US."""
 
@@ -216,10 +240,10 @@ class HouseholdCalculator:
         _add_positive(benefits, "eitc", eitc)
         remaining_refundable_credits -= eitc
 
+        # CDCC is non-refundable: it already reduces
+        # income_tax_before_refundable_credits, so it must not be counted
+        # again as a cash benefit. It is surfaced in tax_breakdown only.
         cdcc = _calculate_sum_or_zero(sim, "cdcc", year)
-        if cdcc > 0 and remaining_refundable_credits >= cdcc - 0.01:
-            benefits["child_care_credit"] = cdcc
-            remaining_refundable_credits -= cdcc
 
         # SNAP
         snap = _calculate_sum_or_zero(sim, "snap", year)
@@ -251,17 +275,19 @@ class HouseholdCalculator:
             "fica": employee_social_security_tax + employee_medicare_tax,
         }
 
-        # Calculate marginal tax rate (add $1000 and see tax change)
+        # Calculate the marginal rate on net resources: add $1,000 of
+        # employment income to the primary earner and measure the change in
+        # taxes net of benefits, so refundable-credit and SNAP phase-outs are
+        # captured (consistent with the earnings-grid effective marginal rate).
         if total_income > 0:
             marginal_situation = self._build_situation(household)
-            # Add $1000 to first person's employment income
-            first_person = list(marginal_situation["people"].keys())[0]
+            earner_id = _primary_earner_id(household)
             current_income = (
-                marginal_situation["people"][first_person]
+                marginal_situation["people"][earner_id]
                 .get("employment_income", {})
                 .get(year, 0)
             )
-            marginal_situation["people"][first_person]["employment_income"] = {
+            marginal_situation["people"][earner_id]["employment_income"] = {
                 year: current_income + 1000
             }
 
@@ -276,10 +302,16 @@ class HouseholdCalculator:
             marginal_payroll += _calculate_sum(
                 marginal_sim, "employee_medicare_tax", year
             )
+            marginal_benefits = _calculate_sum_or_zero(
+                marginal_sim, "income_tax_refundable_credits", year
+            ) + _calculate_sum_or_zero(marginal_sim, "snap", year)
 
             marginal_total = marginal_federal + marginal_state + marginal_payroll
             base_total = federal_income_tax + state_income_tax + payroll_tax
-            marginal_tax_rate = (marginal_total - base_total) / 1000
+            base_benefits = refundable_credit_total + snap
+            marginal_tax_rate = (
+                (marginal_total - base_total) - (marginal_benefits - base_benefits)
+            ) / 1000
         else:
             marginal_tax_rate = 0
 

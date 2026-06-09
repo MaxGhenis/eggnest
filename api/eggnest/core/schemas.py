@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from eggnest.citations import Citation
+
+
+def package_version(package: str) -> str:
+    """Installed version of a tax-engine dependency, or "unknown"."""
+    try:
+        return version(package)
+    except PackageNotFoundError:
+        return "unknown"
+
 
 SCENARIO_SCHEMA_VERSION = "eggnest.scenario.v1"
 RESULT_SCHEMA_VERSION = "eggnest.result.v1"

@@ -886,10 +886,14 @@ def generate_blended_returns(
     bond_volatility: float = 0.08,
     stock_index: Literal["sp500", "vt"] = "vt",
     bond_index: Literal["treasury", "bnd"] = "bnd",
+    dividend_yield: float | None = None,
     rng: np.random.Generator | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Generate blended stock/bond returns with separate price and dividend components.
+
+    dividend_yield only applies to the "normal" model, where it replaces the
+    historical average yields; expected returns stay total returns either way.
 
     Returns:
         (price_growth, dividend_yields) - blended based on allocation
@@ -969,8 +973,12 @@ def generate_blended_returns(
         return blended_price, blended_div
 
     elif method == "normal":
-        avg_stock_div = float(np.mean(stock_div))
-        avg_bond_div = float(np.mean(bond_div))
+        if dividend_yield is not None:
+            avg_stock_div = dividend_yield
+            avg_bond_div = dividend_yield
+        else:
+            avg_stock_div = float(np.mean(stock_div))
+            avg_bond_div = float(np.mean(bond_div))
 
         stock_price_ret = rng.normal(
             expected_stock_return - avg_stock_div,

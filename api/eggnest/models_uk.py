@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 UKAccountType = Literal["isa", "sipp", "gia"]
 UKReturnSource = Literal[
@@ -155,6 +155,17 @@ class UKSimulationInput(BaseModel):
     n_simulations: int = Field(ge=100, le=50000, default=5000)
     random_seed: int = Field(default=42)
     include_mortality: bool = True
+
+    @model_validator(mode="after")
+    def validate_cross_fields(self) -> UKSimulationInput:
+        """Validate fields whose correctness depends on other inputs.
+
+        The UK simulator runs max_age - current_age + 1 years inclusively, so
+        max_age == current_age is a valid single-year simulation.
+        """
+        if self.max_age < self.current_age:
+            raise ValueError("max_age must be at least current_age")
+        return self
 
 
 class UKYearBreakdown(BaseModel):

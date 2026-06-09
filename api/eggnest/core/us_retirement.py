@@ -6,7 +6,6 @@ the current numerical implementation to ``simulation.MonteCarloSimulator``.
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from eggnest import __version__
@@ -19,6 +18,7 @@ from .schemas import (
     EngineScenario,
     ModelSource,
     Reproducibility,
+    package_version,
 )
 
 ENGINE_ID = "us_retirement"
@@ -73,8 +73,8 @@ def build_us_retirement_result(
             random_seed=inputs.random_seed,
             parameter_year=START_YEAR,
             tax_engine_versions={
-                "policyengine-us": _package_version("policyengine-us"),
-                "policyengine-core": _package_version("policyengine-core"),
+                "policyengine-us": package_version("policyengine-us"),
+                "policyengine-core": package_version("policyengine-core"),
             },
         ),
     )
@@ -109,25 +109,47 @@ def _assumptions(inputs: SimulationInput) -> dict[str, Any]:
         "stock_allocation": inputs.stock_allocation,
         "stock_index": inputs.stock_index,
         "bond_index": inputs.bond_index,
-        "dividend_yield": inputs.dividend_yield,
         "include_mortality": inputs.include_mortality,
+        "inflation_rate": inputs.inflation_rate,
+        "inflation_policy": (
+            "The engine is nominal: spending and Social Security grow at "
+            "inflation_rate; pension and annuity payments stay fixed in "
+            "nominal dollars; tax brackets follow PolicyEngine-US by "
+            "calendar year."
+        ),
         "holdings_based": bool(inputs.holdings),
         "withdrawal_strategy": inputs.withdrawal_strategy,
+        "mortality_policy": (
+            "Income stops at each member's death; a surviving spouse "
+            "receives the larger of the two Social Security benefits; "
+            "estates freeze at their value at death and depletion only "
+            "counts while the household is alive."
+        ),
         "tax_year_policy": (
             "Each simulated year is passed to PolicyEngine-US as a calendar year; "
             "availability and extrapolation are governed by the installed "
             "PolicyEngine-US package."
         ),
         "account_rules": {
-            "traditional_accounts": "Withdrawals and RMDs are modeled as ordinary income.",
-            "roth_accounts": "Withdrawals and dividends are modeled as tax-free in the portfolio simulator.",
-            "taxable_accounts": "Realized taxable-account withdrawals are modeled as capital gains.",
+            "traditional_accounts": (
+                "Withdrawals and RMDs are modeled as ordinary income; "
+                "dividends reinvest untaxed inside the account."
+            ),
+            "roth_accounts": (
+                "Withdrawals are modeled as tax-free; dividends reinvest "
+                "untaxed inside the account."
+            ),
+            "taxable_accounts": (
+                "Realized taxable-account withdrawals are modeled as capital "
+                "gains; dividends are distributed as taxable cash income."
+            ),
         },
     }
     if inputs.return_model == "normal":
         assumptions["normal_return_model"] = {
             "expected_return": inputs.expected_return,
             "return_volatility": inputs.return_volatility,
+            "dividend_yield": inputs.dividend_yield,
         }
     return assumptions
 
@@ -137,13 +159,13 @@ def _sources() -> list[ModelSource]:
         ModelSource(
             name="PolicyEngine US",
             url="https://github.com/PolicyEngine/policyengine-us",
-            version=_package_version("policyengine-us"),
+            version=package_version("policyengine-us"),
             notes="Computes federal and state income tax liabilities.",
         ),
         ModelSource(
             name="PolicyEngine Core",
             url="https://github.com/PolicyEngine/policyengine-core",
-            version=_package_version("policyengine-core"),
+            version=package_version("policyengine-core"),
             notes="Microsimulation framework used by PolicyEngine US.",
         ),
         ModelSource(
@@ -171,15 +193,11 @@ def _caveats(inputs: SimulationInput) -> list[str]:
         caveats.append(
             "success_rate is mortality-adjusted: paths that avoid depletion before death or horizon count as successful."
         )
+        caveats.append(
+            "Filing status does not change after a spouse's death, and pensions are modeled without survivor continuation options."
+        )
     if not inputs.holdings:
         caveats.append(
             "Legacy single-portfolio mode treats withdrawals as taxable capital gains; holdings mode is required for account-specific traditional, Roth, and taxable treatment."
         )
     return caveats
-
-
-def _package_version(package: str) -> str:
-    try:
-        return version(package)
-    except PackageNotFoundError:
-        return "unknown"

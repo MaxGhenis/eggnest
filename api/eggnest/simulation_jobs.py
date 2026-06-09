@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Protocol
 from uuid import uuid4
+
+from pydantic import ValidationError
 
 from eggnest.core.schemas import (
     EngineJobState,
@@ -24,9 +27,23 @@ from eggnest.models import (
 )
 from eggnest.simulation import MonteCarloSimulator
 
+logger = logging.getLogger(__name__)
+
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _safe_error(exc: Exception) -> str:
+    """Client-safe error message; the full traceback goes to server logs.
+
+    Input-validation errors keep their detail because callers need it to fix
+    their request; everything else is reduced to the exception class name.
+    """
+    logger.exception("Background job failed")
+    if isinstance(exc, (ValueError, ValidationError)):
+        return str(exc)[:500]
+    return f"Internal error ({type(exc).__name__}); see server logs"
 
 
 class JobSnapshotStore(Protocol):
@@ -143,10 +160,14 @@ class SimulationJobManager:
                     job_id,
                     status="failed",
                     message="Failed to start worker",
-                    error=str(exc),
+                    error=_safe_error(exc),
                     updated_at=_now_iso(),
                     completed_at=_now_iso(),
                 )
+            # The external worker reports through the snapshot store; the
+            # local record would stay "queued" forever, so drop it here.
+            with self._lock:
+                self._jobs.pop(job_id, None)
             return record.snapshot()
 
         with self._lock:
@@ -211,7 +232,7 @@ class SimulationJobManager:
                 job_id,
                 status="failed",
                 message="Failed",
-                error=str(exc),
+                error=_safe_error(exc),
                 updated_at=now,
                 completed_at=now,
             )
@@ -247,10 +268,15 @@ class SimulationJobManager:
         with self._lock:
             removable = []
             for job_id, record in self._jobs.items():
-                if record.status not in {"succeeded", "failed"}:
-                    continue
-                completed_at = record.completed_at or record.updated_at
-                completed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+                # Finished records expire after their completion; records that
+                # stop receiving updates (e.g. a lost worker) expire on their
+                # last update so the local store cannot grow without bound.
+                reference = (
+                    record.completed_at or record.updated_at
+                    if record.status in {"succeeded", "failed"}
+                    else record.updated_at
+                )
+                completed = datetime.fromisoformat(reference.replace("Z", "+00:00"))
                 if (now - completed).total_seconds() > self._ttl_seconds:
                     removable.append(job_id)
 
@@ -418,10 +444,14 @@ class CoreJobManager:
                     job_id,
                     status="failed",
                     message="Failed to start worker",
-                    error=str(exc),
+                    error=_safe_error(exc),
                     updated_at=_now_iso(),
                     completed_at=_now_iso(),
                 )
+            # The external worker reports through the snapshot store; the
+            # local record would stay "queued" forever, so drop it here.
+            with self._lock:
+                self._jobs.pop(job_id, None)
             return record.snapshot()
 
         with self._lock:
@@ -484,7 +514,7 @@ class CoreJobManager:
                 job_id,
                 status="failed",
                 message="Failed",
-                error=str(exc),
+                error=_safe_error(exc),
                 updated_at=now,
                 completed_at=now,
             )
@@ -542,10 +572,15 @@ class CoreJobManager:
         with self._lock:
             removable = []
             for job_id, record in self._jobs.items():
-                if record.status not in {"succeeded", "failed"}:
-                    continue
-                completed_at = record.completed_at or record.updated_at
-                completed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+                # Finished records expire after their completion; records that
+                # stop receiving updates (e.g. a lost worker) expire on their
+                # last update so the local store cannot grow without bound.
+                reference = (
+                    record.completed_at or record.updated_at
+                    if record.status in {"succeeded", "failed"}
+                    else record.updated_at
+                )
+                completed = datetime.fromisoformat(reference.replace("Z", "+00:00"))
                 if (now - completed).total_seconds() > self._ttl_seconds:
                     removable.append(job_id)
 
@@ -678,7 +713,7 @@ def run_simulation_job_to_store(
         update(
             status="failed",
             message="Failed",
-            error=str(exc),
+            error=_safe_error(exc),
             completed_at=completed_at,
         )
 
@@ -770,6 +805,6 @@ def run_core_job_to_store(
         update(
             status="failed",
             message="Failed",
-            error=str(exc),
+            error=_safe_error(exc),
             completed_at=completed_at,
         )

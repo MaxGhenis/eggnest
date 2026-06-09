@@ -95,3 +95,16 @@ def test_state_comparison_normalizes_and_validates_states():
             base_input=SimulationInput(**valid_input()),
             compare_states=["TX", "XX"],
         )
+
+
+def test_uk_input_rejects_max_age_below_current_age():
+    from eggnest.models_uk import UKSimulationInput
+
+    with pytest.raises(ValidationError, match="max_age"):
+        UKSimulationInput(current_age=80, max_age=70, annual_spending=20_000)
+
+    # Inclusive single-year horizon stays valid.
+    assert (
+        UKSimulationInput(current_age=70, max_age=70, annual_spending=20_000).max_age
+        == 70
+    )

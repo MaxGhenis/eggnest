@@ -6,7 +6,6 @@ resources through the same core envelope used by simulation engines.
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from eggnest import __version__
@@ -20,6 +19,7 @@ from .schemas import (
     EngineScenario,
     ModelSource,
     Reproducibility,
+    package_version,
 )
 
 ENGINE_ID = "us_household_resources"
@@ -76,8 +76,8 @@ def build_us_household_resources_result(
             model_version=__version__,
             parameter_year=inputs.year,
             tax_engine_versions={
-                "policyengine-us": _package_version("policyengine-us"),
-                "policyengine-core": _package_version("policyengine-core"),
+                "policyengine-us": package_version("policyengine-us"),
+                "policyengine-core": package_version("policyengine-core"),
             },
         ),
     )
@@ -138,13 +138,13 @@ def _sources() -> list[ModelSource]:
         ModelSource(
             name="PolicyEngine US",
             url="https://github.com/PolicyEngine/policyengine-us",
-            version=_package_version("policyengine-us"),
+            version=package_version("policyengine-us"),
             notes="Computes federal taxes, state taxes, tax credits, and selected benefits.",
         ),
         ModelSource(
             name="PolicyEngine Core",
             url="https://github.com/PolicyEngine/policyengine-core",
-            version=_package_version("policyengine-core"),
+            version=package_version("policyengine-core"),
             notes="Microsimulation framework used by PolicyEngine US.",
         ),
     ]
@@ -156,10 +156,3 @@ def _caveats() -> list[str]:
         "This engine reports annual modeled resources and selected benefits; it is not a full benefits eligibility screener.",
         "Program details, take-up, documentation requirements, and local administration are not fully modeled.",
     ]
-
-
-def _package_version(package: str) -> str:
-    try:
-        return version(package)
-    except PackageNotFoundError:
-        return "unknown"

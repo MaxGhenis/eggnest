@@ -158,6 +158,17 @@ class SimulationInput(BaseModel):
     include_mortality: bool = Field(
         default=True, description="Account for probability of death each year"
     )
+    inflation_rate: float = Field(
+        default=0.025,
+        ge=0.0,
+        le=0.10,
+        description=(
+            "Assumed annual inflation rate. Spending and Social Security grow "
+            "at this rate; pension and annuity payments stay fixed in nominal "
+            "dollars. The simulation runs in nominal terms to match nominal "
+            "historical returns and PolicyEngine tax brackets."
+        ),
+    )
     return_model: Literal["bootstrap", "block_bootstrap", "historical", "normal"] = (
         Field(
             default="bootstrap",
@@ -165,15 +176,25 @@ class SimulationInput(BaseModel):
         )
     )
 
-    # Market assumptions (real returns, after inflation)
-    # Note: expected_return and return_volatility are only used when return_model="normal"
+    # Market assumptions (nominal returns; the engine and historical data are nominal)
+    # Note: expected_return, return_volatility, and dividend_yield are only used
+    # when return_model="normal"; historical models use historical series.
     expected_return: float = Field(
-        default=0.07, description="Expected real annual return (only for normal model)"
+        default=0.07,
+        description="Expected nominal annual total return (only for normal model)",
     )
     return_volatility: float = Field(
         default=0.16, description="Annual return volatility (only for normal model)"
     )
-    dividend_yield: float = Field(default=0.02, description="Annual dividend yield")
+    dividend_yield: float = Field(
+        default=0.02,
+        ge=0.0,
+        le=0.10,
+        description=(
+            "Annual dividend yield (only for normal model; historical models "
+            "use historical dividend yields)"
+        ),
+    )
 
     # Asset allocation
     stock_allocation: float = Field(

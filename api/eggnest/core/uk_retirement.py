@@ -6,7 +6,6 @@ while delegating the current numerical implementation to ``simulation_uk``.
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 from eggnest import __version__
@@ -20,6 +19,7 @@ from .schemas import (
     EngineScenario,
     ModelSource,
     Reproducibility,
+    package_version,
 )
 
 ENGINE_ID = "uk_retirement"
@@ -76,7 +76,7 @@ def build_uk_retirement_result(
             random_seed=inputs.random_seed,
             parameter_year=LATEST_PARAMETER_YEAR,
             tax_engine_versions={
-                "policyengine-uk-compiled": _package_version("policyengine-uk-compiled")
+                "policyengine-uk-compiled": package_version("policyengine-uk-compiled")
             },
         ),
     )
@@ -126,7 +126,7 @@ def _sources() -> list[ModelSource]:
         ModelSource(
             name="PolicyEngine UK compiled",
             url="https://github.com/PolicyEngine/policyengine-uk-compiled",
-            version=_package_version("policyengine-uk-compiled"),
+            version=package_version("policyengine-uk-compiled"),
             notes="Computes UK income tax, National Insurance, and dividend tax.",
         ),
         ModelSource(
@@ -162,10 +162,3 @@ def _caveats(inputs: UKSimulationInput) -> list[str]:
             "Historical return paths use available UK historical market data and do not forecast structural regime changes."
         )
     return caveats
-
-
-def _package_version(package: str) -> str:
-    try:
-        return version(package)
-    except PackageNotFoundError:
-        return "unknown"

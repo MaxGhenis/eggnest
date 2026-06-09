@@ -2,7 +2,7 @@
 
 import json
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
@@ -124,15 +124,25 @@ def configure_job_external_runners(
     core_jobs.set_external_runner(core_runner)
 
 
-# CORS
+# CORS. The regex admits localhost (dev) and this project's Vercel preview
+# deployments only — not arbitrary *.vercel.app origins, which anyone can
+# create.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_origin_regex=r"^(http://localhost:\d+|https://[\w-]+\.vercel\.app)$",
+    allow_origin_regex=r"^(http://localhost:\d+|https://eggnest[\w-]*\.vercel\.app)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _cap_comparison_simulations(params):
+    """Bound per-run paths for comparison endpoints that fan out N runs."""
+    cap = settings.comparison_max_simulations
+    if params.n_simulations <= cap:
+        return params
+    return params.model_copy(update={"n_simulations": cap})
 
 
 async def get_current_user(authorization: str | None = Header(None)) -> dict | None:
@@ -250,7 +260,11 @@ def get_simulation_job(job_id: str):
 
 
 @app.get("/mortality/{gender}", response_model=MortalityRates)
-def get_mortality(gender: str, start_age: int = 65, end_age: int = 100):
+def get_mortality(
+    gender: str,
+    start_age: int = Query(default=65, ge=0, le=119),
+    end_age: int = Query(default=100, ge=0, le=119),
+):
     """
     Get mortality rates and survival curve for a given gender.
 
@@ -258,6 +272,10 @@ def get_mortality(gender: str, start_age: int = 65, end_age: int = 100):
     """
     if gender not in ["male", "female"]:
         raise HTTPException(status_code=400, detail="Gender must be 'male' or 'female'")
+    if end_age < start_age:
+        raise HTTPException(
+            status_code=400, detail="end_age must be at least start_age"
+        )
 
     mortality_rates = get_mortality_rates(gender)
     ages = list(range(start_age, end_age + 1))
@@ -315,7 +333,8 @@ def compare_states_endpoint(comparison: StateComparisonInput):
     Runs the same simulation for each state and compares tax impact.
     Useful for comparing state-level tax differences under shared assumptions.
     """
-    base_state = comparison.base_input.state
+    base_input = _cap_comparison_simulations(comparison.base_input)
+    base_state = base_input.state
     all_states = [base_state] + [
         s for s in comparison.compare_states if s != base_state
     ]
@@ -325,7 +344,7 @@ def compare_states_endpoint(comparison: StateComparisonInput):
 
     for state in all_states:
         # Create a copy of input with the new state
-        state_input = comparison.base_input.model_copy(update={"state": state})
+        state_input = base_input.model_copy(update={"state": state})
         simulator = MonteCarloSimulator(state_input)
         sim_result = simulator.run()
 
@@ -382,7 +401,7 @@ def compare_ss_timing_endpoint(timing_input: SSTimingInput):
         adjustment_factor = monthly_benefit / pia_monthly
 
         # Create simulation input with this SS claiming age and benefit
-        sim_input = timing_input.base_input.model_copy(
+        sim_input = _cap_comparison_simulations(timing_input.base_input).model_copy(
             update={
                 "social_security_monthly": monthly_benefit,
                 "social_security_start_age": claiming_age,
@@ -465,9 +484,9 @@ def compare_allocations_endpoint(allocation_input: AllocationInput):
         bond_alloc = 1.0 - stock_alloc
 
         # Create a copy of input with this allocation
-        alloc_input = allocation_input.base_input.model_copy(
-            update={"stock_allocation": stock_alloc}
-        )
+        alloc_input = _cap_comparison_simulations(
+            allocation_input.base_input
+        ).model_copy(update={"stock_allocation": stock_alloc})
         simulator = MonteCarloSimulator(alloc_input)
         sim_result = simulator.run()
 
