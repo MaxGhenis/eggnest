@@ -72,6 +72,13 @@ eggnest/
 - Year-by-year processing with mortality masks and income calculations
 - Supports SSE streaming via `run_with_progress()` generator
 - Tax-aware withdrawals using PolicyEngine-US microsimulation
+- The engine is nominal: spending and Social Security grow at `inflation_rate`
+  (default 2.5%); pensions and annuities stay fixed in nominal dollars
+- Mortality semantics: income stops at each member's death, the surviving
+  spouse receives the larger of the two Social Security benefits, estates
+  freeze at death, and success means never depleting while alive
+- Dividends: taxable-account dividends are distributed as taxable cash;
+  traditional/Roth dividends reinvest untaxed inside their accounts
 
 ### Tax Integration (`api/eggnest/tax.py`)
 - Uses `policyengine_us.Microsimulation` with custom `MonteCarloDataset`
