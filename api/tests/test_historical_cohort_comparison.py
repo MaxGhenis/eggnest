@@ -129,6 +129,7 @@ def test_simulator_uses_explicit_return_paths(monkeypatch):
         state="CA",
         n_simulations=100,
         include_mortality=False,
+        inflation_rate=0.0,  # pin flat spending for the exact-arithmetic check
     )
     price_paths = np.full((100, 2), 0.10)
     dividend_paths = np.zeros((100, 2))
