@@ -150,7 +150,7 @@ Use `--output FILE` when a tool prefers file artifacts. `eggnest core run` accep
 cd api
 uv run ruff check .
 uv run black --check .
-uv run pytest
+uv run pytest -n auto  # parallel; drop -n auto for serial runs
 
 cd ../app
 bun run lint
