@@ -47,10 +47,14 @@ jobs:
         run: nproc && free -h
 
       # Two workers with per-file distribution: each PolicyEngine engine
-      # loads in as few workers as possible, keeping peak memory inside the
-      # runner's budget (-n auto OOM-killed the runner mid-suite).
+      # loads in as few workers as possible. The background probe prints
+      # memory every 20s so a runner-killed step leaves a diagnosis behind.
       - name: Run tests
-        run: uv run pytest tests/ -n 2 --dist loadfile --tb=short
+        run: |
+          (while true; do free -m | awk '/Mem:/{printf "[mem] used=%dMiB avail=%dMiB\n",$3,$7}'; sleep 20; done) &
+          MEMMON=$!
+          uv run pytest tests/ -n 2 --dist loadfile --tb=short
+          kill $MEMMON
 
   test-app:
     runs-on: ubuntu-latest
