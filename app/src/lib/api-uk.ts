@@ -61,6 +61,22 @@ export interface UKYearBreakdown {
   gia_withdrawal: number;
 }
 
+export interface UKCitationRef {
+  id: string;
+  url: string;
+}
+
+/** Modeled guarantee credit screening along the median path, computed from
+ *  statute encodings (SPC Act 2002 s.2; SI 2002/1792 reg 6) via the Axiom
+ *  rules engine. Null when the engine is not available server-side. */
+export interface UKPensionCreditScreen {
+  weekly_minimum_guarantee: number;
+  ages: number[];
+  annual_amounts: number[];
+  years_indicated: number;
+  citations: UKCitationRef[];
+}
+
 export interface UKSimulationResult {
   metadata: Record<string, unknown>;
   success_rate: number;
@@ -78,6 +94,7 @@ export interface UKSimulationResult {
   year_breakdown: UKYearBreakdown[];
   initial_withdrawal_rate: number;
   prob_10_year_failure: number;
+  pension_credit?: UKPensionCreditScreen | null;
 }
 
 interface UKCoreScenario {

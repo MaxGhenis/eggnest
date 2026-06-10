@@ -89,8 +89,47 @@ def calculate_uk_tax(inputs: UKYearInputs) -> UKYearResults:
     )
     result = sim.run_microdata()
 
-    hh = result.households.sort_values("household_id").reset_index(drop=True)
-    return UKYearResults(
-        net_income=hh["baseline_net_income"].to_numpy(dtype=float),
-        total_tax=hh["baseline_total_tax"].to_numpy(dtype=float),
+    # Use person-level direct taxes (income tax + employee NI), not the
+    # household baseline_total_tax, which bundles modeled consumption taxes
+    # (VAT) — those are not a cost of drawing income and were overstating
+    # the tax drag on withdrawals.
+    person = result.persons.sort_values("person_id").reset_index(drop=True)
+    direct_tax = person["baseline_income_tax"].to_numpy(dtype=float) + person[
+        "baseline_employee_ni"
+    ].to_numpy(dtype=float)
+    gross_income = (
+        inputs.state_pension.astype(float)
+        + inputs.private_pension_income.astype(float)
+        + inputs.savings_interest.astype(float)
+        + inputs.dividend_income.astype(float)
+        + inputs.employment_income.astype(float)
     )
+    return UKYearResults(
+        net_income=gross_income - direct_tax,
+        total_tax=direct_tax,
+    )
+
+
+def get_uk_tax_calculator():
+    """Resolve the UK tax backend from EGGNEST_UK_TAX_ENGINE.
+
+    "policyengine" (default) uses policyengine-uk-compiled. "axiom" uses the
+    experimental Axiom rules engine backend (statute-encoded rules with
+    per-number citations); it requires the engine binary and a rulespec-uk
+    checkout, and falls back to PolicyEngine with a warning when unavailable.
+    """
+    import os
+
+    choice = os.environ.get("EGGNEST_UK_TAX_ENGINE", "policyengine").lower()
+    if choice == "axiom":
+        from . import axiom_uk
+
+        if axiom_uk.available():
+            return axiom_uk.calculate_uk_tax_axiom
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "EGGNEST_UK_TAX_ENGINE=axiom but the Axiom engine is unavailable; "
+            "falling back to policyengine-uk-compiled"
+        )
+    return calculate_uk_tax

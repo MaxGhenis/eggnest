@@ -36,23 +36,33 @@ export default function HomePage() {
             </h1>
             <p className="mt-6 max-w-md text-xl leading-relaxed text-[var(--color-text-muted)]">
               Monte Carlo simulation meets real tax law. See thousands of
-              possible futures for your finances&mdash;the full range of
-              possibilities.
+              possible futures for your finances&mdash;with every tax and
+              benefit figure computed from encoded legislation.
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
               <Link
-                href="/simulator"
+                href="/uk-simulator"
                 className="inline-flex items-center gap-2 rounded-full bg-gradient-golden px-8 py-4 text-base font-semibold text-white shadow-[var(--shadow-md),0_4px_20px_var(--color-primary-glow)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-lg),0_8px_30px_rgba(234,88,12,0.3)]"
               >
-                Try the simulator
+                Try the UK simulator
+              </Link>
+              <Link
+                href="/simulator"
+                className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-[var(--color-border)] bg-white px-8 py-4 text-base font-semibold text-[var(--color-text)] shadow-[var(--shadow-sm)] transition-all hover:border-[var(--color-primary-200)] hover:bg-[var(--color-primary-50)]"
+              >
+                US simulator
               </Link>
               <a
                 href="#how-it-works"
-                className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-[var(--color-border)] bg-white px-8 py-4 text-base font-semibold text-[var(--color-text)] shadow-[var(--shadow-sm)] transition-all hover:border-[var(--color-primary-200)] hover:bg-[var(--color-primary-50)]"
+                className="inline-flex items-center gap-2 rounded-full px-4 py-4 text-base font-semibold text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
               >
                 See how it works
               </a>
             </div>
+            <p className="mt-4 text-sm text-[var(--color-text-light)]">
+              UK: live recalculation, ISA/SIPP drawdown, Pension Credit
+              screening with legislation.gov.uk citations.
+            </p>
           </div>
 
           {/* Chart preview */}
