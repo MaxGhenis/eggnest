@@ -122,9 +122,9 @@ export default function HomePage() {
                 "difference between good and bad market sequences with identical average returns",
             },
             {
-              value: "$400K+",
+              value: "40%+",
               label:
-                "gap between 25th and 75th percentile outcomes on a $1M portfolio",
+                "gap between 25th and 75th percentile outcomes on the same starting portfolio",
             },
           ].map(({ value, label }) => (
             <div

@@ -42,7 +42,10 @@ class UKYearInputs:
 class UKYearResults:
     """Per-path outputs for a single UK simulation year."""
 
-    net_income: np.ndarray  # after-tax, after-benefits £
+    # Gross income minus direct personal tax. Benefits are NOT included:
+    # the pension credit screen reports entitlement separately and is never
+    # added to spendable income.
+    net_income: np.ndarray  # after income tax + employee NI, before benefits, £
     total_tax: np.ndarray  # income tax + NI + dividend tax, £
 
 

@@ -57,6 +57,8 @@ export interface UKYearBreakdown {
   state_pension: number;
   employment_income: number;
   sipp_withdrawal: number;
+  /** Taxable portion of the SIPP draw (gross minus tax-free cash). */
+  sipp_taxable_withdrawal: number;
   isa_withdrawal: number;
   gia_withdrawal: number;
 }

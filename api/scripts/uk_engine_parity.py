@@ -32,28 +32,55 @@ STATE_PENSION_AT_70 = 11_502.0
 YEAR = 2025
 
 
-def classify(case: dict, delta: float) -> str | None:
-    """Attribute a PE-vs-Axiom delta to a known gap, if one applies."""
-    if abs(delta) <= TOLERANCE:
-        return None
+def _expected_gap_bound(case: dict) -> tuple[float, list[str]]:
+    """Maximum |delta| the known gaps can explain for this case.
+
+    Each gap excuses only the delta it can actually produce, so a genuine
+    bug in (say) a dividends case larger than the £500 nil rate at the
+    additional dividend rate is flagged UNEXPLAINED instead of masked.
+    """
+    bound = 0.0
     reasons = []
     if case["dividends"] > 0:
+        # ITA 2007 s.13A nil rate: at most £500 at the additional dividend rate.
+        bound += min(case["dividends"], 500.0) * 0.3935
         reasons.append("dividend nil rate not encoded (ITA 2007 s.13A)")
     if case["savings"] > 0:
+        # ITA 2007 ss.12-12B: up to the £5,000 starting-rate band plus the
+        # £1,000 personal savings allowance, at the top marginal rate.
+        bound += min(case["savings"], 6_000.0) * 0.45
         reasons.append(
             "savings allowance/starting rate not encoded (ITA 2007 ss.12-12B)"
         )
     if case["age"] >= 66 and case["employment"] > 0:
+        # PE charges employee NI over pensionable age; bound = the NI it adds.
+        weekly = case["employment"] / 52.0
+        weekly_ni = max(min(weekly, 967.0) - 241.73, 0.0) * 0.08
+        weekly_ni += max(weekly - 967.0, 0.0) * 0.02
+        bound += weekly_ni * 52.0
         reasons.append(
             "policyengine-uk-compiled charges employee NI over pensionable age "
             "(SSCBA 1992 s.6(3) exempts; Axiom is statutory here)"
         )
     if case["age"] >= 66:
+        # PE re-uprates/imputes State Pension for over-SPA records: bound the
+        # excused income tax at a full new State Pension at the top rate.
+        bound += 15_000.0 * 0.45
         reasons.append(
             "policyengine-uk-compiled re-uprates/imputes State Pension for "
             "over-SPA records; the simulator supplies its own SP series"
         )
-    return "; ".join(reasons) if reasons else "UNEXPLAINED"
+    return bound, reasons
+
+
+def classify(case: dict, delta: float) -> str | None:
+    """Attribute a PE-vs-Axiom delta to a known gap, if one can explain it."""
+    if abs(delta) <= TOLERANCE:
+        return None
+    bound, reasons = _expected_gap_bound(case)
+    if reasons and abs(delta) <= bound + TOLERANCE:
+        return "; ".join(reasons)
+    return "UNEXPLAINED"
 
 
 def main() -> int:

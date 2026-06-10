@@ -95,6 +95,24 @@ class TestStatutoryExactness:
             expected_it + expected_div, abs=0.01
         )
 
+    def test_dividend_only_income_with_pa_spill(self):
+        # ITA 2007 s.25(2): unused personal allowance spills onto dividends.
+        # 20,000 dividends - 12,570 PA = 7,430 at 8.75% = 650.125.
+        result = axiom_uk.calculate_uk_tax_axiom(
+            _inputs(age=60, dividend_income=np.array([20_000.0]))
+        )
+        assert result.total_tax[0] == pytest.approx(650.13, abs=0.01)
+
+    def test_savings_interest_taxed_as_non_savings_documented_gap(self):
+        # ITA 2007 ss.12-12B are not yet encoded, so the backend taxes
+        # interest as non-savings income with no starting rate or PSA:
+        # (20,000 - 12,570) at 20% = 1,486. Update this expectation when
+        # the savings allowances land in rulespec-uk.
+        result = axiom_uk.calculate_uk_tax_axiom(
+            _inputs(age=60, savings_interest=np.array([20_000.0]))
+        )
+        assert result.total_tax[0] == pytest.approx(1_486.0, abs=0.01)
+
 
 class TestPolicyEngineAgreement:
     """Both engines agree exactly on the gap-free scenario class:
@@ -198,6 +216,23 @@ class TestEngineSeam:
 
         monkeypatch.setenv("EGGNEST_UK_TAX_ENGINE", "axiom")
         assert get_uk_tax_calculator() is axiom_uk.calculate_uk_tax_axiom
+
+    def test_axiom_selected_but_unavailable_falls_back(self, monkeypatch):
+        from eggnest.tax_uk import get_uk_tax_calculator
+
+        monkeypatch.setenv("EGGNEST_UK_TAX_ENGINE", "axiom")
+        monkeypatch.setattr(axiom_uk, "available", lambda: False)
+        assert get_uk_tax_calculator() is calculate_uk_tax
+
+    def test_rule_citation_url_handles_short_paths(self):
+        # Act-level or non-statute rule ids must not crash citation building.
+        assert (
+            axiom_uk._rule_citation_url("uk:statutes/ukpga/2007/3#whole_act")
+            == "https://www.legislation.gov.uk/ukpga/2007/3"
+        )
+        assert axiom_uk._rule_citation_url(
+            "uk:policies/govuk/pension-credit#rule"
+        ).startswith("https://www.legislation.gov.uk/")
 
     def test_citations_available_for_tax_rules(self):
         citations = axiom_uk.tax_citations(2025)

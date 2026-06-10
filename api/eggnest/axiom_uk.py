@@ -269,14 +269,17 @@ def _rule_citation_url(rule_id: str) -> str:
     # e.g. uk:statutes/ukpga/2007/3/10#income_tax_on_section_10_income
     path = rule_id.split(":", 1)[1].split("#", 1)[0]
     parts = path.split("/")
-    if parts[0] == "statutes":
+    if len(parts) >= 5 and parts[0] == "statutes":
         _, kind, year, chapter, section = parts[:5]
         return (
             f"https://www.legislation.gov.uk/{kind}/{year}/{chapter}/section/{section}"
         )
-    if parts[0] == "regulations":
+    if len(parts) >= 5 and parts[0] == "regulations":
         _, kind, year, number, regulation = parts[:5]
         return f"https://www.legislation.gov.uk/{kind}/{year}/{number}/regulation/{regulation}"
+    # Act-level, schedule, or other shapes: link the document path directly.
+    if parts and parts[0] in ("statutes", "regulations"):
+        return "https://www.legislation.gov.uk/" + "/".join(parts[1:])
     return f"https://www.legislation.gov.uk/{path}"
 
 

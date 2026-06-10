@@ -289,6 +289,7 @@ def _iterate_years(
         # taxable. The GIA + ISA withdrawals we already took are entirely
         # tax-free, so the only gross-up we need is on the SIPP portion.
         sipp_take = per_account["sipp"]
+        taxable_sipp = np.zeros(n_sims)
         if np.any(sipp_take > 0):
             # Tax-free proportion of this SIPP draw, capped by the remaining
             # lifetime allowance on a per-path basis.
@@ -383,6 +384,7 @@ def _iterate_years(
             state_pension=float(np.median(state_pension_annual)),
             employment_income=float(np.median(employment)),
             sipp_withdrawal=float(np.median(per_account["sipp"])),
+            sipp_taxable_withdrawal=float(np.median(taxable_sipp)),
             isa_withdrawal=float(np.median(per_account["isa"])),
             gia_withdrawal=float(np.median(per_account["gia"])),
         )
@@ -438,11 +440,15 @@ def _pension_credit_screen(
     ages = np.array([row.age for row in year_breakdown])
     income = np.array(
         [
-            row.state_pension + row.sipp_withdrawal + row.employment_income
+            row.state_pension + row.sipp_taxable_withdrawal + row.employment_income
             for row in year_breakdown
         ]
     )
     try:
+        # One engine call for all years. The encoded minimum guarantee is
+        # currently a single timeless version, so the period year does not
+        # change the amount; if rulespec-uk versions it by uprating year,
+        # switch to per-year periods here.
         screen = axiom_uk.pension_credit_screen(
             year=datetime.now().year, ages=ages, annual_income=income
         )

@@ -185,6 +185,9 @@ class UKYearBreakdown(BaseModel):
     state_pension: float
     employment_income: float
     sipp_withdrawal: float
+    # Taxable portion of the SIPP draw (gross minus tax-free cash); the
+    # income figure pension credit screening should use.
+    sipp_taxable_withdrawal: float = 0.0
     isa_withdrawal: float
     gia_withdrawal: float
 
