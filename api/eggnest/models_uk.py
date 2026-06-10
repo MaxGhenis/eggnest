@@ -189,6 +189,29 @@ class UKYearBreakdown(BaseModel):
     gia_withdrawal: float
 
 
+class UKCitationRef(BaseModel):
+    """Statute or regulation citation backing a computed number."""
+
+    id: str
+    url: str
+
+
+class UKPensionCreditScreen(BaseModel):
+    """Modeled guarantee credit screening along the median path.
+
+    Computed with the Axiom rules engine from statute encodings (State
+    Pension Credit Act 2002 s.2; SI 2002/1792 reg 6). A screening estimate,
+    not a benefits decision: the modeled income stands in for the full
+    SPC Act s.15 income assessment.
+    """
+
+    weekly_minimum_guarantee: float
+    ages: list[int]
+    annual_amounts: list[float]
+    years_indicated: int
+    citations: list[UKCitationRef] = []
+
+
 class UKSimulationResult(BaseModel):
     """Aggregated simulation output."""
 
@@ -212,5 +235,12 @@ class UKSimulationResult(BaseModel):
             "p ∈ {5,25,50,75,95}, the start year of the sim whose final "
             "portfolio value is closest to that percentile. Only populated for "
             "sequential sampling."
+        ),
+    )
+    pension_credit: UKPensionCreditScreen | None = Field(
+        default=None,
+        description=(
+            "Guarantee credit screening along the median path, computed from "
+            "statute encodings via the Axiom rules engine when available."
         ),
     )

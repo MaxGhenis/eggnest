@@ -1,0 +1,63 @@
+# Interim statutory values supplied as engine inputs for rules whose
+# amounts are not yet parameterized inside rulespec-uk (the encodings take
+# them as runtime inputs; see each rule's `#input.*` slots).
+#
+# Every value below is a UK statutory amount for 2024/25 onward with its
+# legal source. These are NOT policy formulas — the formulas live in the
+# Axiom rules engine — and each value is cross-checked against
+# policyengine-uk-compiled in tests/test_axiom_uk.py. Remove entries as
+# rulespec-uk parameterizes them.
+#
+# Income tax rate limits are frozen at these levels through 2027/28
+# (Finance Act 2021 s.5; Autumn Statement 2022), so a single table is a
+# faithful representation for the simulator's near-term years.
+
+income_tax:
+  basic_rate_limit:
+    value: 37_700
+    source: "Income Tax Act 2007 s.10(5); frozen by Finance Act 2021 s.5"
+    url: https://www.legislation.gov.uk/ukpga/2007/3/section/10
+  higher_rate_limit:
+    value: 125_140
+    source: "Income Tax Act 2007 s.10(3A), inserted by Finance Act 2023"
+    url: https://www.legislation.gov.uk/ukpga/2007/3/section/10
+  basic_rate:
+    value: 0.20
+    source: "Income Tax Act 2007 s.6(2)"
+    url: https://www.legislation.gov.uk/ukpga/2007/3/section/6
+  higher_rate:
+    value: 0.40
+    source: "Income Tax Act 2007 s.6(2)"
+    url: https://www.legislation.gov.uk/ukpga/2007/3/section/6
+  additional_rate:
+    value: 0.45
+    source: "Income Tax Act 2007 s.6(2)"
+    url: https://www.legislation.gov.uk/ukpga/2007/3/section/6
+
+dividend_tax:
+  dividend_ordinary_rate:
+    value: 0.0875
+    source: "Income Tax Act 2007 s.8(1)"
+    url: https://www.legislation.gov.uk/ukpga/2007/3/section/8
+  dividend_upper_rate:
+    value: 0.3375
+    source: "Income Tax Act 2007 s.8(2)"
+    url: https://www.legislation.gov.uk/ukpga/2007/3/section/8
+  dividend_additional_rate:
+    value: 0.3935
+    source: "Income Tax Act 2007 s.8(3)"
+    url: https://www.legislation.gov.uk/ukpga/2007/3/section/8
+
+national_insurance:
+  weekly_primary_threshold:
+    value: 241.73
+    source: "SSCBA 1992 s.5; SI 2001/1004 reg 10 (annual £12,570 / 52)"
+    url: https://www.legislation.gov.uk/uksi/2001/1004/regulation/10
+  weekly_upper_earnings_limit:
+    value: 967.0
+    source: "SSCBA 1992 s.5; SI 2001/1004 reg 10 (annual £50,270 / 52)"
+    url: https://www.legislation.gov.uk/uksi/2001/1004/regulation/10
+  state_pension_age:
+    value: 66
+    source: "Pensions Act 1995 Sch 4 as amended; SSCBA 1992 s.6(3) exempts earners over pensionable age from primary contributions"
+    url: https://www.legislation.gov.uk/ukpga/1992/4/section/6

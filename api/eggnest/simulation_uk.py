@@ -23,7 +23,7 @@ from .models_uk import (
     UKYearBreakdown,
 )
 from .mortality import generate_alive_mask
-from .tax_uk import UKYearInputs, calculate_uk_tax
+from .tax_uk import UKYearInputs, get_uk_tax_calculator
 
 # Minimum Pension Age — earliest age at which SIPP funds can be accessed.
 # Currently 55 in the UK, rising to 57 from April 2028. We use 55 as a simple
@@ -175,6 +175,7 @@ def _iterate_years(
     n_sims = inputs.n_simulations
     n_years = inputs.max_age - inputs.current_age + 1
     start_year = datetime.now().year
+    uk_tax = get_uk_tax_calculator()
 
     price_growth, div_yield, inflation_paths, start_years = _build_return_paths(
         inputs, rng
@@ -257,7 +258,7 @@ def _iterate_years(
             dividend_income=gia_dividends,
             employment_income=employment,
         )
-        tax = calculate_uk_tax(tax_inputs)
+        tax = uk_tax(tax_inputs)
         net_before_withdrawals = tax.net_income
 
         # Determine withdrawal needed: shortfall after net income from
@@ -329,7 +330,7 @@ def _iterate_years(
                 dividend_income=gia_dividends,
                 employment_income=employment,
             )
-            tax = calculate_uk_tax(tax_inputs2)
+            tax = uk_tax(tax_inputs2)
 
         # Portfolio grows on remaining balances
         growth_factor = 1.0 + price_growth[:, year_idx]
@@ -371,10 +372,11 @@ def _iterate_years(
             portfolio_return=float(np.median(price_growth[:, year_idx])),
             effective_tax_rate=float(
                 np.median(
-                    np.where(
-                        tax.net_income + tax.total_tax > 0,
-                        tax.total_tax / (tax.net_income + tax.total_tax),
-                        0.0,
+                    np.divide(
+                        tax.total_tax,
+                        tax.net_income + tax.total_tax,
+                        out=np.zeros_like(tax.total_tax),
+                        where=(tax.net_income + tax.total_tax) > 0,
                     )
                 )
             ),
@@ -414,6 +416,50 @@ def _bands(arr: np.ndarray) -> dict[str, list[float]]:
     """Return {'p5','p25','p50','p75','p95': list[float]} for a (n_sims, n_years) array."""
     rows = np.percentile(arr, _PERCENTILES, axis=0)  # one sort per column, 5× cheaper
     return {f"p{p}": rows[i].tolist() for i, p in enumerate(_PERCENTILES)}
+
+
+def _pension_credit_screen(
+    inputs: UKSimulationInput,
+    year_breakdown: list[UKYearBreakdown],
+):
+    """Median-path guarantee credit screening via the Axiom rules engine.
+
+    Returns None when the engine is not configured in this environment.
+    The screened income is the median path's State Pension, taxable SIPP
+    drawdown, and employment income; ISA withdrawals are capital, not
+    income, for pension credit purposes.
+    """
+    from . import axiom_uk
+    from .models_uk import UKCitationRef, UKPensionCreditScreen
+
+    if not axiom_uk.available() or not year_breakdown:
+        return None
+
+    ages = np.array([row.age for row in year_breakdown])
+    income = np.array(
+        [
+            row.state_pension + row.sipp_withdrawal + row.employment_income
+            for row in year_breakdown
+        ]
+    )
+    try:
+        screen = axiom_uk.pension_credit_screen(
+            year=datetime.now().year, ages=ages, annual_income=income
+        )
+    except RuntimeError:
+        return None
+
+    amounts = screen["annual_amount"]
+    return UKPensionCreditScreen(
+        weekly_minimum_guarantee=screen["weekly_minimum_guarantee"],
+        ages=[int(age) for age in ages],
+        annual_amounts=[round(float(amount), 2) for amount in amounts],
+        years_indicated=int(np.sum(amounts > 0)),
+        citations=[
+            UKCitationRef(id=citation.id, url=citation.url)
+            for citation in screen["citations"]
+        ],
+    )
 
 
 def _assemble_result(
@@ -480,6 +526,7 @@ def _assemble_result(
         initial_withdrawal_rate=initial_withdrawal_rate,
         prob_10_year_failure=float(np.mean(first_10_depleted)),
         percentile_path_start_years=percentile_path_start_years,
+        pension_credit=_pension_credit_screen(inputs, year_breakdown),
     )
 
 

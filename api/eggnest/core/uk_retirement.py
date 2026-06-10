@@ -62,12 +62,20 @@ def build_uk_retirement_result(
     result: UKSimulationResult,
 ) -> EngineResult:
     """Wrap a UK simulator result in the stable core result envelope."""
+    citations = []
+    if result.pension_credit is not None:
+        from eggnest.citations import Citation
+
+        citations = [
+            Citation(id=ref.id, url=ref.url) for ref in result.pension_credit.citations
+        ]
     return EngineResult(
         scenario_schema_version=scenario.schema_version,
         engine=ENGINE_ID,
         country=ENGINE_COUNTRY,
         assumptions=_assumptions(inputs),
         outputs={OUTPUT_KEY: result.model_dump()},
+        citations=citations,
         sources=_sources(),
         caveats=_caveats(inputs),
         reproducibility=Reproducibility(
