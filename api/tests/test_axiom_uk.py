@@ -81,7 +81,8 @@ class TestStatutoryExactness:
 
     def test_dividends_stack_above_other_income(self):
         # Non-savings 50,000 - PA = 37,430 (basic band nearly full).
-        # Dividends 5,000: 270 within basic @8.75% + 4,730 @33.75%.
+        # Dividends 5,000: the first 500 at the s.13A nil rate (270 of it in
+        # the basic band, 230 in higher), then 4,500 @33.75%.
         result = axiom_uk.calculate_uk_tax_axiom(
             _inputs(
                 age=60,
@@ -90,28 +91,28 @@ class TestStatutoryExactness:
             )
         )
         expected_it = 37_430 * 0.20
-        expected_div = 270 * 0.0875 + 4_730 * 0.3375
+        expected_div = 4_500 * 0.3375
         assert result.total_tax[0] == pytest.approx(
             expected_it + expected_div, abs=0.01
         )
 
     def test_dividend_only_income_with_pa_spill(self):
         # ITA 2007 s.25(2): unused personal allowance spills onto dividends.
-        # 20,000 dividends - 12,570 PA = 7,430 at 8.75% = 650.125.
+        # 20,000 dividends - 12,570 PA = 7,430 taxable: 500 at the s.13A nil
+        # rate, then 6,930 at 8.75% = 606.375.
         result = axiom_uk.calculate_uk_tax_axiom(
             _inputs(age=60, dividend_income=np.array([20_000.0]))
         )
-        assert result.total_tax[0] == pytest.approx(650.13, abs=0.01)
+        assert result.total_tax[0] == pytest.approx(606.38, abs=0.01)
 
-    def test_savings_interest_taxed_as_non_savings_documented_gap(self):
-        # ITA 2007 ss.12-12B are not yet encoded, so the backend taxes
-        # interest as non-savings income with no starting rate or PSA:
-        # (20,000 - 12,570) at 20% = 1,486. Update this expectation when
-        # the savings allowances land in rulespec-uk.
+    def test_savings_starting_rate_and_allowance(self):
+        # ITA 2007 ss.12-12B (encoded in rulespec-uk): taxable savings 7,430
+        # = 5,000 at the starting rate (0%) + 1,000 personal savings
+        # allowance (0%) + 1,430 at 20% = 286.
         result = axiom_uk.calculate_uk_tax_axiom(
             _inputs(age=60, savings_interest=np.array([20_000.0]))
         )
-        assert result.total_tax[0] == pytest.approx(1_486.0, abs=0.01)
+        assert result.total_tax[0] == pytest.approx(286.0, abs=0.01)
 
 
 class TestPolicyEngineAgreement:
@@ -119,14 +120,29 @@ class TestPolicyEngineAgreement:
     under pension age, no dividends, no savings interest."""
 
     @pytest.mark.parametrize(
-        "employment,pension",
-        [(0.0, 20_000.0), (0.0, 60_000.0), (30_000.0, 0.0), (60_000.0, 0.0)],
+        "employment,pension,savings,dividends",
+        [
+            (0.0, 20_000.0, 0.0, 0.0),
+            (0.0, 60_000.0, 0.0, 0.0),
+            (30_000.0, 0.0, 0.0, 0.0),
+            (60_000.0, 0.0, 0.0, 0.0),
+            # Savings allowances (ITA ss.12-12B) agree across engines.
+            (0.0, 30_000.0, 2_000.0, 0.0),
+            (0.0, 60_000.0, 2_000.0, 0.0),
+            (0.0, 20_000.0, 20_000.0, 0.0),
+            # Dividend nil rate agrees when it does not straddle a band edge.
+            (0.0, 15_000.0, 0.0, 5_000.0),
+            (0.0, 0.0, 0.0, 20_000.0),
+            (0.0, 110_000.0, 0.0, 5_000.0),
+        ],
     )
-    def test_under_spa_no_dividends(self, employment, pension):
+    def test_under_spa_agreement(self, employment, pension, savings, dividends):
         inputs = _inputs(
             age=60,
             employment_income=np.array([employment]),
             private_pension_income=np.array([pension]),
+            savings_interest=np.array([savings]),
+            dividend_income=np.array([dividends]),
         )
         axiom = axiom_uk.calculate_uk_tax_axiom(inputs).total_tax[0]
         pe = calculate_uk_tax(inputs).total_tax[0]

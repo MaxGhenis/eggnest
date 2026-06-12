@@ -1,26 +1,15 @@
-# Interim statutory values supplied as engine inputs for rules whose
-# amounts are not yet parameterized inside rulespec-uk (the encodings take
-# them as runtime inputs; see each rule's `#input.*` slots).
+# Statutory values supplied as engine inputs for the few rules whose
+# amounts are not yet parameterized inside rulespec-uk (each module's
+# remaining `#input.*` slots). Everything rulespec-uk has parameterized —
+# rate limits (FA 2021/FA 2023 imports), the dividend nil rate (ITA
+# s.13A), savings allowances (ss.12-12B), NI percentages (SSCBA s.8) — is
+# read from the encodings, not from this file.
 #
-# Every value below is a UK statutory amount for 2024/25 onward with its
-# legal source. These are NOT policy formulas — the formulas live in the
-# Axiom rules engine — and each value is cross-checked against
+# Every value below carries its legal source and is cross-checked against
 # policyengine-uk-compiled in tests/test_axiom_uk.py. Remove entries as
 # rulespec-uk parameterizes them.
-#
-# Income tax rate limits are frozen at these levels through 2027/28
-# (Finance Act 2021 s.5; Autumn Statement 2022), so a single table is a
-# faithful representation for the simulator's near-term years.
 
-income_tax:
-  basic_rate_limit:
-    value: 37_700
-    source: "Income Tax Act 2007 s.10(5); frozen by Finance Act 2021 s.5"
-    url: https://www.legislation.gov.uk/ukpga/2007/3/section/10
-  higher_rate_limit:
-    value: 125_140
-    source: "Income Tax Act 2007 s.10(3A), inserted by Finance Act 2023"
-    url: https://www.legislation.gov.uk/ukpga/2007/3/section/10
+income_tax_rates:
   basic_rate:
     value: 0.20
     source: "Income Tax Act 2007 s.6(2)"
@@ -34,21 +23,35 @@ income_tax:
     source: "Income Tax Act 2007 s.6(2)"
     url: https://www.legislation.gov.uk/ukpga/2007/3/section/6
 
+# The rulespec-uk ITA s.8 encoding currently dates the Finance Act 2026
+# dividend rates (10.75%/35.75%) from 2024-04-06, so these 2025/26
+# statutory rates stay here until the upstream effective-dating is
+# corrected (issue filed against rulespec-uk).
 dividend_tax:
   dividend_ordinary_rate:
     value: 0.0875
-    source: "Income Tax Act 2007 s.8(1)"
+    source: "Income Tax Act 2007 s.8(1), rate for 2025/26"
     url: https://www.legislation.gov.uk/ukpga/2007/3/section/8
   dividend_upper_rate:
     value: 0.3375
-    source: "Income Tax Act 2007 s.8(2)"
+    source: "Income Tax Act 2007 s.8(2), rate for 2025/26"
     url: https://www.legislation.gov.uk/ukpga/2007/3/section/8
   dividend_additional_rate:
     value: 0.3935
     source: "Income Tax Act 2007 s.8(3)"
     url: https://www.legislation.gov.uk/ukpga/2007/3/section/8
 
+savings:
+  starting_rate_for_savings:
+    value: 0.0
+    source: "Income Tax Act 2007 s.7 (starting rate for savings is 0%)"
+    url: https://www.legislation.gov.uk/ukpga/2007/3/section/7
+
 national_insurance:
+  # Weekly equivalents of the annual thresholds, kept here as an explicit
+  # annual-equivalence convention: the statutory weekly primary threshold is
+  # £242 (SI 2001/1004 reg 10, encoded in rulespec-uk), but this simulator
+  # models annual income, so £12,570 / 52 keeps the annual calculation exact.
   weekly_primary_threshold:
     value: 241.73
     source: "SSCBA 1992 s.5; SI 2001/1004 reg 10 (annual £12,570 / 52)"
@@ -61,3 +64,13 @@ national_insurance:
     value: 66
     source: "Pensions Act 1995 Sch 4 as amended; SSCBA 1992 s.6(3) exempts earners over pensionable age from primary contributions"
     url: https://www.legislation.gov.uk/ukpga/1992/4/section/6
+
+# Magnitudes used only by scripts/uk_engine_parity.py to bound how much
+# engine-vs-engine delta the known policyengine-uk-compiled quirks can
+# explain. The encoding gaps that used to live here (dividend nil rate,
+# savings allowances) closed with rulespec-uk PR #48.
+parity_gap_bounds:
+  full_new_state_pension_ceiling:
+    value: 15_000
+    source: "Envelope over the uprated full new State Pension (Pensions Act 2014 s.2; £11,973 in 2025/26) used to bound policyengine-uk-compiled's over-SPA SP imputation"
+    url: https://www.legislation.gov.uk/ukpga/2014/19/section/2

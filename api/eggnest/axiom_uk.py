@@ -9,11 +9,10 @@ This backend is opt-in (EGGNEST_UK_TAX_ENGINE=axiom) and degrades to
 unavailable when the engine binary or the rulespec-uk checkout is absent.
 
 Known gaps versus policyengine-uk-compiled, asserted in tests and reported
-by scripts/uk_engine_parity.py — all conservative (overstate tax):
-- no savings allowance or starting rate for savings (ITA ss.12-12B not yet
-  encoded): savings interest is taxed as non-savings income;
-- no dividend nil rate (ITA s.13A not yet encoded);
+by scripts/uk_engine_parity.py:
 - no Scottish or Welsh rates: the region input is ignored.
+(The former savings-allowance and dividend-nil-rate gaps closed when
+rulespec-uk encoded ITA ss.12-12B and s.13A.)
 
 Statutory values that rulespec-uk still takes as runtime inputs (band
 limits, rates, NI thresholds) come from data/axiom_uk_parameters.yaml with
@@ -43,7 +42,9 @@ _TAX_YEAR_END = "-04-05"
 # Rule modules evaluated by this backend, relative to the rulespec-uk root.
 _ARTIFACT_SOURCES = {
     "ita_s10": "statutes/ukpga/2007/3/10.yaml",
-    "ita_s13": "statutes/ukpga/2007/3/13.yaml",
+    "ita_s12": "statutes/ukpga/2007/3/12.yaml",
+    "ita_s12B": "statutes/ukpga/2007/3/12B.yaml",
+    "ita_s13A": "statutes/ukpga/2007/3/13A.yaml",
     "ita_s35": "statutes/ukpga/2007/3/35.yaml",
     "sscba_s8": "statutes/ukpga/1992/4/8.yaml",
     "spca_s2": "statutes/ukpga/2002/16/2.yaml",
@@ -52,12 +53,18 @@ _ARTIFACT_SOURCES = {
 
 _REF_PREFIXES = {
     "ita_s10": "uk:statutes/ukpga/2007/3/10#",
-    "ita_s13": "uk:statutes/ukpga/2007/3/13#",
+    "ita_s12": "uk:statutes/ukpga/2007/3/12#",
+    "ita_s12B": "uk:statutes/ukpga/2007/3/12B#",
+    "ita_s13A": "uk:statutes/ukpga/2007/3/13A#",
     "ita_s35": "uk:statutes/ukpga/2007/3/35#",
     "sscba_s8": "uk:statutes/ukpga/1992/4/8#",
     "spca_s2": "uk:statutes/ukpga/2002/16/2#",
     "spc_regs_6": "uk:regulations/uksi/2002/1792/6#",
 }
+
+# s.13A re-derives the s.13 outputs with the nil rate applied, so its input
+# slots live under the s.13 module reference.
+_ITA_S13_INPUT_PREFIX = "uk:statutes/ukpga/2007/3/13#input."
 
 _PARAMS_PATH = Path(__file__).parent / "data" / "axiom_uk_parameters.yaml"
 
@@ -136,6 +143,7 @@ def _artifacts() -> _Artifacts:
             "EGGNEST_RULESPEC_UK_ROOT"
         )
     directory = Path(tempfile.mkdtemp(prefix="eggnest-axiom-uk-"))
+    env = {**os.environ, "AXIOM_RULESPEC_REPO_ROOTS": str(root)}
     paths: dict[str, Path] = {}
     for key, relative in _ARTIFACT_SOURCES.items():
         output = directory / f"{key}.compiled.json"
@@ -151,6 +159,7 @@ def _artifacts() -> _Artifacts:
             capture_output=True,
             text=True,
             check=False,
+            env=env,
         )
         if process.returncode != 0:
             raise RuntimeError(
@@ -158,6 +167,24 @@ def _artifacts() -> _Artifacts:
             )
         paths[key] = output
     return _Artifacts(directory=directory, paths=paths)
+
+
+def _artifact_parameter(artifact_key: str, name: str, year: int) -> float:
+    """Read an encoded parameter value, as of the tax-year start, from a
+    compiled artifact — so values rulespec-uk has parameterized are never
+    duplicated in eggnest."""
+    artifact = json.loads(_artifacts().paths[artifact_key].read_text())
+    cutoff = f"{year}{_TAX_YEAR_START}"
+    for parameter in artifact["program"]["parameters"]:
+        if parameter["name"] == name:
+            chosen = None
+            for version in parameter["versions"]:
+                if version["effective_from"] <= cutoff:
+                    chosen = version
+            if chosen is None:
+                chosen = parameter["versions"][0]
+            return float(chosen["values"]["0"]["value"])
+    raise KeyError(f"{artifact_key} has no parameter {name}")
 
 
 def _tax_year_period(year: int) -> dict:
@@ -194,19 +221,21 @@ def _execute(
         n = len(next(iter(per_entity_inputs.values())))
     records = []
     for name, values in per_entity_inputs.items():
-        ref = prefix + "input." + name
+        ref = name if ":" in name else prefix + "input." + name
+        is_bool = np.asarray(values).dtype == bool
         for index in range(n):
+            value = bool(values[index]) if is_bool else float(values[index])
             records.append(
                 {
                     "name": ref,
                     "entity": "Person",
                     "entity_id": f"p{index}",
                     "interval": interval,
-                    "value": _scalar(float(values[index])),
+                    "value": _scalar(value),
                 }
             )
     for name, value in shared_inputs.items():
-        ref = prefix + "input." + name
+        ref = name if ":" in name else prefix + "input." + name
         for index in range(n):
             records.append(
                 {
@@ -218,6 +247,9 @@ def _execute(
                 }
             )
 
+    output_refs = {
+        output: (output if ":" in output else prefix + output) for output in outputs
+    }
     request = {
         "mode": mode,
         "dataset": {"inputs": records, "relations": []},
@@ -225,7 +257,7 @@ def _execute(
             {
                 "entity_id": f"p{index}",
                 "period": period,
-                "outputs": [prefix + output for output in outputs],
+                "outputs": list(output_refs.values()),
             }
             for index in range(n)
         ],
@@ -255,7 +287,7 @@ def _execute(
     for index in range(n):
         result = by_entity[f"p{index}"]
         for output in outputs:
-            value = result["outputs"][prefix + output]["value"]["value"]
+            value = result["outputs"][output_refs[output]]["value"]["value"]
             results[output][index] = float(value)
 
     if mode == "explain":
@@ -300,22 +332,26 @@ def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
     s.25(2) allowance-ordering glue live here.
     """
     params = _statutory_inputs()
-    it = params["income_tax"]
-    div = params["dividend_tax"]
+    rates = params["income_tax_rates"]
+    dividend_rates = params["dividend_tax"]
     ni = params["national_insurance"]
     year = inputs.year
 
+    rate_inputs = {
+        "basic_rate": rates["basic_rate"],
+        "higher_rate": rates["higher_rate"],
+        "additional_rate": rates["additional_rate"],
+    }
+
     employment = inputs.employment_income.astype(float)
-    # Gap (ITA ss.12-12B not yet encoded): savings interest is taxed as
-    # non-savings income, with no personal savings allowance.
     non_savings = (
         employment
         + inputs.state_pension.astype(float)
         + inputs.private_pension_income.astype(float)
-        + inputs.savings_interest.astype(float)
     )
+    savings = inputs.savings_interest.astype(float)
     dividends = inputs.dividend_income.astype(float)
-    total_income = non_savings + dividends
+    total_income = non_savings + savings + dividends
 
     # ITA 2007 s.35: personal allowance with the adjusted-net-income taper.
     pa = _execute(
@@ -330,49 +366,175 @@ def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
     )["personal_allowance"]
 
     # ITA 2007 s.25(2) ordering: allowance against non-savings income first,
-    # any remainder against dividend income.
+    # then savings, then dividend income.
     pa_non_savings = np.minimum(pa, non_savings)
-    pa_dividends = np.minimum(pa - pa_non_savings, dividends)
+    pa_savings = np.minimum(pa - pa_non_savings, savings)
+    pa_dividends = np.minimum(pa - pa_non_savings - pa_savings, dividends)
     taxable_non_savings = non_savings - pa_non_savings
+    taxable_savings = savings - pa_savings
     taxable_dividends = dividends - pa_dividends
 
-    # ITA 2007 s.10: band placement and tax on non-dividend income.
-    s10 = _execute(
-        "ita_s10",
-        year=year,
-        per_entity_inputs={"income_charged_under_section_10": taxable_non_savings},
-        shared_inputs={
-            "basic_rate_limit": it["basic_rate_limit"],
-            "higher_rate_limit": it["higher_rate_limit"],
-            "basic_rate": it["basic_rate"],
-            "higher_rate": it["higher_rate"],
-            "additional_rate": it["additional_rate"],
-        },
-        outputs=["income_tax_on_section_10_income"],
-    )
-    non_savings_tax = s10["income_tax_on_section_10_income"]
+    def s10_tax(amount: np.ndarray) -> np.ndarray:
+        """Band tax on an amount stacked from £0 (ITA 2007 s.10; the rate
+        limits are encoded parameters in the module)."""
+        return _execute(
+            "ita_s10",
+            year=year,
+            per_entity_inputs={"income_charged_under_section_10": amount},
+            shared_inputs=rate_inputs,
+            outputs=["income_tax_on_section_10_income"],
+        )["income_tax_on_section_10_income"]
 
-    # ITA 2007 s.13: dividend income stacks above other income (s.16) and
-    # is charged at the dividend rates. Gap: no s.13A dividend nil rate.
-    s13 = _execute(
-        "ita_s13",
+    # ITA 2007 s.10 on non-savings income.
+    non_savings_tax = s10_tax(taxable_non_savings)
+
+    # Savings income stacks above non-savings (ITA 2007 s.16).
+    if bool(np.any(taxable_savings > 0)):
+        # s.12: starting rate for savings (0%) for the slice of the starting
+        # rate limit not used by non-savings income.
+        starting_rate_savings = _execute(
+            "ita_s12",
+            year=year,
+            per_entity_inputs={
+                "income_already_charged_before_section_12_savings_income": (
+                    taxable_non_savings
+                ),
+                "savings_income_otherwise_charged_at_basic_or_default_basic_rate": (
+                    taxable_savings
+                ),
+            },
+            shared_inputs={
+                "starting_rate_for_savings": params["savings"][
+                    "starting_rate_for_savings"
+                ]
+            },
+            outputs=["savings_income_charged_at_starting_rate_for_savings"],
+        )["savings_income_charged_at_starting_rate_for_savings"]
+
+        # s.12B: personal savings allowance, sized by whether any income for
+        # the year is charged at the higher or additional rates. The band
+        # placement of total taxable income comes from the s.10 encoding.
+        total_bands = _execute(
+            "ita_s10",
+            year=year,
+            per_entity_inputs={
+                "income_charged_under_section_10": (
+                    taxable_non_savings + taxable_savings + taxable_dividends
+                )
+            },
+            shared_inputs=rate_inputs,
+            outputs=[
+                "income_charged_at_higher_rate",
+                "income_charged_at_additional_rate",
+            ],
+        )
+        # The s.12B flags ask whether any income for the year is charged at
+        # (or would be charged at, but for the nil rates) the higher or
+        # additional rates; the band placement of total taxable income above
+        # already includes nil-rated slices, so it answers the combined
+        # question. The Scottish/Welsh, property, default, and dividend
+        # variants are false for this engine (Scottish rates are the one
+        # remaining gap; dividend bands are covered by the total placement).
+        savings_allowance = _execute(
+            "ita_s12B",
+            year=year,
+            per_entity_inputs={
+                "income_charged_at_higher_rate": (
+                    total_bands["income_charged_at_higher_rate"] > 0
+                ),
+                "income_charged_at_additional_rate": (
+                    total_bands["income_charged_at_additional_rate"] > 0
+                ),
+            },
+            shared_inputs={
+                "income_charged_at_default_higher_rate": False,
+                "income_charged_at_default_additional_rate": False,
+                "income_charged_at_dividend_upper_rate": False,
+                "income_charged_at_dividend_additional_rate": False,
+                "income_charged_at_property_higher_rate": False,
+                "income_charged_at_property_additional_rate": False,
+                "income_would_be_charged_at_higher_rate_but_for_savings_nil_rate": False,
+                "income_would_be_charged_at_additional_rate_but_for_savings_nil_rate": False,
+                "income_would_be_charged_at_default_higher_rate_but_for_savings_nil_rate": False,
+                "income_would_be_charged_at_default_additional_rate_but_for_savings_nil_rate": False,
+                "income_would_be_charged_at_dividend_upper_rate_but_for_dividend_nil_rate": False,
+                "income_would_be_charged_at_dividend_additional_rate_but_for_dividend_nil_rate": False,
+                "scottish_or_welsh_taxpayer_income_would_be_charged_at_higher_property_or_default_higher_rate": False,
+                "scottish_or_welsh_taxpayer_income_would_be_charged_at_additional_property_or_default_additional_rate": False,
+            },
+            outputs=["savings_allowance"],
+        )["savings_allowance"]
+
+        # Nil-rated savings (starting rate + allowance) still consume band
+        # capacity; the taxed remainder stacks above them. Marginal band tax
+        # comes from two s.10 evaluations (engine-side banding).
+        savings_zero_rated = np.minimum(
+            starting_rate_savings
+            + np.minimum(savings_allowance, taxable_savings - starting_rate_savings),
+            taxable_savings,
+        )
+        savings_taxed = taxable_savings - savings_zero_rated
+        savings_tax = s10_tax(
+            taxable_non_savings + savings_zero_rated + savings_taxed
+        ) - s10_tax(taxable_non_savings + savings_zero_rated)
+    else:
+        savings_tax = np.zeros_like(taxable_savings)
+
+    # ITA 2007 s.13A: dividend income stacks on top (s.16) with the dividend
+    # nil rate applied; the dividend rates and nil-rate amount are encoded.
+    # Its input slots live under the s.13 module reference, and the rate
+    # limits it needs are read from the encoded parameters.
+    basic_rate_limit = _artifact_parameter("ita_s10", "basic_rate_limit", year)
+    higher_rate_limit = float(
+        _execute(
+            "ita_s10",
+            year=year,
+            per_entity_inputs={"income_charged_under_section_10": np.zeros(1)},
+            shared_inputs=rate_inputs,
+            outputs=["higher_rate_limit"],
+        )["higher_rate_limit"][0]
+    )
+    s13a = _execute(
+        "ita_s13A",
         year=year,
         per_entity_inputs={
-            "dividend_income_subject_to_section_13_rates": taxable_dividends,
-            "income_already_charged_before_section_13_dividend_income": (
-                taxable_non_savings
+            _ITA_S13_INPUT_PREFIX
+            + "dividend_income_subject_to_section_13_rates": taxable_dividends,
+            _ITA_S13_INPUT_PREFIX
+            + "income_already_charged_before_section_13_dividend_income": (
+                taxable_non_savings + taxable_savings
             ),
         },
         shared_inputs={
-            "basic_rate_limit": it["basic_rate_limit"],
-            "higher_rate_limit": it["higher_rate_limit"],
-            "dividend_ordinary_rate": div["dividend_ordinary_rate"],
-            "dividend_upper_rate": div["dividend_upper_rate"],
-            "dividend_additional_rate": div["dividend_additional_rate"],
+            _ITA_S13_INPUT_PREFIX + "basic_rate_limit": basic_rate_limit,
+            _ITA_S13_INPUT_PREFIX + "higher_rate_limit": higher_rate_limit,
+            _ITA_S13_INPUT_PREFIX
+            + "dividend_ordinary_rate": dividend_rates["dividend_ordinary_rate"],
+            _ITA_S13_INPUT_PREFIX
+            + "dividend_upper_rate": dividend_rates["dividend_upper_rate"],
+            _ITA_S13_INPUT_PREFIX
+            + "dividend_additional_rate": dividend_rates["dividend_additional_rate"],
         },
-        outputs=["income_tax_on_section_13_dividend_income"],
+        outputs=[
+            "uk:statutes/ukpga/2007/3/13#income_tax_on_section_13_dividend_income",
+            "dividend_ordinary_rate_amount_charged_at_dividend_nil_rate",
+            "dividend_upper_rate_amount_charged_at_dividend_nil_rate",
+            "dividend_additional_rate_amount_charged_at_dividend_nil_rate",
+        ],
     )
-    dividend_tax = s13["income_tax_on_section_13_dividend_income"]
+    # ITA 2007 s.13A: the first slice of dividend income is charged at the
+    # nil rate instead of the dividend rates. The engine computes how much
+    # of the nil-rated amount falls in each band; the tax relieved is that
+    # amount at the band's rate.
+    dividend_tax = (
+        s13a["uk:statutes/ukpga/2007/3/13#income_tax_on_section_13_dividend_income"]
+        - s13a["dividend_ordinary_rate_amount_charged_at_dividend_nil_rate"]
+        * dividend_rates["dividend_ordinary_rate"]
+        - s13a["dividend_upper_rate_amount_charged_at_dividend_nil_rate"]
+        * dividend_rates["dividend_upper_rate"]
+        - s13a["dividend_additional_rate_amount_charged_at_dividend_nil_rate"]
+        * dividend_rates["dividend_additional_rate"]
+    )
 
     # SSCBA 1992 s.8: primary Class 1 contributions on employment earnings,
     # weekly basis. s.6(3): no primary contributions over pensionable age.
@@ -400,7 +562,7 @@ def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
     else:
         national_insurance = np.zeros_like(employment)
 
-    total_tax = non_savings_tax + dividend_tax + national_insurance
+    total_tax = non_savings_tax + savings_tax + dividend_tax + national_insurance
     return UKYearResults(
         net_income=total_income - total_tax,
         total_tax=total_tax,
@@ -496,7 +658,7 @@ def tax_citations(year: int) -> list[Citation]:
         mode="explain",
     )
     citations = _trace_citations(traces)
-    for key in ("ita_s10", "ita_s13", "sscba_s8"):
+    for key in ("ita_s10", "ita_s12", "ita_s12B", "ita_s13A", "sscba_s8"):
         prefix = _REF_PREFIXES[key]
         rule_id = prefix.rstrip("#")
         citations.append(Citation(id=rule_id, url=_rule_citation_url(rule_id + "#x")))

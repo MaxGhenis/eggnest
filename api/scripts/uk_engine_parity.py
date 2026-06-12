@@ -33,39 +33,82 @@ YEAR = 2025
 
 
 def _expected_gap_bound(case: dict) -> tuple[float, list[str]]:
-    """Maximum |delta| the known gaps can explain for this case.
+    """Maximum |delta| the known policyengine-uk-compiled quirks can explain.
 
-    Each gap excuses only the delta it can actually produce, so a genuine
-    bug in (say) a dividends case larger than the £500 nil rate at the
-    additional dividend rate is flagged UNEXPLAINED instead of masked.
+    Each entry excuses only the delta it can actually produce, so a genuine
+    bug cannot hide behind a known difference. The former encoding gaps
+    (dividend nil rate, savings allowances) closed with rulespec-uk PR #48,
+    so dividends/savings cases must now match exactly. NI percentages are
+    read from the SSCBA 1992 s.8 encoding; the remaining magnitudes come
+    from the cited values file.
     """
+    params = axiom_uk._statutory_inputs()
+    gaps = params["parity_gap_bounds"]
+    income_tax = params["income_tax_rates"]
+    ni = params["national_insurance"]
+
     bound = 0.0
     reasons = []
     if case["dividends"] > 0:
-        # ITA 2007 s.13A nil rate: at most £500 at the additional dividend rate.
-        bound += min(case["dividends"], 500.0) * 0.3935
-        reasons.append("dividend nil rate not encoded (ITA 2007 s.13A)")
-    if case["savings"] > 0:
-        # ITA 2007 ss.12-12B: up to the £5,000 starting-rate band plus the
-        # £1,000 personal savings allowance, at the top marginal rate.
-        bound += min(case["savings"], 6_000.0) * 0.45
-        reasons.append(
-            "savings allowance/starting rate not encoded (ITA 2007 ss.12-12B)"
+        # Both engines apply the s.13A nil rate, but they place it in
+        # different bands when it straddles a boundary: the encoding follows
+        # the statutory "first £500" (bottom-up); policyengine-uk-compiled
+        # relieves the top slice. The difference is bounded by the nil-rate
+        # amount at the spread between the highest and lowest dividend rates.
+        nil_amount = axiom_uk._artifact_parameter(
+            "ita_s13A", "dividend_nil_rate_allowance", YEAR
         )
-    if case["age"] >= 66 and case["employment"] > 0:
+        dividend_rates = params["dividend_tax"]
+        bound += min(case["dividends"], nil_amount) * (
+            dividend_rates["dividend_additional_rate"]
+            - dividend_rates["dividend_ordinary_rate"]
+        )
+        reasons.append(
+            "dividend nil-rate band placement: encoding nil-rates the first "
+            "slice (ITA 2007 s.13A); policyengine-uk-compiled relieves the "
+            "top slice"
+        )
+    if case["savings"] > 0 and case["dividends"] > 0:
+        # s.12B(3) sizes the savings allowance counting income charged at the
+        # dividend upper/additional rates (the encoding's reading);
+        # policyengine-uk-compiled sizes it before dividend stacking, so the
+        # tiers can differ by one step. Bound: one tier step at the highest
+        # rate the displaced savings could bear.
+        tier_step = axiom_uk._artifact_parameter(
+            "ita_s12B", "savings_allowance_higher_rate_amount", YEAR
+        )
+        bound += tier_step * income_tax["additional_rate"]
+        reasons.append(
+            "savings allowance sizing: ITA 2007 s.12B(3) counts dividend-band "
+            "income (encoding); policyengine-uk-compiled sizes the allowance "
+            "before dividend stacking"
+        )
+    if case["age"] >= ni["state_pension_age"] and case["employment"] > 0:
         # PE charges employee NI over pensionable age; bound = the NI it adds.
+        main_rate = axiom_uk._artifact_parameter(
+            "sscba_s8", "main_primary_percentage", YEAR
+        )
+        additional_rate = axiom_uk._artifact_parameter(
+            "sscba_s8", "additional_primary_percentage", YEAR
+        )
         weekly = case["employment"] / 52.0
-        weekly_ni = max(min(weekly, 967.0) - 241.73, 0.0) * 0.08
-        weekly_ni += max(weekly - 967.0, 0.0) * 0.02
-        bound += weekly_ni * 52.0
+        main_band = max(
+            min(weekly, ni["weekly_upper_earnings_limit"])
+            - ni["weekly_primary_threshold"],
+            0.0,
+        )
+        upper_band = max(weekly - ni["weekly_upper_earnings_limit"], 0.0)
+        bound += (main_band * main_rate + upper_band * additional_rate) * 52.0
         reasons.append(
             "policyengine-uk-compiled charges employee NI over pensionable age "
             "(SSCBA 1992 s.6(3) exempts; Axiom is statutory here)"
         )
-    if case["age"] >= 66:
+    if case["age"] >= ni["state_pension_age"]:
         # PE re-uprates/imputes State Pension for over-SPA records: bound the
         # excused income tax at a full new State Pension at the top rate.
-        bound += 15_000.0 * 0.45
+        bound += gaps["full_new_state_pension_ceiling"] * (
+            income_tax["additional_rate"]
+        )
         reasons.append(
             "policyengine-uk-compiled re-uprates/imputes State Pension for "
             "over-SPA records; the simulator supplies its own SP series"
