@@ -151,6 +151,7 @@ function createFetchError(error: unknown): ApiError {
   // Check for network-related errors
   if (
     lowerMessage.includes("failed to fetch") ||
+    lowerMessage.includes("load failed") ||
     lowerMessage.includes("network") ||
     lowerMessage.includes("net::") ||
     lowerMessage.includes("dns") ||
@@ -271,6 +272,9 @@ async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise
     });
   } catch (error) {
     clearTimeout(timeoutId);
+    if (timeoutController.signal.aborted && !externalSignal?.aborted) {
+      throw new TimeoutError("The request took too long. Please try again.", error);
+    }
     throw createFetchError(error);
   }
 
@@ -505,20 +509,31 @@ export async function* runSimulationWithProgress(
   params: SimulationInput,
   token?: string
 ): AsyncGenerator<SimulationEvent, void, unknown> {
+  yield {
+    type: "progress",
+    year: 0,
+    total_years: params.max_age - params.current_age,
+    progress: 0,
+    message: "Starting calculation service",
+  };
+  // A simple GET warms the server without a CORS preflight. Loading the tax
+  // engines on a cold container can exceed the usual 30-second request limit.
+  await readWithRetry(() => apiFetch("/health", { timeoutMs: LONG_TIMEOUT_MS }));
+
+  let firstStatus: SimulationJobStatus;
   try {
-    for await (const event of runSimulationJobWithProgress(params, token)) {
-      yield event;
-    }
-    return;
+    firstStatus = await createSimulationJob(params, token);
   } catch (error) {
-    if (!(error instanceof ApiError) || error.statusCode !== 404) {
-      throw error;
+    // Only a missing creation endpoint indicates a legacy server. A missing
+    // job while polling must never silently start a second simulation.
+    if (error instanceof ApiError && error.statusCode === 404) {
+      yield* runSimulationStreamWithProgress(params, token);
+      return;
     }
+    throw error;
   }
 
-  for await (const event of runSimulationStreamWithProgress(params, token)) {
-    yield event;
-  }
+  yield* pollSimulationJob(firstStatus, token);
 }
 
 export async function createSimulationJob(
@@ -529,7 +544,8 @@ export async function createSimulationJob(
     method: "POST",
     body: params,
     token,
-    timeoutMs: DEFAULT_TIMEOUT_MS,
+    // Never retry a POST: a lost response may still have created a job.
+    timeoutMs: LONG_TIMEOUT_MS,
   });
 }
 
@@ -537,10 +553,12 @@ export async function getSimulationJob(
   jobId: string,
   token?: string
 ): Promise<SimulationJobStatus> {
-  return apiFetch<SimulationJobStatus>(`/simulate/jobs/${jobId}`, {
-    token,
-    timeoutMs: DEFAULT_TIMEOUT_MS,
-  });
+  return readWithRetry(() =>
+    apiFetch<SimulationJobStatus>(`/simulate/jobs/${jobId}`, {
+      token,
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+    })
+  );
 }
 
 function jobStatusToProgressEvent(status: SimulationJobStatus): ProgressEvent {
@@ -561,15 +579,29 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function* runSimulationJobWithProgress(
-  params: SimulationInput,
+async function readWithRetry<T>(read: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await read();
+    } catch (error) {
+      const transient = error instanceof NetworkError || error instanceof TimeoutError ||
+        (error instanceof ApiError && [502, 503, 504].includes(error.statusCode ?? 0));
+      if (!transient || attempt >= 2) throw error;
+      await sleep(1_000 * (attempt + 1));
+    }
+  }
+}
+
+async function* pollSimulationJob(
+  initialStatus: SimulationJobStatus,
   token?: string
 ): AsyncGenerator<SimulationEvent, void, unknown> {
   const startedAt = Date.now();
-  const pollIntervalMs = 1_000;
-  const maxWaitMs = 10 * 60_000;
+  let pollIntervalMs = 1_000;
+  // Modal workers may run for 15 minutes, plus queue/container startup time.
+  const maxWaitMs = 18 * 60_000;
 
-  let status = await createSimulationJob(params, token);
+  let status = initialStatus;
   yield jobStatusToProgressEvent(status);
 
   while (status.status === "queued" || status.status === "running") {
@@ -578,6 +610,7 @@ async function* runSimulationJobWithProgress(
     }
 
     await sleep(pollIntervalMs);
+    pollIntervalMs = Math.min(3_000, pollIntervalMs * 1.25);
     status = await getSimulationJob(status.job_id, token);
     yield jobStatusToProgressEvent(status);
   }

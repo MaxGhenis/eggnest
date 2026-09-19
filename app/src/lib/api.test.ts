@@ -266,7 +266,9 @@ describe('runSimulationWithProgress', () => {
   });
 
   it('starts a pollable simulation job and yields progress plus result', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'healthy' })))
+      .mockResolvedValue(
       new Response(JSON.stringify({
         job_id: 'job-1',
         status: 'succeeded',
@@ -298,6 +300,13 @@ describe('runSimulationWithProgress', () => {
       })
     );
     expect(events).toEqual([
+      {
+        type: 'progress',
+        year: 0,
+        total_years: 30,
+        progress: 0,
+        message: 'Starting calculation service',
+      },
       {
         type: 'progress',
         year: 30,

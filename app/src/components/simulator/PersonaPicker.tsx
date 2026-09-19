@@ -35,7 +35,7 @@ export function PersonaPicker({
         <h2 className="text-3xl font-semibold text-[var(--color-text)] md:text-4xl" style={{ letterSpacing: "-0.03em" }}>
           See your financial
           <br />
-          <span className="bg-gradient-golden bg-clip-text text-transparent">outlook in seconds</span>
+          <span className="bg-gradient-golden bg-clip-text text-transparent">outlook</span>
         </h2>
         <p className="mx-auto mt-3 max-w-md text-[var(--color-text-muted)]">
           Choose a profile similar to yours, or start from scratch with your own numbers
