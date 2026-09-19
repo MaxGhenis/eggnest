@@ -35,6 +35,7 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
   const scenarios = useScenarioContext();
 
   const result = simulation.result!;
+  const hasTenYearHorizon = result.percentile_paths.p50.length > 10;
   const { annuityResult, selectedYearIndex, setSelectedYearIndex } = simulation;
 
   const interpretation = useMemo(() => getSuccessRateInterpretation(result.success_rate), [result.success_rate]);
@@ -93,8 +94,8 @@ export function ResultsPanel({ onEditInputs, onWhatIf }: ResultsPanelProps) {
         </div>
         <div className="metric-card">
           <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">10-yr depletion risk</div>
-          <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{formatPercent(result.prob_10_year_failure)}</div>
-          <div className="mt-1 text-xs text-[var(--color-text-muted)]">Depletion within 10 years</div>
+          <div className="mt-1.5 text-2xl font-bold tabular-nums text-[var(--color-text)]">{hasTenYearHorizon ? formatPercent(result.prob_10_year_failure) : "—"}</div>
+          <div className="mt-1 text-xs text-[var(--color-text-muted)]">{hasTenYearHorizon ? "Depletion within 10 years" : "Requires a horizon of at least 10 years"}</div>
         </div>
       </div>
 
