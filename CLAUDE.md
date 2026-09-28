@@ -14,9 +14,10 @@ cd api
 uv venv && uv pip install -e ".[dev]"
 uv run uvicorn main:app --reload --port 8000
 
-# Run tests
-uv run pytest tests/
-uv run pytest tests/test_simulation.py -v  # Single test file
+# Run tests (the dev extra provides Hypothesis for property tests)
+uv run --extra dev pytest tests/
+uv run --extra dev pytest tests/test_simulation.py -v  # Single test file
+HYPOTHESIS_PROFILE=thorough uv run --extra dev pytest tests/test_household_net_income.py  # 400 examples per property
 
 # Linting
 uv run black .
