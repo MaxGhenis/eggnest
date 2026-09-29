@@ -11,6 +11,11 @@ import {
 } from "../../lib/api-uk";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { colors, chartColors } from "../../lib/design-tokens";
+import {
+  formatGBP,
+  summarizeUKOutcome,
+  UK_MINIMUM_PENSION_AGE,
+} from "../../lib/uk-outcome";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -109,17 +114,6 @@ interface ScenarioProbe {
   delta: Partial<UKSimulationInput>;
 }
 
-function formatGBP(value: number): string {
-  if (Math.abs(value) >= 1_000_000) return `£${(value / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(value) >= 1_000) return `£${(value / 1_000).toFixed(0)}k`;
-  return `£${Math.round(value)}`;
-}
-function formatPct(value: number): string {
-  return `${(value * 100).toFixed(0)}%`;
-}
-function formatPct1(value: number): string {
-  return `${(value * 100).toFixed(1)}%`;
-}
 
 interface SimState {
   forInput: UKSimulationInput | null;
@@ -263,7 +257,8 @@ export default function UKSimulatorPage() {
                 yTitle="Annual tax (£)"
                 height={300}
               />
-              {input.current_age < (input.retirement_age ?? 67) && (
+              {input.current_age < (input.retirement_age ?? 67) &&
+                (input.employment_income ?? 0) > 0 && (
                 <PercentileFanChart
                   title="Earnings while working"
                   description="Median + 25/75 + 5/95 percentiles"
@@ -366,7 +361,7 @@ function InputsPanel({
         />
         <LogRangeField
           label="SIPP / workplace pension"
-          hint="DC pension pot"
+          hint={`DC pension pot · drawable from age ${UK_MINIMUM_PENSION_AGE}`}
           value={input.sipp_balance}
           onChange={(v) => updateField("sipp_balance", v)}
           min={0}
@@ -557,6 +552,8 @@ function HeroAnswer({
     return input.annual_spending * Math.pow(1 + (input.inflation_rate ?? 0.025), 20);
   }, [input.annual_spending, input.inflation_rate, input.spending_mode]);
 
+  const summary = result ? summarizeUKOutcome(input, result) : null;
+
   return (
     <section aria-label="Simulation outcome" aria-busy={isRunning} className="@container relative rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-white p-6 shadow-[var(--shadow-sm)] md:p-8">
       <div className="flex items-center justify-between">
@@ -570,20 +567,18 @@ function HeroAnswer({
         <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-danger)] bg-[var(--color-danger-light)] p-4 text-sm text-[var(--color-danger)]">
           {error}
         </div>
-      ) : !result ? (
+      ) : !result || !summary ? (
         <SkeletonHero />
       ) : (
         <>
           <dl className="mt-7 grid gap-7 @min-[28rem]:grid-cols-[1.2fr_1fr] @min-[28rem]:gap-8">
             <div className="min-w-0">
-              <dt className="text-xs font-medium text-[var(--color-text-muted)]">Chance of lasting</dt>
+              <dt className="text-xs font-medium text-[var(--color-text-muted)]">{summary.headline.label}</dt>
               <dd className="mt-2 text-6xl font-semibold leading-none tracking-tight text-[var(--color-primary)] tabular-nums @min-[28rem]:text-7xl">
-                {formatPct(result.success_rate)}
+                {summary.headline.value}
               </dd>
               <dd className="mt-3 max-w-[30ch] text-sm leading-relaxed text-[var(--color-text-muted)]">
-                {input.include_mortality ?? true
-                  ? `of simulated paths avoid depletion before death or age ${input.max_age}`
-                  : `of simulated paths last through age ${input.max_age}`}
+                {summary.headline.detail}
               </dd>
             </div>
             <div className="min-w-0 border-t border-[var(--color-border)] pt-6 @min-[28rem]:border-t-0 @min-[28rem]:border-l @min-[28rem]:pt-0 @min-[28rem]:pl-8">
@@ -595,27 +590,20 @@ function HeroAnswer({
             </div>
           </dl>
           <dl className="mt-7 grid grid-cols-2 gap-x-6 gap-y-6 border-t border-[var(--color-border)] pt-6 @min-[38rem]:grid-cols-4">
-              <HeroMetric
-                label="10-year depletion"
-                value={formatPct1(result.prob_10_year_failure)}
-                detail="Chance of running out"
-              />
-              <HeroMetric
-                label={`Lasts to age ${input.max_age}`}
-                value={formatPct(result.strict_horizon_success_rate)}
-                detail="Without mortality"
-              />
-              <HeroMetric
-                label="First-year withdrawal"
-                value={`${result.initial_withdrawal_rate.toFixed(1)}%`}
-                detail="Of starting portfolio"
-              />
-              <HeroMetric
-                label="Lifetime tax"
-                value={formatGBP(result.year_breakdown.reduce((s, b) => s + b.total_tax, 0))}
-                detail="Median · income tax, NI & dividends"
-              />
+              {summary.metrics.map((metric) => (
+                <HeroMetric
+                  key={metric.label}
+                  label={metric.label}
+                  value={metric.value}
+                  detail={metric.detail}
+                />
+              ))}
           </dl>
+          {summary.sippLockedNote ? (
+            <p role="note" className="mt-6 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-3 text-sm leading-relaxed text-[var(--color-warning-text)]">
+              {summary.sippLockedNote}
+            </p>
+          ) : null}
           <p className="mt-6 border-t border-[var(--color-border-light)] pt-4 text-xs leading-relaxed text-[var(--color-text-muted)]">
             {formatGBP(totalPortfolio)} at age {input.current_age} · spending {formatGBP(input.annual_spending)}/yr
             {input.spending_mode === "real" ? " (today's £)" : " (flat nominal)"} · {input.region}

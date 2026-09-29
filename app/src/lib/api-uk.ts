@@ -48,8 +48,24 @@ export interface UKYearBreakdown {
   portfolio_start: number;
   portfolio_end: number;
   spending_target: number;
+  /** Net income plus gross account withdrawals. */
   total_income: number;
+  /** Employment income, State Pension and GIA dividends less income tax and
+   *  employee NI (including the tax on SIPP draws). Benefits are not added. */
+  net_income?: number;
   withdrawal: number;
+  /** Pension and ISA contributions paid out of earnings. */
+  contributions?: number;
+  /** Median spending the accounts could not cover this year. */
+  unmet_spending?: number;
+  /** Share of paths alive this year with more than £1 of unmet spending. */
+  shortfall_share?: number;
+  /** Share of paths alive this year short of money while their SIPP, not yet
+   *  drawable, still held some. */
+  sipp_locked_shortfall_share?: number;
+  /** GIA dividends not needed for spending, reinvested in the GIA. */
+  reinvested_dividends?: number;
+  /** Income tax (including dividend tax) plus employee NI. */
   total_tax: number;
   inflation_rate: number;
   portfolio_return: number;
@@ -63,8 +79,15 @@ export interface UKYearBreakdown {
 
 export interface UKSimulationResult {
   metadata: Record<string, unknown>;
+  /** Share of paths meeting the spending target (to within £1) in every
+   *  simulated year the person is alive. */
   success_rate: number;
+  /** Share of paths meeting the spending target in every year to max_age,
+   *  ignoring mortality. Never above success_rate. */
   strict_horizon_success_rate: number;
+  /** Share of paths that fall short, while alive, before the SIPP can be
+   *  drawn although it still holds money. These count as failures too. */
+  sipp_locked_shortfall_rate?: number;
   median_final_value: number;
   median_final_value_real: number;
   percentiles: Record<string, number>;
@@ -77,6 +100,8 @@ export interface UKSimulationResult {
   percentile_path_start_years?: Record<string, number> | null;
   year_breakdown: UKYearBreakdown[];
   initial_withdrawal_rate: number;
+  /** Share of paths whose first shortfall, while alive, comes in the first
+   *  ten simulated years. */
   prob_10_year_failure: number;
 }
 
