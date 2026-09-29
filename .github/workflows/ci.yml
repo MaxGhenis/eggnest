@@ -47,19 +47,25 @@ jobs:
         run: nproc && free -h
 
       # PolicyEngine memory accumulates over a pytest session and one full
-      # run exhausts the 16GB runner (see the [mem] probe history). Running
-      # the suite as three sequential shards resets memory between shards
-      # while keeping two xdist workers inside each.
+      # run exhausts the 16GB runner (see the [mem] probe history). The
+      # US simulator files are the heavy ones: on policyengine-us 2.15.16 a
+      # single test there peaks near 9GB, so two xdist workers holding two
+      # of them overflow the runner. They each run alone, one process per
+      # file; the rest run as two sequential shards (memory resets between
+      # shards) with two xdist workers inside each.
       - name: Run tests
         run: |
           (while true; do free -m | awk '/Mem:/{printf "[mem] used=%dMiB avail=%dMiB\n",$3,$7}'; sleep 20; done) &
           MEMMON=$!
-          FILES=( $(ls tests/test_*.py | sort) )
+          HEAVY=( tests/test_simulation.py tests/test_simulation_correctness.py tests/test_simulation_holdings.py )
+          FILES=( $(ls tests/test_*.py | sort | grep -vxF -f <(printf '%s\n' "${HEAVY[@]}")) )
           TOTAL=${#FILES[@]}
-          THIRD=$(( (TOTAL + 2) / 3 ))
-          uv run pytest "${FILES[@]:0:THIRD}" -n 2 --dist loadfile --tb=short
-          uv run pytest "${FILES[@]:THIRD:THIRD}" -n 2 --dist loadfile --tb=short
-          uv run pytest "${FILES[@]:$((2 * THIRD))}" -n 2 --dist loadfile --tb=short
+          HALF=$(( (TOTAL + 1) / 2 ))
+          uv run pytest "${FILES[@]:0:HALF}" -n 2 --dist loadfile --tb=short
+          uv run pytest "${FILES[@]:HALF}" -n 2 --dist loadfile --tb=short
+          for file in "${HEAVY[@]}"; do
+            uv run pytest "$file" --tb=short
+          done
           kill $MEMMON
 
   test-app:
