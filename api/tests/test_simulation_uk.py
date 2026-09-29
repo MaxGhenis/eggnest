@@ -88,7 +88,9 @@ def test_streaming_variant_emits_progress_then_result(basic_input):
 
 
 def test_pre_mpa_paths_cannot_touch_sipp():
-    """SIPP drawdown is locked until Minimum Pension Age (55)."""
+    """SIPP drawdown is locked until Minimum Pension Age (55), so a person
+    whose only savings are in a SIPP cannot meet spending before then: every
+    path fails, and the failures are reported as SIPP-locked."""
     inp = UKSimulationInput(
         current_age=50,
         max_age=54,  # every year in this run is pre-MPA
@@ -107,6 +109,44 @@ def test_pre_mpa_paths_cannot_touch_sipp():
     # the spending target is far above the accessible ISA/GIA (both zero).
     for b in result.year_breakdown:
         assert b.sipp_withdrawal == 0.0, f"SIPP withdrawn at age {b.age} (pre-MPA)"
+        assert b.unmet_spending == pytest.approx(b.spending_target)
+        assert b.shortfall_share == 1.0
+        assert b.sipp_locked_shortfall_share == 1.0
+    assert result.success_rate == 0.0
+    assert result.strict_horizon_success_rate == 0.0
+    assert result.prob_10_year_failure == 1.0
+    assert result.sipp_locked_shortfall_rate == 1.0
+    # The money is still there, locked, and growing.
+    assert result.median_final_value > 500000
+
+
+def test_isa_bridges_to_mpa_then_sipp_takes_over():
+    """With enough ISA to reach 55, the same person succeeds: the SIPP is
+    drawn only from Minimum Pension Age."""
+    inp = UKSimulationInput(
+        current_age=52,
+        max_age=58,
+        annual_spending=20000,
+        isa_balance=80000,
+        sipp_balance=500000,
+        state_pension_annual=0,
+        state_pension_start_age=67,
+        return_source="gaussian",
+        expected_return=0.04,
+        return_volatility=0.0,
+        inflation_rate=0.0,
+        n_simulations=100,
+        random_seed=1,
+        include_mortality=False,
+    )
+    result = run_uk_simulation(inp)
+    assert result.success_rate == 1.0
+    assert result.sipp_locked_shortfall_rate == 0.0
+    for b in result.year_breakdown:
+        if b.age < 55:
+            assert b.sipp_withdrawal == 0.0
+        assert b.unmet_spending == 0.0
+    assert any(b.sipp_withdrawal > 0 for b in result.year_breakdown if b.age >= 55)
 
 
 def test_strict_success_matches_success_without_mortality(basic_input):
@@ -267,3 +307,197 @@ def test_percentile_start_year_matches_path():
     assert (
         len(set(reported)) > 1
     ), "every percentile returned the same start year — path selection broken"
+
+
+# --- Tax: person-level income tax and employee NI --------------------------
+
+
+def _tax_inputs(n=1, **overrides) -> UKYearInputs:
+    fields = {
+        "age": 70,
+        "year": 2026,
+        "state_pension": np.zeros(n),
+        "private_pension_income": np.zeros(n),
+        "savings_interest": np.zeros(n),
+        "dividend_income": np.zeros(n),
+        "employment_income": np.zeros(n),
+    }
+    for key, value in overrides.items():
+        scalar = key in {"age", "year", "region"}
+        fields[key] = value if scalar else np.full(n, float(value))
+    return UKYearInputs(**fields)
+
+
+def test_pension_income_tax_matches_hand_calculation():
+    """£11,502 State Pension + £20,000 SIPP income in 2026/27 England: £31,502
+    less the £12,570 personal allowance, at 20 % = £3,786.40, and no NI."""
+    result = calculate_uk_tax(
+        _tax_inputs(state_pension=11502, private_pension_income=20000)
+    )
+    assert result.income_tax[0] == pytest.approx(3786.40, abs=0.01)
+    assert result.employee_ni[0] == 0.0
+    assert result.total_tax[0] == pytest.approx(3786.40, abs=0.01)
+    assert result.net_income[0] == pytest.approx(31502 - 3786.40, abs=0.01)
+
+
+def test_state_pension_input_is_taxed_and_engine_imputation_is_off():
+    """policyengine-uk-compiled imputes its own State Pension from age 66 and
+    ignores the input column; tax_uk switches that off and taxes the modeled
+    State Pension instead, so tax depends on income, not on age."""
+    split = calculate_uk_tax(
+        _tax_inputs(state_pension=11502, private_pension_income=20000)
+    )
+    combined = calculate_uk_tax(_tax_inputs(private_pension_income=31502))
+    assert split.total_tax[0] == pytest.approx(combined.total_tax[0], abs=0.01)
+    for age in (60, 66, 67, 75):
+        at_age = calculate_uk_tax(
+            _tax_inputs(age=age, state_pension=11502, private_pension_income=20000)
+        )
+        assert at_age.total_tax[0] == pytest.approx(split.total_tax[0], abs=0.01)
+    # No income, no tax: nothing is imputed.
+    nothing = calculate_uk_tax(_tax_inputs(age=70))
+    assert nothing.total_tax[0] == 0.0
+    assert nothing.net_income[0] == 0.0
+
+
+def test_net_income_excludes_benefits_and_consumption_taxes():
+    """A 60-year-old with no income would get Universal Credit and a 70-year-
+    old Pension Credit in PolicyEngine's household totals; the simulator's net
+    income counts neither (they ignore the person's savings), and no VAT."""
+    for age in (60, 70):
+        result = calculate_uk_tax(_tax_inputs(age=age))
+        assert result.net_income[0] == 0.0
+        assert result.total_tax[0] == 0.0
+
+
+def test_employment_income_pays_income_tax_and_employee_ni():
+    """£40,000 salary, 2026/27: income tax (40,000 - 12,570) x 20 % = £5,486;
+    employee NI (40,000 - 12,570) x 8 % = £2,194.40."""
+    result = calculate_uk_tax(_tax_inputs(age=40, employment_income=40000))
+    assert result.income_tax[0] == pytest.approx(5486.0, abs=0.01)
+    assert result.employee_ni[0] == pytest.approx(2194.40, abs=0.01)
+    assert result.net_income[0] == pytest.approx(40000 - 5486 - 2194.40, abs=0.01)
+
+
+def test_scotland_taxes_pension_income_differently_from_london():
+    """Scottish income tax bands apply to non-savings income: £60,000 of
+    pension income pays more in Scotland than in London (or Wales)."""
+    london = calculate_uk_tax(_tax_inputs(private_pension_income=60000))
+    scotland = calculate_uk_tax(
+        _tax_inputs(private_pension_income=60000, region="Scotland")
+    )
+    wales = calculate_uk_tax(_tax_inputs(private_pension_income=60000, region="Wales"))
+    assert london.income_tax[0] == pytest.approx(11432.0, abs=0.01)
+    assert scotland.income_tax[0] > london.income_tax[0] + 1000
+    assert wales.income_tax[0] == pytest.approx(london.income_tax[0], abs=0.01)
+
+
+def test_duplicate_rows_are_computed_once_with_identical_results():
+    """Batching deduplicates identical incomes; results must match per-row
+    calculation for every path, in order."""
+    pensions = np.array([20000.0, 0.0, 20000.0, 55000.0, 0.0, 20000.0])
+    batch = calculate_uk_tax(
+        UKYearInputs(
+            age=70,
+            year=2026,
+            state_pension=np.full(6, 11502.0),
+            private_pension_income=pensions,
+            savings_interest=np.zeros(6),
+            dividend_income=np.array([0.0, 800.0, 0.0, 0.0, 800.0, 0.0]),
+            employment_income=np.zeros(6),
+        )
+    )
+    for i, pension in enumerate(pensions):
+        single = calculate_uk_tax(
+            _tax_inputs(
+                state_pension=11502,
+                private_pension_income=pension,
+                dividend_income=[0.0, 800.0, 0.0, 0.0, 800.0, 0.0][i],
+            )
+        )
+        assert batch.total_tax[i] == pytest.approx(single.total_tax[0], abs=0.001)
+        assert batch.net_income[i] == pytest.approx(single.net_income[0], abs=0.001)
+
+
+def test_region_flows_from_simulation_inputs_to_tax():
+    """The simulator passes inputs.region to the tax engine: the same
+    SIPP-funded retirement pays more tax, and so draws more, in Scotland."""
+    base = UKSimulationInput(
+        current_age=67,
+        max_age=69,
+        annual_spending=60000,
+        sipp_balance=1_000_000,
+        state_pension_annual=11502,
+        state_pension_start_age=67,
+        return_source="gaussian",
+        return_volatility=0.0,
+        inflation_rate=0.0,
+        n_simulations=100,
+        random_seed=5,
+        include_mortality=False,
+    )
+    london = run_uk_simulation(base)
+    scotland = run_uk_simulation(base.model_copy(update={"region": "Scotland"}))
+    for lon, sco in zip(london.year_breakdown, scotland.year_breakdown, strict=True):
+        assert sco.total_tax > lon.total_tax + 1000
+        assert sco.sipp_withdrawal > lon.sipp_withdrawal
+        assert lon.unmet_spending == sco.unmet_spending == 0.0
+
+
+def test_total_return_applies_to_isa_and_sipp():
+    """ISA and SIPP dividends reinvest inside the wrapper: a £100,000 ISA and
+    a £100,000 SIPP at a fixed 5 % total return (2.5 % of it dividends) are
+    each worth £105,000 a year later."""
+    for account in ("isa_balance", "sipp_balance", "gia_balance"):
+        inp = UKSimulationInput(
+            current_age=60,
+            max_age=60,
+            annual_spending=0,
+            state_pension_annual=0,
+            state_pension_start_age=75,
+            return_source="gaussian",
+            expected_return=0.05,
+            return_volatility=0.0,
+            dividend_yield=0.025,
+            inflation_rate=0.0,
+            n_simulations=100,
+            random_seed=1,
+            include_mortality=False,
+            **{account: 100000},
+        )
+        result = run_uk_simulation(inp)
+        # The GIA pays its £2,500 dividend out; it falls within the dividend
+        # and personal allowances, so all of it is reinvested.
+        assert result.median_final_value == pytest.approx(105000, abs=0.01), account
+
+
+def test_contributions_are_not_spendable():
+    """Earnings saved into an ISA cannot also fund spending: £10,000 of
+    earnings, £10,000 of spending and a 50 % savings rate leave a £5,000 gap
+    the ISA has to fund."""
+    inp = UKSimulationInput(
+        current_age=40,
+        max_age=40,
+        annual_spending=10000,
+        employment_income=10000,
+        retirement_age=67,
+        savings_rate=0.5,
+        sipp_contribution_share=0.0,
+        state_pension_annual=0,
+        state_pension_start_age=75,
+        return_source="gaussian",
+        expected_return=0.0,
+        return_volatility=0.0,
+        dividend_yield=0.0,
+        inflation_rate=0.0,
+        spending_mode="nominal",
+        n_simulations=100,
+        random_seed=1,
+        include_mortality=False,
+    )
+    result = run_uk_simulation(inp)
+    b = result.year_breakdown[0]
+    assert b.contributions == pytest.approx(5000)
+    assert b.isa_withdrawal == pytest.approx(5000)
+    assert b.unmet_spending == 0.0
+    assert result.median_final_value == pytest.approx(0.0, abs=0.01)

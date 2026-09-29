@@ -562,10 +562,13 @@ def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
     else:
         national_insurance = np.zeros_like(employment)
 
-    total_tax = non_savings_tax + savings_tax + dividend_tax + national_insurance
+    income_tax = non_savings_tax + savings_tax + dividend_tax
+    total_tax = income_tax + national_insurance
     return UKYearResults(
         net_income=total_income - total_tax,
         total_tax=total_tax,
+        income_tax=income_tax,
+        employee_ni=national_insurance,
     )
 
 

@@ -151,6 +151,7 @@ function createFetchError(error: unknown): ApiError {
   // Check for network-related errors
   if (
     lowerMessage.includes("failed to fetch") ||
+    lowerMessage.includes("load failed") ||
     lowerMessage.includes("network") ||
     lowerMessage.includes("net::") ||
     lowerMessage.includes("dns") ||
@@ -272,6 +273,9 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     });
   } catch (error) {
     clearTimeout(timeoutId);
+    if (timeoutController.signal.aborted && !externalSignal?.aborted) {
+      throw new TimeoutError("The request took too long. Please try again.", error);
+    }
     throw createFetchError(error);
   }
 
@@ -516,6 +520,20 @@ export async function* runSimulationWithProgress(
   token?: string,
   signal?: AbortSignal
 ): AsyncGenerator<SimulationEvent, void, unknown> {
+  yield {
+    type: "progress",
+    year: 0,
+    total_years: params.max_age - params.current_age,
+    progress: 0,
+    message: "Starting calculation service",
+  };
+  // A simple GET warms the server without a CORS preflight. Loading the tax
+  // engines on a cold container can exceed the usual 30-second request limit.
+  await readWithRetry(
+    () => apiFetch("/health", { timeoutMs: LONG_TIMEOUT_MS, signal }),
+    signal
+  );
+
   // Only a 404 on job *creation* means the backend predates the job API and
   // we should fall back to SSE streaming. A 404 mid-poll is a real failure
   // (e.g. the job was evicted) and must not silently relaunch the whole
@@ -544,7 +562,8 @@ export async function createSimulationJob(
     body: params,
     token,
     signal,
-    timeoutMs: DEFAULT_TIMEOUT_MS,
+    // Never retry a POST: a lost response may still have created a job.
+    timeoutMs: LONG_TIMEOUT_MS,
   });
 }
 
@@ -553,11 +572,15 @@ export async function getSimulationJob(
   token?: string,
   signal?: AbortSignal
 ): Promise<SimulationJobStatus> {
-  return apiFetch<SimulationJobStatus>(`/simulate/jobs/${jobId}`, {
-    token,
-    signal,
-    timeoutMs: DEFAULT_TIMEOUT_MS,
-  });
+  return readWithRetry(
+    () =>
+      apiFetch<SimulationJobStatus>(`/simulate/jobs/${jobId}`, {
+        token,
+        signal,
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+      }),
+    signal
+  );
 }
 
 function jobStatusToProgressEvent(status: SimulationJobStatus): ProgressEvent {
@@ -592,13 +615,35 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+async function readWithRetry<T>(
+  read: () => Promise<T>,
+  signal?: AbortSignal
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await read();
+    } catch (error) {
+      // A cancelled request surfaces as a TimeoutError too; never retry it.
+      if (signal?.aborted) throw error;
+      const transient =
+        error instanceof NetworkError ||
+        error instanceof TimeoutError ||
+        (error instanceof ApiError &&
+          [502, 503, 504].includes(error.statusCode ?? 0));
+      if (!transient || attempt >= 2) throw error;
+      await sleep(1_000 * (attempt + 1), signal);
+    }
+  }
+}
+
 async function* pollSimulationJob(
   initialStatus: SimulationJobStatus,
   token?: string,
   signal?: AbortSignal
 ): AsyncGenerator<SimulationEvent, void, unknown> {
   const startedAt = Date.now();
-  const maxWaitMs = 10 * 60_000;
+  // Modal workers may run for 15 minutes, plus queue/container startup time.
+  const maxWaitMs = 18 * 60_000;
   // Mild backoff keeps early progress snappy without polling a busy
   // backend every second for the whole run.
   const minPollMs = 1_000;

@@ -6,12 +6,17 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   runUKSimulation,
-  type UKPensionCreditScreen,
   type UKSimulationInput,
   type UKSimulationResult,
 } from "../../lib/api-uk";
+import { BenefitsCheck } from "../../components/uk/BenefitsCheck";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { colors, chartColors } from "../../lib/design-tokens";
+import {
+  formatGBP,
+  summarizeUKOutcome,
+  UK_MINIMUM_PENSION_AGE,
+} from "../../lib/uk-outcome";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -110,90 +115,6 @@ interface ScenarioProbe {
   delta: Partial<UKSimulationInput>;
 }
 
-/**
- * Guarantee credit (Pension Credit) screening along the median path,
- * computed from statute encodings via the Axiom rules engine. Every number
- * links to the legislation that produced it.
- */
-function BenefitsCheck({ screen }: { screen: UKPensionCreditScreen }) {
-  const [showSources, setShowSources] = useState(false);
-  const indicated = screen.years_indicated > 0;
-  const maxAmount = Math.max(0, ...screen.annual_amounts);
-  const firstAge = screen.ages.find(
-    (_, i) => (screen.annual_amounts[i] ?? 0) > 0,
-  );
-
-  return (
-    <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-sm)]">
-      <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold uppercase tracking-widest text-[var(--color-text-muted)]">
-          Benefits check
-        </h3>
-        <span className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-2 py-0.5 text-[0.65rem] font-semibold text-[var(--color-primary)]">
-          Statute-cited · modeled
-        </span>
-      </div>
-      {indicated ? (
-        <p className="mt-2 text-sm leading-relaxed text-[var(--color-text)]">
-          On the median path, modeled income falls below the Pension Credit
-          minimum guarantee ({formatGBP(screen.weekly_minimum_guarantee)}/week)
-          in <strong>{screen.years_indicated}</strong> of {screen.ages.length}{" "}
-          years{firstAge != null && <> (first at age {firstAge})</>}, with a
-          guarantee credit of up to{" "}
-          <strong>{formatGBP(maxAmount)}/year</strong>. Checking eligibility
-          with the DWP could matter more than withdrawal strategy in those
-          years.
-        </p>
-      ) : (
-        <p className="mt-2 text-sm leading-relaxed text-[var(--color-text-muted)]">
-          Median-path income stays above the Pension Credit minimum guarantee
-          ({formatGBP(screen.weekly_minimum_guarantee)}/week) in every modeled
-          year, so no guarantee credit is indicated.
-        </p>
-      )}
-      <button
-        type="button"
-        className="mt-2 text-xs font-semibold text-[var(--color-primary)] underline-offset-2 hover:underline"
-        onClick={() => setShowSources((value) => !value)}
-      >
-        {showSources ? "Hide sources" : `Sources (${screen.citations.length})`}
-      </button>
-      {showSources && (
-        <ul className="mt-2 space-y-1">
-          {screen.citations.map((citation) => (
-            <li key={citation.id} className="text-xs">
-              <a
-                href={citation.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[var(--color-text-muted)] underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
-              >
-                {citation.id.replace("uk:", "").replace("#", " — ")}
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
-      <p className="mt-2 text-[0.7rem] leading-snug text-[var(--color-text-light)]">
-        Screening estimate from encoded law (State Pension Credit Act 2002
-        s.2; SI 2002/1792 reg 6), not a benefits decision. Savings credit and
-        housing additions are not modeled.
-      </p>
-    </section>
-  );
-}
-
-function formatGBP(value: number): string {
-  if (Math.abs(value) >= 1_000_000) return `£${(value / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(value) >= 1_000) return `£${(value / 1_000).toFixed(0)}k`;
-  return `£${Math.round(value)}`;
-}
-function formatPct(value: number): string {
-  return `${(value * 100).toFixed(0)}%`;
-}
-function formatPct1(value: number): string {
-  return `${(value * 100).toFixed(1)}%`;
-}
 
 interface SimState {
   forInput: UKSimulationInput | null;
@@ -287,9 +208,9 @@ export default function UKSimulatorPage() {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 md:grid-cols-[360px_minmax(0,1fr)] md:gap-8 md:px-6 md:py-10">
+      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-8 md:gap-8 md:px-6 md:py-10 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)]">
         {/* Results column — appears first on mobile so the answer is visible immediately */}
-        <div className="order-1 space-y-6 md:order-2">
+        <div className="order-1 min-w-0 space-y-6 lg:order-2">
           <div className="relative space-y-6">
             {isRunning && result && (
               <div className="pointer-events-none absolute inset-x-0 top-14 z-20 flex justify-center">
@@ -340,7 +261,8 @@ export default function UKSimulatorPage() {
                 yTitle="Annual tax (£)"
                 height={300}
               />
-              {input.current_age < (input.retirement_age ?? 67) && (
+              {input.current_age < (input.retirement_age ?? 67) &&
+                (input.employment_income ?? 0) > 0 && (
                 <PercentileFanChart
                   title="Earnings while working"
                   description="Median + 25/75 + 5/95 percentiles"
@@ -357,7 +279,7 @@ export default function UKSimulatorPage() {
         </div>
 
         {/* Inputs column — left on desktop, below results on mobile */}
-        <div className="order-2 space-y-5 md:order-1 md:sticky md:top-20 md:self-start">
+        <div className="order-2 space-y-5 lg:order-1 lg:sticky lg:top-20 lg:self-start">
           <InputsPanel
             input={input}
             updateField={updateField}
@@ -443,7 +365,7 @@ function InputsPanel({
         />
         <LogRangeField
           label="SIPP / workplace pension"
-          hint="DC pension pot"
+          hint={`DC pension pot · drawable from age ${UK_MINIMUM_PENSION_AGE}`}
           value={input.sipp_balance}
           onChange={(v) => updateField("sipp_balance", v)}
           min={0}
@@ -634,63 +556,59 @@ function HeroAnswer({
     return input.annual_spending * Math.pow(1 + (input.inflation_rate ?? 0.025), 20);
   }, [input.annual_spending, input.inflation_rate, input.spending_mode]);
 
+  const summary = result ? summarizeUKOutcome(input, result) : null;
+
   return (
-    <div className="relative rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-white p-6 shadow-[var(--shadow-sm)] md:p-8">
+    <section aria-label="Simulation outcome" aria-busy={isRunning} className="@container relative rounded-[var(--radius-lg)] border border-[var(--color-border-light)] bg-white p-6 shadow-[var(--shadow-sm)] md:p-8">
       <div className="flex items-center justify-between">
-        <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">
-          Outcome
-        </div>
-        <LiveIndicator isRunning={isRunning} />
+        <h2 className="font-display text-xl font-medium tracking-tight text-[var(--color-text)]">
+          Your outlook
+        </h2>
+        <LiveIndicator isRunning={isRunning} hasError={Boolean(error)} />
       </div>
 
       {error && !result ? (
         <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-danger)] bg-[var(--color-danger-light)] p-4 text-sm text-[var(--color-danger)]">
           {error}
         </div>
-      ) : !result ? (
+      ) : !result || !summary ? (
         <SkeletonHero />
       ) : (
         <>
-          <div className="mt-3 grid gap-6 md:grid-cols-[auto_1fr] md:items-center">
-            <div>
-              <div className="bg-gradient-golden bg-clip-text text-5xl font-bold tabular-nums text-transparent md:text-6xl">
-                {formatPct(result.success_rate)}
-              </div>
-              <div className="mt-1 max-w-xs text-sm leading-snug text-[var(--color-text-muted)]">
-                {input.include_mortality ?? true
-                  ? `of simulated paths avoid depletion before death or age ${input.max_age}`
-                  : `of simulated paths last through age ${input.max_age}`}
-              </div>
+          <dl className="mt-7 grid gap-7 @min-[28rem]:grid-cols-[1.2fr_1fr] @min-[28rem]:gap-8">
+            <div className="min-w-0">
+              <dt className="text-xs font-medium text-[var(--color-text-muted)]">{summary.headline.label}</dt>
+              <dd className="mt-2 text-6xl font-semibold leading-none tracking-tight text-[var(--color-primary)] tabular-nums @min-[28rem]:text-7xl">
+                {summary.headline.value}
+              </dd>
+              <dd className="mt-3 max-w-[30ch] text-sm leading-relaxed text-[var(--color-text-muted)]">
+                {summary.headline.detail}
+              </dd>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 sm:border-l sm:border-[var(--color-border-light)] sm:pl-6 lg:grid-cols-5">
-              <HeroMetric
-                label="Median ending (real)"
-                value={formatGBP(result.median_final_value_real)}
-                detail={`Today's £ at age ${input.max_age}`}
-              />
-              <HeroMetric
-                label="10-year depletion risk"
-                value={formatPct1(result.prob_10_year_failure)}
-                detail="Running out within a decade"
-              />
-              <HeroMetric
-                label={`Strict age ${input.max_age}`}
-                value={formatPct(result.strict_horizon_success_rate)}
-                detail="Ignores mortality"
-              />
-              <HeroMetric
-                label="Year-1 withdrawal rate"
-                value={`${result.initial_withdrawal_rate.toFixed(1)}%`}
-                detail="Off the starting portfolio"
-              />
-              <HeroMetric
-                label="Lifetime tax (median)"
-                value={formatGBP(result.year_breakdown.reduce((s, b) => s + b.total_tax, 0))}
-                detail="HMRC income tax + NI + dividend tax"
-              />
+            <div className="min-w-0 border-t border-[var(--color-border)] pt-6 @min-[28rem]:border-t-0 @min-[28rem]:border-l @min-[28rem]:pt-0 @min-[28rem]:pl-8">
+              <dt className="text-xs font-medium text-[var(--color-text-muted)]">Median ending portfolio</dt>
+              <dd className="mt-3 text-4xl font-semibold leading-none tracking-tight text-[var(--color-text)] tabular-nums @min-[28rem]:text-5xl">
+                {formatGBP(result.median_final_value_real)}
+              </dd>
+              <dd className="mt-3 text-sm leading-relaxed text-[var(--color-text-muted)]">At age {input.max_age}, in today&apos;s money</dd>
             </div>
-          </div>
-          <p className="mt-6 border-t border-[var(--color-border-light)] pt-4 text-xs leading-relaxed text-[var(--color-text-light)]">
+          </dl>
+          <dl className="mt-7 grid grid-cols-2 gap-x-6 gap-y-6 border-t border-[var(--color-border)] pt-6 @min-[38rem]:grid-cols-4">
+              {summary.metrics.map((metric) => (
+                <HeroMetric
+                  key={metric.label}
+                  label={metric.label}
+                  value={metric.value}
+                  detail={metric.detail}
+                />
+              ))}
+          </dl>
+          {summary.sippLockedNote ? (
+            <p role="note" className="mt-6 rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-3 text-sm leading-relaxed text-[var(--color-warning-text)]">
+              {summary.sippLockedNote}
+            </p>
+          ) : null}
+          <p className="mt-6 border-t border-[var(--color-border-light)] pt-4 text-xs leading-relaxed text-[var(--color-text-muted)]">
             {formatGBP(totalPortfolio)} at age {input.current_age} · spending {formatGBP(input.annual_spending)}/yr
             {input.spending_mode === "real" ? " (today's £)" : " (flat nominal)"} · {input.region}
             {spendingYear20 != null && input.return_source === "gaussian" ? (
@@ -705,23 +623,23 @@ function HeroAnswer({
           </p>
         </>
       )}
-    </div>
+    </section>
   );
 }
 
-function LiveIndicator({ isRunning }: { isRunning: boolean }) {
+function LiveIndicator({ isRunning, hasError }: { isRunning: boolean; hasError: boolean }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div role="status" className="flex shrink-0 items-center gap-2">
       <span
         className={`h-1.5 w-1.5 rounded-full ${
           isRunning
-            ? "animate-pulse bg-[var(--color-primary)]"
-            : "bg-[var(--color-success)]"
+            ? "animate-pulse bg-[var(--color-primary)] motion-reduce:animate-none"
+            : hasError ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]"
         }`}
         aria-hidden="true"
       />
-      <span className="text-[0.6rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">
-        {isRunning ? "Updating" : "Live"}
+      <span className="text-xs font-medium text-[var(--color-text-muted)]">
+        {isRunning ? "Updating" : hasError ? "Unavailable" : "Live"}
       </span>
     </div>
   );
@@ -729,20 +647,26 @@ function LiveIndicator({ isRunning }: { isRunning: boolean }) {
 
 function SkeletonHero() {
   return (
-    <div className="mt-3 grid gap-6 md:grid-cols-[auto_1fr] md:items-center">
-      <div>
-        <div className="h-14 w-40 animate-pulse rounded bg-[var(--color-gray-100)]" />
-        <div className="mt-2 h-4 w-56 animate-pulse rounded bg-[var(--color-gray-100)]" />
-      </div>
-      <div className="grid gap-4 sm:grid-cols-3">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="space-y-1.5">
-            <div className="h-3 w-24 animate-pulse rounded bg-[var(--color-gray-100)]" />
-            <div className="h-5 w-20 animate-pulse rounded bg-[var(--color-gray-100)]" />
-            <div className="h-3 w-28 animate-pulse rounded bg-[var(--color-gray-100)]" />
+    <div aria-hidden="true" className="mt-7 animate-pulse motion-reduce:animate-none">
+      <div className="grid gap-7 @min-[28rem]:grid-cols-[1.2fr_1fr] @min-[28rem]:gap-8">
+        {[0, 1].map((i) => (
+          <div key={i} className="min-w-0 space-y-3">
+            <div className="h-3 w-32 max-w-full rounded bg-[var(--color-gray-100)]" />
+            <div className="h-16 w-40 max-w-full rounded bg-[var(--color-gray-100)]" />
+            <div className="h-10 w-56 max-w-full rounded bg-[var(--color-gray-100)]" />
           </div>
         ))}
       </div>
+      <div className="mt-7 grid grid-cols-2 gap-x-6 gap-y-6 border-t border-[var(--color-border)] pt-6 @min-[38rem]:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="min-w-0 space-y-2">
+            <div className="h-3 w-28 max-w-full rounded bg-[var(--color-gray-100)]" />
+            <div className="h-7 w-20 max-w-full rounded bg-[var(--color-gray-100)]" />
+            <div className="h-8 w-28 max-w-full rounded bg-[var(--color-gray-100)]" />
+          </div>
+        ))}
+      </div>
+      <div className="mt-6 h-12 border-t border-[var(--color-border-light)]" />
     </div>
   );
 }
@@ -989,12 +913,12 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 
 function HeroMetric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div>
-      <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">
+    <div className="min-w-0">
+      <dt className="text-xs font-medium leading-relaxed text-[var(--color-text-muted)]">
         {label}
-      </div>
-      <div className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-text)]">{value}</div>
-      <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{detail}</div>
+      </dt>
+      <dd className="mt-2 text-2xl font-semibold leading-none tracking-tight text-[var(--color-text)] tabular-nums">{value}</dd>
+      <dd className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">{detail}</dd>
     </div>
   );
 }

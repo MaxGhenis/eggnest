@@ -43,7 +43,13 @@ const simulationResult: SimulationResult = {
   median_depletion_year: null,
   total_withdrawn_median: 900000,
   total_taxes_median: 120000,
-  percentile_paths: { p50: [500000, 520000] },
+  percentile_paths: {
+    p5: [500000, 520000],
+    p25: [500000, 520000],
+    p50: [500000, 520000],
+    p75: [500000, 520000],
+    p95: [500000, 520000],
+  },
   year_breakdown: [],
   initial_withdrawal_rate: 8,
   prob_10_year_failure: 0.02,
@@ -266,7 +272,9 @@ describe('runSimulationWithProgress', () => {
   });
 
   it('starts a pollable simulation job and yields progress plus result', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'healthy' })))
+      .mockResolvedValue(
       new Response(JSON.stringify({
         job_id: 'job-1',
         status: 'succeeded',
@@ -298,6 +306,13 @@ describe('runSimulationWithProgress', () => {
       })
     );
     expect(events).toEqual([
+      {
+        type: 'progress',
+        year: 0,
+        total_years: 30,
+        progress: 0,
+        message: 'Starting calculation service',
+      },
       {
         type: 'progress',
         year: 30,

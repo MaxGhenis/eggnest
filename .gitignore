@@ -52,3 +52,4 @@ htmlcov/
 # Playwright recordings (not versioned — regenerate locally)
 output/playwright/
 app/.playwright-cli/
+.hypothesis/
