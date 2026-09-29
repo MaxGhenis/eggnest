@@ -165,8 +165,24 @@ class UKYearBreakdown(BaseModel):
     portfolio_start: float
     portfolio_end: float
     spending_target: float
+    # Net income plus gross account withdrawals: the cash available before
+    # contributions.
     total_income: float
+    # Employment income, State Pension and GIA dividends less income tax and
+    # employee NI (including tax on SIPP draws). Benefits are not modeled.
+    net_income: float = 0.0
     withdrawal: float
+    # Pension and ISA contributions paid out of earnings.
+    contributions: float = 0.0
+    # Spending the accounts could not cover this year (median across paths).
+    unmet_spending: float = 0.0
+    # Share of all paths alive this year with more than £1 of unmet spending.
+    shortfall_share: float = 0.0
+    # Share of all paths alive this year with unmet spending while their SIPP
+    # held money they could not draw before Minimum Pension Age.
+    sipp_locked_shortfall_share: float = 0.0
+    # GIA dividends not needed for spending, reinvested in the GIA.
+    reinvested_dividends: float = 0.0
     total_tax: float
     inflation_rate: float
     portfolio_return: float
@@ -182,8 +198,26 @@ class UKSimulationResult(BaseModel):
     """Aggregated simulation output."""
 
     metadata: dict
-    success_rate: float
-    strict_horizon_success_rate: float
+    success_rate: float = Field(
+        description=(
+            "Share of paths with no year, while alive, in which more than £1 "
+            "of the spending target went unmet."
+        )
+    )
+    strict_horizon_success_rate: float = Field(
+        description=(
+            "Share of paths meeting the spending target in every year to "
+            "max_age, ignoring mortality."
+        )
+    )
+    sipp_locked_shortfall_rate: float = Field(
+        default=0.0,
+        description=(
+            "Share of paths with a year, while alive, of unmet spending while "
+            "their SIPP held money they could not draw before Minimum Pension "
+            "Age. These paths also count as failures in success_rate."
+        ),
+    )
     median_final_value: float
     median_final_value_real: float
     percentiles: dict[str, float]
@@ -193,7 +227,12 @@ class UKSimulationResult(BaseModel):
     earnings_percentile_paths: dict[str, list[float]] = {}
     year_breakdown: list[UKYearBreakdown]
     initial_withdrawal_rate: float
-    prob_10_year_failure: float
+    prob_10_year_failure: float = Field(
+        description=(
+            "Share of paths whose first year of unmet spending, while alive, "
+            "falls in the first ten simulated years."
+        )
+    )
     percentile_path_start_years: dict[str, int] | None = Field(
         default=None,
         description=(

@@ -11,7 +11,13 @@ from typing import Any
 
 from eggnest import __version__
 from eggnest.models_uk import UKSimulationInput, UKSimulationResult
-from eggnest.simulation_uk import run_uk_simulation
+from eggnest.simulation_uk import (
+    LSA_CAP,
+    MPA,
+    TFC_FRACTION,
+    UNMET_TOLERANCE,
+    run_uk_simulation,
+)
 from eggnest.tax_uk import LATEST_PARAMETER_YEAR
 
 from .schemas import (
@@ -114,10 +120,18 @@ def _assumptions(inputs: UKSimulationInput) -> dict[str, Any]:
             "PolicyEngine UK compiled parameters."
         ),
         "account_rules": {
-            "sipp_minimum_pension_age": 55,
-            "ufpls_tax_free_fraction": 0.25,
-            "lump_sum_allowance_cap": 268_275.0,
+            "sipp_minimum_pension_age": MPA,
+            "ufpls_tax_free_fraction": TFC_FRACTION,
+            "lump_sum_allowance_cap": LSA_CAP,
         },
+        "success_definition": (
+            "A path succeeds if no simulated year it is alive has more than "
+            f"£{UNMET_TOLERANCE:.0f} of the spending target unmet."
+        ),
+        "returns": (
+            "ISA and SIPP balances earn the total return; GIA dividends are "
+            "paid out as taxable income and reinvested when not spent."
+        ),
     }
 
 
@@ -127,7 +141,10 @@ def _sources() -> list[ModelSource]:
             name="PolicyEngine UK compiled",
             url="https://github.com/PolicyEngine/policyengine-uk-compiled",
             version=_package_version("policyengine-uk-compiled"),
-            notes="Computes UK income tax, National Insurance, and dividend tax.",
+            notes=(
+                "Computes UK income tax (including dividend tax) and employee "
+                "National Insurance for each person."
+            ),
         ),
         ModelSource(
             name="JST Macrohistory Database",
@@ -152,10 +169,15 @@ def _caveats(inputs: UKSimulationInput) -> list[str]:
         "Educational calculator output only; not financial, tax, or legal advice.",
         "Single-person UK simulator; couples, annuities, and means-tested benefits are not yet modeled.",
         "Future tax years beyond available PolicyEngine UK parameters use the latest available parameter year.",
+        "Net income is income less income tax and employee National Insurance; benefits such as Pension Credit and Universal Credit are not added.",
+        "The State Pension and earnings inputs are held flat in cash terms; they are not uprated with inflation.",
+        "GIA sales are modeled without Capital Gains Tax, and pension contributions without tax relief.",
+        "Employee National Insurance is charged on earnings at every age, including past State Pension age.",
+        "SIPP money cannot be drawn before the minimum pension age; spending it cannot cover counts as unmet (sipp_locked_shortfall_rate).",
     ]
     if inputs.include_mortality:
         caveats.append(
-            "success_rate is mortality-adjusted: paths that avoid depletion before death or horizon count as successful."
+            "success_rate is mortality-adjusted: a path succeeds if spending is met in every simulated year the person is alive."
         )
     if inputs.return_source.startswith("historical"):
         caveats.append(
