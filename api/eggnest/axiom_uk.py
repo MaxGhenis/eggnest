@@ -21,6 +21,7 @@ per-value legal sources.
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import shutil
@@ -39,7 +40,26 @@ from .tax_uk import UKYearInputs, UKYearResults
 _TAX_YEAR_START = "-04-06"
 _TAX_YEAR_END = "-04-05"
 
-# Rule modules evaluated by this backend, relative to the rulespec-uk root.
+# Engine releases this backend speaks to: axiom-rules-engine v0.2.x, whose
+# compiled artifacts are format 2 and whose compile step takes an explicit
+# --rulespec-root. CI pins the release; see docs/uk-axiom-engine.md.
+_ARTIFACT_FORMAT_VERSION = 2
+_ENGINE_VERSION_PREFIX = "0.2."
+
+# rulespec-uk keeps national (UK-wide) content under this directory. The
+# engine requires the checkout itself to be named exactly rulespec-uk and
+# rejects content directories at its top level.
+_RULESPEC_ROOT_NAME = "rulespec-uk"
+_RULESPEC_COUNTRY_DIR = "uk"
+_FORBIDDEN_ROOT_DIRS = (
+    "legislation",
+    "policies",
+    "programs",
+    "regulations",
+    "statutes",
+)
+
+# Rule modules evaluated by this backend, relative to the national directory.
 _ARTIFACT_SOURCES = {
     "ita_s10": "statutes/ukpga/2007/3/10.yaml",
     "ita_s12": "statutes/ukpga/2007/3/12.yaml",
@@ -49,6 +69,7 @@ _ARTIFACT_SOURCES = {
     "sscba_s8": "statutes/ukpga/1992/4/8.yaml",
     "spca_s2": "statutes/ukpga/2002/16/2.yaml",
     "spc_regs_6": "regulations/uksi/2002/1792/6.yaml",
+    "spc_regs_15": "regulations/uksi/2002/1792/15.yaml",
 }
 
 _REF_PREFIXES = {
@@ -60,6 +81,7 @@ _REF_PREFIXES = {
     "sscba_s8": "uk:statutes/ukpga/1992/4/8#",
     "spca_s2": "uk:statutes/ukpga/2002/16/2#",
     "spc_regs_6": "uk:regulations/uksi/2002/1792/6#",
+    "spc_regs_15": "uk:regulations/uksi/2002/1792/15#",
 }
 
 # s.13A re-derives the s.13 outputs with the nil rate applied, so its input
@@ -74,23 +96,62 @@ def engine_binary() -> Path | None:
     configured = os.environ.get("EGGNEST_AXIOM_ENGINE_BIN")
     if configured:
         path = Path(configured)
-        return path if path.exists() else None
+        return path.resolve() if path.is_file() else None
     found = shutil.which("axiom-rules-engine")
-    return Path(found) if found else None
+    return Path(found).resolve() if found else None
 
 
 def rulespec_uk_root() -> Path | None:
-    """Locate the rulespec-uk checkout, if configured or in a known spot."""
+    """Locate a rulespec-uk checkout the engine will accept.
+
+    The engine only takes an absolute, canonical path (no symlink or alias
+    such as macOS /tmp) to a real directory named exactly ``rulespec-uk``
+    with no content directories at its top level, so anything else is
+    reported as unavailable here rather than failing at compile time.
+    """
     configured = os.environ.get("EGGNEST_RULESPEC_UK_ROOT")
-    if configured:
-        path = Path(configured)
-        return path if path.exists() else None
-    return None
+    if not configured:
+        return None
+    root = Path(configured).resolve()
+    if (
+        root.name != _RULESPEC_ROOT_NAME
+        or not (root / _RULESPEC_COUNTRY_DIR).is_dir()
+        or any((root / name).exists() for name in _FORBIDDEN_ROOT_DIRS)
+    ):
+        return None
+    return root
+
+
+@lru_cache(maxsize=4)
+def _engine_capabilities(binary: Path) -> dict | None:
+    """The engine's self-reported version and artifact format, or None."""
+    try:
+        process = subprocess.run(
+            [str(binary), "capabilities"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        return json.loads(process.stdout) if process.returncode == 0 else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
 
 
 def available() -> bool:
-    """Whether the Axiom backend can run in this environment."""
-    return engine_binary() is not None and rulespec_uk_root() is not None
+    """Whether the Axiom backend can run in this environment: a supported
+    engine release and a usable rulespec-uk checkout are both present."""
+    binary = engine_binary()
+    if binary is None or rulespec_uk_root() is None:
+        return False
+    capabilities = _engine_capabilities(binary)
+    return (
+        capabilities is not None
+        and capabilities.get("artifact_format_version") == _ARTIFACT_FORMAT_VERSION
+        and str(capabilities.get("engine_version", "")).startswith(
+            _ENGINE_VERSION_PREFIX
+        )
+    )
 
 
 @lru_cache(maxsize=1)
@@ -140,10 +201,10 @@ def _artifacts() -> _Artifacts:
     if binary is None or root is None:
         raise RuntimeError(
             "Axiom backend unavailable: set EGGNEST_AXIOM_ENGINE_BIN and "
-            "EGGNEST_RULESPEC_UK_ROOT"
+            "EGGNEST_RULESPEC_UK_ROOT (a checkout named rulespec-uk)"
         )
-    directory = Path(tempfile.mkdtemp(prefix="eggnest-axiom-uk-"))
-    env = {**os.environ, "AXIOM_RULESPEC_REPO_ROOTS": str(root)}
+    directory = Path(tempfile.mkdtemp(prefix="eggnest-axiom-uk-")).resolve()
+    atexit.register(shutil.rmtree, directory, ignore_errors=True)
     paths: dict[str, Path] = {}
     for key, relative in _ARTIFACT_SOURCES.items():
         output = directory / f"{key}.compiled.json"
@@ -152,14 +213,15 @@ def _artifacts() -> _Artifacts:
                 str(binary),
                 "compile",
                 "--program",
-                str(root / relative),
+                str(root / _RULESPEC_COUNTRY_DIR / relative),
+                "--rulespec-root",
+                str(root),
                 "--output",
                 str(output),
             ],
             capture_output=True,
             text=True,
             check=False,
-            env=env,
         )
         if process.returncode != 0:
             raise RuntimeError(
