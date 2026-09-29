@@ -43,7 +43,6 @@ def _expected_gap_bound(case: dict) -> tuple[float, list[str]]:
     from the cited values file.
     """
     params = axiom_uk._statutory_inputs()
-    gaps = params["parity_gap_bounds"]
     income_tax = params["income_tax_rates"]
     ni = params["national_insurance"]
 
@@ -102,16 +101,6 @@ def _expected_gap_bound(case: dict) -> tuple[float, list[str]]:
         reasons.append(
             "policyengine-uk-compiled charges employee NI over pensionable age "
             "(SSCBA 1992 s.6(3) exempts; Axiom is statutory here)"
-        )
-    if case["age"] >= ni["state_pension_age"]:
-        # PE re-uprates/imputes State Pension for over-SPA records: bound the
-        # excused income tax at a full new State Pension at the top rate.
-        bound += gaps["full_new_state_pension_ceiling"] * (
-            income_tax["additional_rate"]
-        )
-        reasons.append(
-            "policyengine-uk-compiled re-uprates/imputes State Pension for "
-            "over-SPA records; the simulator supplies its own SP series"
         )
     return bound, reasons
 

@@ -64,13 +64,3 @@ national_insurance:
     value: 66
     source: "Pensions Act 1995 Sch 4 as amended; SSCBA 1992 s.6(3) exempts earners over pensionable age from primary contributions"
     url: https://www.legislation.gov.uk/ukpga/1992/4/section/6
-
-# Magnitudes used only by scripts/uk_engine_parity.py to bound how much
-# engine-vs-engine delta the known policyengine-uk-compiled quirks can
-# explain. The encoding gaps that used to live here (dividend nil rate,
-# savings allowances) closed with rulespec-uk PR #48.
-parity_gap_bounds:
-  full_new_state_pension_ceiling:
-    value: 15_000
-    source: "Envelope over the uprated full new State Pension (Pensions Act 2014 s.2; £11,973 in 2025/26) used to bound policyengine-uk-compiled's over-SPA SP imputation"
-    url: https://www.legislation.gov.uk/ukpga/2014/19/section/2
