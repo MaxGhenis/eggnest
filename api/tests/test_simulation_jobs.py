@@ -1,13 +1,20 @@
 """Tests for background simulation job endpoints."""
 
 import time
+from datetime import UTC, datetime, timedelta
 from threading import Lock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from eggnest.core.us_retirement import OUTPUT_KEY, build_us_retirement_scenario
 from eggnest.models import SimulationInput
-from eggnest.simulation_jobs import CoreJobManager, run_core_job_to_store
+from eggnest.simulation_jobs import (
+    CoreJobManager,
+    SimulationJobManager,
+    run_core_job_to_store,
+    run_simulation_job_to_store,
+)
 from main import app
 
 client = TestClient(app)
@@ -181,3 +188,104 @@ def test_core_job_can_run_with_external_runner():
     assert data.status == "succeeded"
     assert data.result is not None
     assert data.result.outputs[OUTPUT_KEY]["success_rate"] == 1.0
+
+
+def _iso(moment: datetime) -> str:
+    return moment.isoformat().replace("+00:00", "Z")
+
+
+def _finished_snapshot(job_id: str, finished_at: datetime) -> dict:
+    stamp = _iso(finished_at)
+    return {
+        "job_id": job_id,
+        "status": "succeeded",
+        "created_at": stamp,
+        "updated_at": stamp,
+        "completed_at": stamp,
+    }
+
+
+def _manager_with_external_runner(kind: str, store, ttl_seconds: int, max_records):
+    manager_cls = CoreJobManager if kind == "core" else SimulationJobManager
+    manager = manager_cls(
+        max_workers=1,
+        ttl_seconds=ttl_seconds,
+        max_records=max_records,
+        snapshot_store=store,
+        snapshot_prefix=f"{kind}:",
+    )
+    if kind == "core":
+        manager.set_external_runner(
+            lambda job_id, scenario: run_core_job_to_store(
+                job_id, scenario, store, snapshot_prefix="core:"
+            )
+        )
+    else:
+        manager.set_external_runner(
+            lambda job_id, params: run_simulation_job_to_store(
+                job_id, params, store, snapshot_prefix="simulation:"
+            )
+        )
+    return manager
+
+
+def _submit(kind: str, manager):
+    if kind == "core":
+        return manager.submit(build_us_retirement_scenario(small_input()))
+    return manager.submit(small_input())
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_expired_shared_snapshots_are_removed_below_local_capacity(kind):
+    """Jobs run by an external runner (or another container) never enter
+    this manager's local registry, so the registry stays under capacity; the
+    shared store must still expire their snapshots after the TTL."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(
+        kind, store, ttl_seconds=60, max_records=100
+    )
+    now = datetime.now(UTC)
+    for i in range(6):
+        store.put(
+            f"{kind}:expired-{i}",
+            _finished_snapshot(f"expired-{i}", now - timedelta(minutes=5)),
+        )
+    store.put(f"{kind}:fresh", _finished_snapshot("fresh", now))
+    store.put("other-prefix:expired", _finished_snapshot("x", now - timedelta(hours=1)))
+
+    created = _submit(kind, manager)
+
+    keys = {key for key, _ in store.items()}
+    assert not any(key.startswith(f"{kind}:expired-") for key in keys)
+    assert f"{kind}:fresh" in keys
+    assert f"{kind}:{created.job_id}" in keys
+    # Other managers' snapshots are left alone.
+    assert "other-prefix:expired" in keys
+    # Reads also sweep: expire the fresh one and read the new job.
+    store.put(f"{kind}:fresh", _finished_snapshot("fresh", now - timedelta(minutes=5)))
+    assert manager.get(created.job_id) is not None
+    assert f"{kind}:fresh" not in {key for key, _ in store.items()}
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_capacity_trim_counts_only_unexpired_snapshots(kind):
+    """Expired snapshots removed by the TTL sweep must not also count toward
+    the capacity trim, or unexpired results are deleted early."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=60, max_records=3)
+    now = datetime.now(UTC)
+    for i in range(2):
+        store.put(
+            f"{kind}:expired-{i}",
+            _finished_snapshot(f"expired-{i}", now - timedelta(minutes=5)),
+        )
+    for i in range(3):
+        store.put(
+            f"{kind}:fresh-{i}",
+            _finished_snapshot(f"fresh-{i}", now - timedelta(seconds=10 - i)),
+        )
+
+    manager.get("missing")
+
+    keys = sorted(key for key, _ in store.items())
+    assert keys == [f"{kind}:fresh-0", f"{kind}:fresh-1", f"{kind}:fresh-2"]
