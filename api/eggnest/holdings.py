@@ -123,15 +123,33 @@ class HoldingsTracker:
         """Total taxable balance."""
         return self.get_balance_by_account_category(TAXABLE_ACCOUNTS)
 
-    def apply_growth(self, year: int) -> None:
-        """Apply one year of growth to all holdings."""
+    def apply_growth(self, year: int, alive: np.ndarray | None = None) -> None:
+        """Apply one year of growth to all holdings.
+
+        Taxable holdings grow at the price-only return because their dividends
+        are distributed as cash income. Traditional and Roth holdings grow at
+        the total return: dividends inside tax-advantaged accounts are not
+        distributions, so they reinvest untaxed.
+
+        When an alive mask is provided, dead paths are frozen at their value
+        at death instead of continuing to grow.
+        """
         for h in self.holdings:
-            growth = h.balance * h.price_growth[:, year]
+            rate = h.price_growth[:, year]
+            if h.account_type not in TAXABLE_ACCOUNTS:
+                rate = rate + h.div_yields[:, year]
+            growth = h.balance * rate
+            if alive is not None:
+                growth = np.where(alive, growth, 0.0)
             h.balance = h.balance + growth
 
     def get_dividends(self, year: int) -> dict[str, np.ndarray]:
         """
         Get dividend income by account category for a year.
+
+        Only the 'taxable' category is paid out as cash (and taxed as dividend
+        income); traditional and Roth dividends reinvest inside their accounts
+        via apply_growth and are reported here for information only.
 
         Returns:
             Dict with keys 'traditional', 'roth', 'taxable' containing
@@ -174,6 +192,8 @@ class HoldingsTracker:
         self,
         amount: np.ndarray,
         age: int,
+        alive: np.ndarray | None = None,
+        apply_rmd: bool = True,
     ) -> dict[str, np.ndarray]:
         """
         Withdraw from portfolio following withdrawal strategy.
@@ -183,6 +203,8 @@ class HoldingsTracker:
         Args:
             amount: Total amount needed (n_simulations,)
             age: Current age (for RMD calculation)
+            alive: Optional mask; dead paths take no withdrawals or RMDs
+            apply_rmd: Skip the RMD step (e.g. a second same-year withdrawal)
 
         Returns:
             Dict with withdrawal amounts by tax category:
@@ -203,8 +225,13 @@ class HoldingsTracker:
         remaining = amount.copy()
 
         # Step 1: Handle RMDs first (must be taken from traditional)
-        rmd = self.calculate_rmd(age)
-        rmd_withdrawal = np.minimum(rmd, self.traditional_balance)
+        if apply_rmd:
+            rmd = self.calculate_rmd(age)
+            rmd_withdrawal = np.minimum(rmd, self.traditional_balance)
+            if alive is not None:
+                rmd_withdrawal = np.where(alive, rmd_withdrawal, 0.0)
+        else:
+            rmd_withdrawal = np.zeros(self.n_simulations)
         self._withdraw_from_category(TRADITIONAL_ACCOUNTS, rmd_withdrawal)
         result["traditional_rmd"] = rmd_withdrawal
         remaining = np.maximum(0, remaining - rmd_withdrawal)

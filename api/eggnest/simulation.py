@@ -14,18 +14,64 @@ from .tax import TaxCalculator
 START_YEAR = datetime.now().year
 
 
-def _combine_primary_and_spouse(
+def _display_progress_year(raw_year: float, total_years: int) -> int:
+    """Convert fractional internal progress into a human-readable year number."""
+    if raw_year <= 0:
+        return 0
+    if raw_year >= total_years:
+        return total_years
+    if float(raw_year).is_integer():
+        return int(raw_year)
+    return min(total_years, int(raw_year) + 1)
+
+
+def _year_progress_summary(
+    paths: np.ndarray,
+    year_index: int,
+    age: int,
+    active: np.ndarray,
+    taxes: np.ndarray,
+    withdrawals: np.ndarray,
+) -> dict[str, float | int]:
+    """Build a small progress payload from the latest completed simulated year."""
+    values = paths[:, year_index]
+    p25, p50, p75 = np.percentile(values, [25, 50, 75])
+    return {
+        "year": year_index,
+        "age": age,
+        "median_portfolio": float(p50),
+        "p25_portfolio": float(p25),
+        "p75_portfolio": float(p75),
+        "active_paths": int(np.sum(active)),
+        "median_tax": float(np.median(taxes)),
+        "median_withdrawal": float(np.median(withdrawals)),
+    }
+
+
+def _household_social_security(
     n_sims: int,
-    primary_value: float,
-    spouse_value: float | np.ndarray,
+    primary_scheduled: float,
+    spouse_scheduled: float,
+    primary_alive: np.ndarray,
+    spouse_alive: np.ndarray | None,
 ) -> np.ndarray:
-    """Combine a primary scalar and a spouse value (scalar or array) into a simulation array."""
-    result = np.full(n_sims, primary_value)
-    if isinstance(spouse_value, np.ndarray):
-        result = result + spouse_value
-    elif isinstance(spouse_value, (int, float)) and spouse_value > 0:
-        result = result + spouse_value
-    return result
+    """Household Social Security income with a survivor rule.
+
+    Both members alive: sum of the two scheduled benefits. Exactly one alive:
+    the survivor receives the larger of the two scheduled benefits (the SSA
+    survivor rule, simplified). Neither alive: zero.
+    """
+    primary = np.full(n_sims, float(primary_scheduled))
+    if spouse_alive is None:
+        return np.where(primary_alive, primary, 0.0)
+    spouse = np.full(n_sims, float(spouse_scheduled))
+    both = primary_alive & spouse_alive
+    exactly_one = primary_alive ^ spouse_alive
+    return np.where(
+        both,
+        primary + spouse,
+        np.where(exactly_one, np.maximum(primary, spouse), 0.0),
+    )
 
 
 class MonteCarloSimulator:
@@ -40,11 +86,16 @@ class MonteCarloSimulator:
     - Multiple income sources (employment, SS, pension, annuity)
     """
 
-    def __init__(self, params: SimulationInput):
+    def __init__(
+        self,
+        params: SimulationInput,
+        return_paths: tuple[np.ndarray, np.ndarray] | None = None,
+    ):
         """Initialize simulator with input parameters."""
         self.params = params
-        self._rng = np.random.default_rng()
+        self._rng = np.random.default_rng(params.random_seed)
         self.tax_calc = TaxCalculator(state=params.state)
+        self.return_paths: tuple[np.ndarray, np.ndarray] | None = None
 
         # Create holdings tracker if holdings are provided
         n_years = params.max_age - params.current_age
@@ -54,6 +105,25 @@ class MonteCarloSimulator:
             n_years=n_years,
             rng=self._rng,
         )
+        if return_paths is not None:
+            if self.tracker:
+                raise ValueError(
+                    "return_paths are only supported for simple portfolio mode"
+                )
+            price_growth, div_yields = (
+                np.asarray(return_paths[0], dtype=float),
+                np.asarray(return_paths[1], dtype=float),
+            )
+            expected_shape = (params.n_simulations, n_years)
+            if (
+                price_growth.shape != expected_shape
+                or div_yields.shape != expected_shape
+            ):
+                raise ValueError(
+                    "return_paths must have shape "
+                    f"{expected_shape}; got {price_growth.shape} and {div_yields.shape}"
+                )
+            self.return_paths = (price_growth, div_yields)
 
     def _simulate_core(self):
         """
@@ -86,17 +156,21 @@ class MonteCarloSimulator:
         # Generate market returns using selected model and allocation
         # Only needed if NOT using tracker (tracker has its own returns)
         if not self.tracker:
-            price_growth, div_yields = generate_blended_returns(
-                n_simulations=n_sims,
-                n_years=n_years,
-                stock_allocation=p.stock_allocation,
-                method=p.return_model,
-                expected_stock_return=p.expected_return,
-                stock_volatility=p.return_volatility,
-                stock_index=p.stock_index,
-                bond_index=p.bond_index,
-                rng=self._rng,
-            )
+            if self.return_paths is not None:
+                price_growth, div_yields = self.return_paths
+            else:
+                price_growth, div_yields = generate_blended_returns(
+                    n_simulations=n_sims,
+                    n_years=n_years,
+                    stock_allocation=p.stock_allocation,
+                    method=p.return_model,
+                    expected_stock_return=p.expected_return,
+                    stock_volatility=p.return_volatility,
+                    stock_index=p.stock_index,
+                    bond_index=p.bond_index,
+                    dividend_yield=p.dividend_yield,
+                    rng=self._rng,
+                )
         # Generate mortality masks
         if p.include_mortality:
             if p.has_spouse and p.spouse:
@@ -118,7 +192,9 @@ class MonteCarloSimulator:
         else:
             either_alive = np.ones((n_sims, n_years + 1), dtype=bool)
             primary_alive = either_alive
-            spouse_alive = None
+            # Without mortality the spouse is always alive; a None mask would
+            # silently drop spouse income from the household.
+            spouse_alive = either_alive if (p.has_spouse and p.spouse) else None
 
         # Calculate initial withdrawal rate for reporting
         guaranteed_income = (
@@ -145,7 +221,7 @@ class MonteCarloSimulator:
         )
 
         # Yield initial progress
-        yield ("progress", 0, n_years)
+        yield ("progress", 0, n_years, "Preparing simulation")
 
         # Track year-by-year data for detailed breakdown
         yearly_employment = np.zeros((n_sims, n_years))
@@ -163,32 +239,50 @@ class MonteCarloSimulator:
             current_age = p.current_age + year
             current_value = paths[:, year]
 
-            # Skip dead or depleted paths
+            # Skip dead or depleted paths, carrying balances forward so
+            # frozen estates are not zeroed out.
             active = (current_value > 0) & either_alive[:, year]
             if not np.any(active):
-                yield ("progress", year + 1, n_years)
+                paths[:, year + 1] = current_value
+                yield ("progress", year + 1, n_years, "Year complete")
                 continue
 
+            yield ("progress", year + 0.15, n_years, "Preparing yearly cash flows")
+
+            alive = either_alive[:, year]
+            primary_alive_col = primary_alive[:, year]
+            spouse_alive_col = (
+                spouse_alive[:, year] if spouse_alive is not None else None
+            )
+            inflation_factor = (1.0 + p.inflation_rate) ** year
+
+            # Spending grows with assumed inflation (the engine is nominal)
+            spending_need = annual_spending * inflation_factor
+
             # Calculate income for this year
-            # Primary person
+            # Primary person; income stops at death
             employment = 0.0
             if p.employment_income > 0 and current_age < p.retirement_age:
                 years_worked = min(year, p.retirement_age - p.current_age)
                 employment = p.employment_income * (
                     (1 + p.employment_growth_rate) ** years_worked
                 )
+            employment = np.where(primary_alive_col, employment, 0.0)
 
             ss_start_age = getattr(p, "social_security_start_age", 67)
+            # Social Security receives a COLA at the assumed inflation rate
             social_security = (
-                p.social_security_monthly * 12 if current_age >= ss_start_age else 0
+                p.social_security_monthly * 12 * inflation_factor
+                if current_age >= ss_start_age
+                else 0.0
             )
-            pension = p.pension_annual
+            pension = np.where(primary_alive_col, p.pension_annual, 0.0)
 
-            # Spouse income
+            # Spouse income; stops at death (no survivor pension continuation)
             spouse_employment = 0.0
-            spouse_ss = 0.0
+            spouse_ss_scheduled = 0.0
             spouse_pension = 0.0
-            if p.has_spouse and p.spouse and spouse_alive is not None:
+            if p.has_spouse and p.spouse:
                 spouse_current_age = p.spouse.age + year
                 if (
                     p.spouse.employment_income > 0
@@ -200,16 +294,24 @@ class MonteCarloSimulator:
                     )
                 spouse_ss_start = getattr(p.spouse, "social_security_start_age", 67)
                 if spouse_current_age >= spouse_ss_start:
-                    spouse_ss = p.spouse.social_security_monthly * 12
+                    spouse_ss_scheduled = (
+                        p.spouse.social_security_monthly * 12 * inflation_factor
+                    )
                 spouse_pension = p.spouse.pension_annual
+                if spouse_alive_col is not None:
+                    spouse_employment = np.where(
+                        spouse_alive_col, spouse_employment, 0.0
+                    )
+                    spouse_pension = np.where(spouse_alive_col, spouse_pension, 0.0)
 
-                # Zero out spouse income if spouse is dead
-                spouse_dead = ~spouse_alive[:, year]
-                if np.any(spouse_dead):
-                    # These are arrays
-                    spouse_employment = np.where(spouse_dead, 0, spouse_employment)
-                    spouse_ss = np.where(spouse_dead, 0, spouse_ss)
-                    spouse_pension = np.where(spouse_dead, 0, spouse_pension)
+            # Household Social Security with the survivor rule applied
+            ss_income = _household_social_security(
+                n_sims,
+                social_security,
+                spouse_ss_scheduled,
+                primary_alive_col,
+                spouse_alive_col,
+            )
 
             # Annuity income
             annuity_income = 0.0
@@ -232,50 +334,40 @@ class MonteCarloSimulator:
 
             # Portfolio dividend income
             if self.tracker:
-                # Get dividends by account type from tracker
+                # Only taxable-account dividends are distributed as cash;
+                # traditional and Roth dividends reinvest inside their
+                # accounts (via apply_growth) without a taxable event.
                 div_by_account = self.tracker.get_dividends(year)
-                # Dividends from taxable and traditional accounts are taxable
-                # Roth dividends grow tax-free (not included in taxable income)
-                dividends = div_by_account["taxable"] + div_by_account["traditional"]
-                roth_dividends = div_by_account["roth"]
+                dividends = np.where(alive, div_by_account["taxable"], 0.0)
             else:
-                # Legacy mode: use blended returns
-                dividends = current_value * div_yields[:, year]
-                roth_dividends = np.zeros(n_sims)
+                # Legacy mode: single taxable portfolio pays out its yield
+                dividends = np.where(alive, current_value * div_yields[:, year], 0.0)
+
+            employment_total = employment + spouse_employment
+            pension_total = pension + spouse_pension
 
             # Total guaranteed income (not including dividends)
             total_guaranteed = (
-                employment
-                + social_security
-                + pension
-                + spouse_employment
-                + spouse_ss
-                + spouse_pension
-                + annuity_income
+                employment_total + ss_income + pension_total + annuity_income
             )
 
-            # Make sure total_guaranteed is broadcastable
-            if isinstance(total_guaranteed, (int, float)):
-                total_guaranteed = np.full(n_sims, total_guaranteed)
-
             # Total income including dividends reduces withdrawal needs
-            # Roth dividends also reduce withdrawal needs (tax-free)
-            total_income_for_spending = total_guaranteed + dividends + roth_dividends
+            total_income_for_spending = total_guaranteed + dividends
 
-            # Net withdrawal needed from portfolio (after all income including dividends)
-            net_need = annual_spending - total_income_for_spending
-            net_need = np.maximum(0, net_need)
-
-            # Build combined income arrays (shared by both tracker and legacy modes)
-            ss_income = _combine_primary_and_spouse(n_sims, social_security, spouse_ss)
-            employment_total = _combine_primary_and_spouse(
-                n_sims, employment, spouse_employment
+            # Net withdrawal needed from portfolio; dead paths stop spending
+            # so estates freeze at their value at death.
+            net_need = np.where(
+                alive,
+                np.maximum(0.0, spending_need - total_income_for_spending),
+                0.0,
             )
 
             # Handle withdrawals and taxes
             if self.tracker:
                 # Use tracker to withdraw with proper tax treatment
-                withdrawal_result = self.tracker.withdraw(net_need, current_age)
+                withdrawal_result = self.tracker.withdraw(
+                    net_need, current_age, alive=alive
+                )
 
                 # Traditional withdrawals are ordinary income (add to employment income)
                 trad_withdrawals = (
@@ -284,6 +376,12 @@ class MonteCarloSimulator:
                 )
                 ordinary_income = employment_total + trad_withdrawals
 
+                yield (
+                    "progress",
+                    year + 0.35,
+                    n_years,
+                    "Calculating PolicyEngine taxes",
+                )
                 tax_results = self.tax_calc.calculate_batch_taxes(
                     capital_gains_array=np.asarray(
                         withdrawal_result["taxable"]
@@ -297,16 +395,29 @@ class MonteCarloSimulator:
                 )
 
                 estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
-                estimated_taxes = np.maximum(0, estimated_taxes)
+                estimated_taxes = np.where(alive, np.maximum(0, estimated_taxes), 0.0)
 
-                gross_withdrawal = withdrawal_result["total"] + estimated_taxes
+                # Taxes are paid from the portfolio: take a second withdrawal
+                # pass for the tax bill (without re-applying RMDs). The tax on
+                # this second withdrawal is approximated as zero, a standard
+                # one-iteration simplification.
+                tax_withdrawal = self.tracker.withdraw(
+                    estimated_taxes, current_age, alive=alive, apply_rmd=False
+                )
+                gross_withdrawal = withdrawal_result["total"] + tax_withdrawal["total"]
 
                 # Apply growth and update portfolio value
-                self.tracker.apply_growth(year)
+                self.tracker.apply_growth(year, alive=alive)
                 new_value = self.tracker.total_balance
 
             else:
                 # Legacy mode: simplified tax treatment (all withdrawals as capital gains)
+                yield (
+                    "progress",
+                    year + 0.35,
+                    n_years,
+                    "Calculating PolicyEngine taxes",
+                )
                 tax_results = self.tax_calc.calculate_batch_taxes(
                     capital_gains_array=np.asarray(net_need).flatten(),
                     social_security_array=np.asarray(ss_income).flatten(),
@@ -317,14 +428,15 @@ class MonteCarloSimulator:
                     year=START_YEAR + year,
                 )
                 estimated_taxes = np.asarray(tax_results["total_tax"]).flatten()
-                estimated_taxes = np.maximum(0, estimated_taxes)
+                estimated_taxes = np.where(alive, np.maximum(0, estimated_taxes), 0.0)
 
                 net_need = np.asarray(net_need).flatten()
                 dividends = np.asarray(dividends).flatten()
                 gross_withdrawal = net_need + estimated_taxes
 
-                # Portfolio dynamics - price returns only, dividends are income not growth
-                growth = current_value * price_growth[:, year]
+                # Portfolio dynamics - price returns only, dividends are income
+                # not growth. Dead paths freeze at their value at death.
+                growth = np.where(alive, current_value * price_growth[:, year], 0.0)
                 new_value = current_value + growth - gross_withdrawal
 
             # Track depletion
@@ -338,21 +450,9 @@ class MonteCarloSimulator:
             total_taxes[active] += estimated_taxes[active]
 
             # Store yearly breakdown data
-            yearly_employment[:, year] = (
-                np.broadcast_to(employment_total, n_sims)
-                if isinstance(employment_total, np.ndarray)
-                else employment_total
-            )
-            yearly_ss[:, year] = (
-                np.broadcast_to(ss_income, n_sims)
-                if isinstance(ss_income, np.ndarray)
-                else ss_income
-            )
-            yearly_pension[:, year] = pension + (
-                spouse_pension
-                if isinstance(spouse_pension, (int, float))
-                else np.median(spouse_pension)
-            )
+            yearly_employment[:, year] = employment_total
+            yearly_ss[:, year] = ss_income
+            yearly_pension[:, year] = pension_total
             yearly_dividends[:, year] = dividends
             yearly_annuity[:, year] = (
                 np.broadcast_to(annuity_income, n_sims)
@@ -368,8 +468,22 @@ class MonteCarloSimulator:
             ).flatten()
             yearly_total_tax[:, year] = estimated_taxes
 
-            # Yield progress after each year
-            yield ("progress", year + 1, n_years)
+            # Yield progress after each year, including a small partial result
+            # so clients can show useful output while the full run continues.
+            yield (
+                "progress",
+                year + 1,
+                n_years,
+                "Year complete",
+                _year_progress_summary(
+                    paths=paths,
+                    year_index=year + 1,
+                    age=current_age + 1,
+                    active=active,
+                    taxes=estimated_taxes,
+                    withdrawals=gross_withdrawal,
+                ),
+            )
 
         # Store per-path arrays for downstream use (e.g., annuity comparison)
         self._total_withdrawn = total_withdrawn
@@ -378,21 +492,24 @@ class MonteCarloSimulator:
         # Calculate results
         final_values = paths[:, -1]
 
-        # Success = either alive at end with money, or died before running out
-        if p.include_mortality:
-            success_mask = (failure_year > n_years) | (~either_alive[:, -1])
-        else:
-            success_mask = failure_year > n_years
+        # Dead paths stop spending, so depletion can only happen while the
+        # household is alive: success = never depleted before death or horizon.
+        success_mask = failure_year > n_years
+
+        self._paths = paths
+        self._failure_year = failure_year
+        self._success_mask = success_mask
+        self._final_values = final_values
 
         success_rate = float(np.mean(success_mask))
 
         # Percentile paths for charting (sampled at yearly intervals)
+        path_bands = np.percentile(paths, [5, 25, 50, 75, 95], axis=0)
         percentile_paths = {
-            "p5": [float(np.percentile(paths[:, i], 5)) for i in range(n_years + 1)],
-            "p25": [float(np.percentile(paths[:, i], 25)) for i in range(n_years + 1)],
-            "p50": [float(np.percentile(paths[:, i], 50)) for i in range(n_years + 1)],
-            "p75": [float(np.percentile(paths[:, i], 75)) for i in range(n_years + 1)],
-            "p95": [float(np.percentile(paths[:, i], 95)) for i in range(n_years + 1)],
+            key: [float(value) for value in band]
+            for key, band in zip(
+                ["p5", "p25", "p50", "p75", "p95"], path_bands, strict=True
+            )
         }
 
         # Median depletion age
@@ -486,12 +603,22 @@ class MonteCarloSimulator:
         Run the Monte Carlo simulation with progress updates.
 
         Yields progress events during simulation and a complete event at the end.
-        Each progress event: {"type": "progress", "year": int, "total_years": int}
+        Each progress event includes an integer display year plus a fractional
+        progress value.
         Final complete event: {"type": "complete", "result": SimulationResult}
         """
         for event in self._simulate_core():
             if event[0] == "progress":
-                yield {"type": "progress", "year": event[1], "total_years": event[2]}
+                raw_year = float(event[1])
+                progress = raw_year / event[2] if event[2] else 0
+                yield {
+                    "type": "progress",
+                    "year": _display_progress_year(raw_year, event[2]),
+                    "total_years": event[2],
+                    "progress": max(0, min(1, progress)),
+                    "message": event[3] if len(event) > 3 else None,
+                    "year_summary": event[4] if len(event) > 4 else None,
+                }
             elif event[0] == "result":
                 yield {"type": "complete", "result": event[1].model_dump()}
 
@@ -535,21 +662,26 @@ def compare_to_annuity(
         # Fallback: simple estimate from median
         prob_beats = float(sim_total > annuity_total) * 0.5 + 0.25
 
-    # Generate recommendation
+    # Summarize the modeled comparison without suggesting an action.
     if simulation_result.success_rate > 0.9 and prob_beats > 0.6:
-        recommendation = "Consider investing - high probability of exceeding annuity returns with low depletion risk."
+        comparison_summary = (
+            "Portfolio withdrawals exceed the annuity guarantee total in "
+            f"{prob_beats:.0%} of simulated paths, with low modeled depletion risk."
+        )
     elif simulation_result.success_rate < 0.7:
-        recommendation = (
-            "Consider the annuity - simulation shows significant depletion risk."
+        comparison_summary = (
+            "The portfolio simulation shows material depletion risk; the annuity "
+            "guarantee total is shown for comparison."
         )
     else:
-        recommendation = (
-            "Mixed results - consider a hybrid approach or consult a financial advisor."
+        comparison_summary = (
+            "The modeled comparison is mixed: portfolio outcomes vary materially "
+            "across simulated market paths."
         )
 
     return {
         "annuity_total_guaranteed": annuity_total,
         "probability_simulation_beats_annuity": prob_beats,
         "simulation_median_total_income": sim_total,
-        "recommendation": recommendation,
+        "comparison_summary": comparison_summary,
     }

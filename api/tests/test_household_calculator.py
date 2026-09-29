@@ -124,8 +124,9 @@ class TestHouseholdCalculator:
         calc = HouseholdCalculator()
         result = calc.calculate(household)
 
-        # Should get CTC for 1 child
-        assert result.benefits.get("child_tax_credit", 0) > 0
+        # Should get CTC for 1 child. Non-refundable CTC lowers federal tax;
+        # refundable CTC appears in benefits when applicable.
+        assert result.tax_breakdown["child_tax_credit_total"] > 0
 
     def test_low_income_gets_eitc(self):
         """Test that low-income family gets EITC."""
@@ -295,8 +296,8 @@ class TestHouseholdEndpoint:
 
         data = response.json()
         assert data["total_income"] == 160000
-        # Should have CTC for 2 children
-        assert data["benefits"].get("child_tax_credit", 0) > 0
+        # Should have CTC for 2 children.
+        assert data["tax_breakdown"]["child_tax_credit_total"] > 0
 
     def test_calculate_endpoint_validates_state(self):
         """Test that endpoint validates state code."""

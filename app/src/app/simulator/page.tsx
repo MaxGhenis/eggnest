@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Wizard } from "../../components/Wizard";
 import { SimulationProgress } from "../../components/SimulationProgress";
@@ -82,6 +83,9 @@ function SimulatorShell() {
               <SimulationProgress
                 currentYear={sim.simulation.progress.currentYear}
                 totalYears={sim.simulation.progress.totalYears}
+                progress={sim.simulation.progress.progress}
+                message={sim.simulation.progress.message}
+                yearSummary={sim.simulation.progress.yearSummary}
               />
             }
           />
@@ -94,6 +98,9 @@ function SimulatorShell() {
         <ResultsSkeleton
           currentYear={sim.simulation.progress.currentYear}
           totalYears={sim.simulation.progress.totalYears}
+          progress={sim.simulation.progress.progress}
+          message={sim.simulation.progress.message}
+          yearSummary={sim.simulation.progress.yearSummary}
         />
       );
     }
@@ -125,7 +132,7 @@ function SimulatorShell() {
       <header className="header-glass sticky top-0 z-50 border-b border-[var(--color-border-light)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 md:px-6">
           <Link href="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
-            <img src="/logo.svg" alt="EggNest" height="28" className="h-7" />
+            <Image src="/logo.svg" alt="EggNest" width={140} height={28} className="h-7 w-auto" priority />
           </Link>
           <span className="hidden text-xs font-semibold uppercase tracking-widest text-[var(--color-text-muted)] sm:block">Financial simulator</span>
           <Link href="/life-event" className="rounded-full border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary)] hover:text-white hover:border-[var(--color-primary)]">

@@ -5,6 +5,13 @@ export const metadata: Metadata = {
   title: "EggNest - Know if your money will last",
   description:
     "Monte Carlo simulation meets real tax law. See thousands of possible futures for your finances — the full range of possibilities.",
+  alternates: { canonical: "/" },
+  openGraph: {
+    title: "EggNest - Know if your money will last",
+    description:
+      "Monte Carlo simulation meets real tax law. See thousands of possible futures for your finances.",
+    url: "/",
+  },
 };
 
 export default function HomePage() {
@@ -72,7 +79,7 @@ export default function HomePage() {
                   <rect x="10" y="48" width="20" height="8" fill="rgba(217, 119, 6, 0.1)" />
                   <text x="35" y="54" fontSize="10" fill="#374151">Possible range</text>
                 </g>
-                <text x="85" y="55" fontSize="10" fill="#d97706" fontWeight="500">10,000 simulations</text>
+                <text x="85" y="55" fontSize="10" fill="#d97706" fontWeight="500">1,000 simulations</text>
                 <path d="M 130 60 L 150 80" stroke="#d97706" strokeWidth="1" fill="none" />
               </svg>
               <p className="mt-4 text-center text-sm italic text-[var(--color-text-muted)]">
@@ -146,7 +153,7 @@ export default function HomePage() {
                   <path d="M7 16l4-4 4 4 5-6" />
                 </svg>
               ),
-              title: "10,000 simulations",
+              title: "1,000 simulations",
               desc: "Not one projection\u2014thousands. See the full range of what could happen based on historical market behavior.",
             },
             {
@@ -199,7 +206,7 @@ export default function HomePage() {
                 </svg>
               ),
               title: "Annuity comparison",
-              desc: "Should you buy an annuity or invest? Compare guaranteed income vs. market upside with real numbers.",
+              desc: "Compare guaranteed income cash flows and portfolio withdrawals under the same assumptions.",
             },
           ].map(({ icon, title, desc }) => (
             <div
@@ -239,7 +246,7 @@ export default function HomePage() {
             },
             {
               num: "2",
-              title: "We simulate 10,000 futures",
+              title: "We simulate 1,000 futures",
               desc: "Using historical market data and actual tax law to model your financial trajectory.",
             },
             {
@@ -274,7 +281,7 @@ export default function HomePage() {
           See the full picture. Make better decisions.
         </h2>
         <p className="relative z-10 mt-4 text-lg opacity-90">
-          Free to use. No account required. Results in 30 seconds.
+          Free to use. No account required. Runs real tax law in about a minute.
         </p>
         <Link
           href="/simulator"

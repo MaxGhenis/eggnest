@@ -2,15 +2,22 @@
 
 import { Skeleton } from "./Skeleton";
 import { SimulationProgress } from "./SimulationProgress";
+import type { YearProgressSummary } from "../lib/api";
 
 interface ResultsSkeletonProps {
   currentYear: number;
   totalYears: number;
+  progress?: number;
+  message?: string | null;
+  yearSummary?: YearProgressSummary | null;
 }
 
 export function ResultsSkeleton({
   currentYear,
   totalYears,
+  progress,
+  message,
+  yearSummary,
 }: ResultsSkeletonProps) {
   return (
     <div className="relative space-y-6">
@@ -83,6 +90,9 @@ export function ResultsSkeleton({
           <SimulationProgress
             currentYear={currentYear}
             totalYears={totalYears}
+            progress={progress}
+            message={message}
+            yearSummary={yearSummary}
           />
         </div>
       </div>

@@ -568,6 +568,13 @@ FUND_ARRAYS = {
     "treasury": (TREASURY_PRICE_ARRAY, TREASURY_YIELD_ARRAY),
 }
 
+FUND_SERIES = {
+    "sp500": (SP500_PRICE_RETURNS, SP500_DIVIDEND_RETURNS),
+    "treasury": (TREASURY_RETURNS, TREASURY_YIELDS),
+    "vt": (VT_PRICE_RETURNS, VT_DIVIDEND_YIELDS),
+    "bnd": (BND_PRICE_RETURNS, BND_DIVIDEND_YIELDS),
+}
+
 
 def generate_fund_returns(
     fund: Literal["vt", "sp500", "bnd", "treasury"],
@@ -699,6 +706,99 @@ def get_return_arrays(
     return stock_price, stock_div, bond_price, bond_div
 
 
+def get_blended_historical_series(
+    stock_allocation: float = 1.0,
+    stock_index: Literal["sp500", "vt"] = "sp500",
+    bond_index: Literal["treasury", "bnd"] = "treasury",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return aligned calendar-year blended price/dividend series."""
+    if not 0 <= stock_allocation <= 1:
+        raise ValueError(
+            f"stock_allocation must be between 0 and 1, got {stock_allocation}"
+        )
+
+    stock_price_dict, stock_div_dict = FUND_SERIES[stock_index]
+    bond_price_dict, bond_div_dict = FUND_SERIES[bond_index]
+    common_years = sorted(
+        set(stock_price_dict)
+        & set(stock_div_dict)
+        & set(bond_price_dict)
+        & set(bond_div_dict)
+    )
+    if not common_years:
+        raise ValueError(f"No overlapping years for {stock_index}/{bond_index}")
+
+    stock_weight = stock_allocation
+    bond_weight = 1.0 - stock_weight
+    years = np.array(common_years, dtype=int)
+    price = np.array(
+        [
+            stock_weight * stock_price_dict[year] + bond_weight * bond_price_dict[year]
+            for year in common_years
+        ],
+        dtype=float,
+    )
+    dividends = np.array(
+        [
+            stock_weight * stock_div_dict[year] + bond_weight * bond_div_dict[year]
+            for year in common_years
+        ],
+        dtype=float,
+    )
+    return years, price, dividends
+
+
+def generate_blended_historical_cohort_returns(
+    n_years: int,
+    stock_allocation: float = 1.0,
+    stock_index: Literal["sp500", "vt"] = "sp500",
+    bond_index: Literal["treasury", "bnd"] = "treasury",
+    start_years: list[int] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build one return path per historical cohort start year.
+
+    The paths are contiguous calendar-year observations and never wrap. This is
+    intended for backtests, not Monte Carlo sampling.
+    """
+    years, price, dividends = get_blended_historical_series(
+        stock_allocation=stock_allocation,
+        stock_index=stock_index,
+        bond_index=bond_index,
+    )
+    if n_years < 1:
+        raise ValueError("n_years must be at least 1")
+    if n_years > len(years):
+        raise ValueError(
+            f"{n_years} years requested, but only {len(years)} overlapping years "
+            f"are available for {stock_index}/{bond_index}"
+        )
+
+    valid_start_years = years[: len(years) - n_years + 1]
+    valid_set = {int(year) for year in valid_start_years}
+    if start_years is None:
+        selected_starts = valid_start_years
+    else:
+        invalid = sorted(set(start_years) - valid_set)
+        if invalid:
+            raise ValueError(
+                "Invalid historical start year(s): "
+                f"{', '.join(str(year) for year in invalid)}. "
+                f"Valid range is {int(valid_start_years[0])}-{int(valid_start_years[-1])}."
+            )
+        selected_starts = np.array(start_years, dtype=int)
+
+    index_by_year = {int(year): idx for idx, year in enumerate(years)}
+    price_paths = np.zeros((len(selected_starts), n_years), dtype=float)
+    dividend_paths = np.zeros((len(selected_starts), n_years), dtype=float)
+    for path_idx, start_year in enumerate(selected_starts):
+        start_idx = index_by_year[int(start_year)]
+        end_idx = start_idx + n_years
+        price_paths[path_idx, :] = price[start_idx:end_idx]
+        dividend_paths[path_idx, :] = dividends[start_idx:end_idx]
+
+    return selected_starts, price_paths, dividend_paths
+
+
 def generate_returns(
     n_simulations: int,
     n_years: int,
@@ -786,10 +886,14 @@ def generate_blended_returns(
     bond_volatility: float = 0.08,
     stock_index: Literal["sp500", "vt"] = "vt",
     bond_index: Literal["treasury", "bnd"] = "bnd",
+    dividend_yield: float | None = None,
     rng: np.random.Generator | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Generate blended stock/bond returns with separate price and dividend components.
+
+    dividend_yield only applies to the "normal" model, where it replaces the
+    historical average yields; expected returns stay total returns either way.
 
     Returns:
         (price_growth, dividend_yields) - blended based on allocation
@@ -869,8 +973,12 @@ def generate_blended_returns(
         return blended_price, blended_div
 
     elif method == "normal":
-        avg_stock_div = float(np.mean(stock_div))
-        avg_bond_div = float(np.mean(bond_div))
+        if dividend_yield is not None:
+            avg_stock_div = dividend_yield
+            avg_bond_div = dividend_yield
+        else:
+            avg_stock_div = float(np.mean(stock_div))
+            avg_bond_div = float(np.mean(bond_div))
 
         stock_price_ret = rng.normal(
             expected_stock_return - avg_stock_div,

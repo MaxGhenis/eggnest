@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   compareStates,
   compareSSTimings,
@@ -53,22 +53,47 @@ interface ComparisonDeps {
   setError: (err: unknown) => void;
 }
 
+const resultIdentityTokens = new WeakMap<object, number>();
+let nextResultIdentityToken = 1;
+
+function getResultIdentityToken(result: unknown): string {
+  if (result === null || result === undefined) {
+    return "none";
+  }
+
+  if (typeof result === "object" || typeof result === "function") {
+    let token = resultIdentityTokens.get(result);
+    if (token === undefined) {
+      token = nextResultIdentityToken;
+      nextResultIdentityToken += 1;
+      resultIdentityTokens.set(result, token);
+    }
+    return `ref:${token}`;
+  }
+
+  return `value:${JSON.stringify(result)}`;
+}
+
 export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
   const { params, spouse, annuity, portfolioMode, holdings, withdrawalStrategy, result, setError } = deps;
 
   // State comparison
   const [stateComparisonResult, setStateComparisonResult] = useState<StateComparisonResult | null>(null);
+  const [stateComparisonFingerprint, setStateComparisonFingerprint] = useState<string | null>(null);
+  const [stateComparisonStates, setStateComparisonStates] = useState<string[] | null>(null);
   const [isComparingStates, setIsComparingStates] = useState(false);
   const [selectedCompareStates, setSelectedCompareStates] = useState<string[]>([]);
 
   // SS timing comparison
   const [ssTimingResult, setSSTimingResult] = useState<SSTimingComparisonResult | null>(null);
+  const [ssTimingFingerprint, setSSTimingFingerprint] = useState<string | null>(null);
   const [isComparingSSTiming, setIsComparingSSTiming] = useState(false);
   const [birthYear, setBirthYear] = useState<number>(1960);
   const [piaMonthly, setPiaMonthly] = useState<number>(2000);
 
   // Allocation comparison
   const [allocationResult, setAllocationResult] = useState<AllocationComparisonResult | null>(null);
+  const [allocationFingerprint, setAllocationFingerprint] = useState<string | null>(null);
   const [isComparingAllocations, setIsComparingAllocations] = useState(false);
 
   const getFullParams = useCallback(
@@ -76,11 +101,62 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
     [params, spouse, annuity, portfolioMode, holdings, withdrawalStrategy],
   );
 
+  const baseComparisonFingerprint = useMemo(
+    () => JSON.stringify({
+      params: getFullParams(),
+      result: getResultIdentityToken(result),
+    }),
+    [getFullParams, result],
+  );
+
+  const getStateComparisonFingerprint = useCallback((states: string[]) => JSON.stringify({
+    base: baseComparisonFingerprint,
+    states,
+  }), [baseComparisonFingerprint]);
+
+  const ssTimingComparisonFingerprint = useMemo(() => JSON.stringify({
+    base: baseComparisonFingerprint,
+    birthYear,
+    piaMonthly,
+  }), [baseComparisonFingerprint, birthYear, piaMonthly]);
+
+  const allocationComparisonFingerprint = useMemo(() => JSON.stringify({
+    base: baseComparisonFingerprint,
+    allocations: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+  }), [baseComparisonFingerprint]);
+
+  useEffect(() => {
+    if (
+      stateComparisonResult &&
+      stateComparisonFingerprint !== getStateComparisonFingerprint(stateComparisonStates ?? [])
+    ) {
+      setStateComparisonResult(null);
+      setStateComparisonFingerprint(null);
+      setStateComparisonStates(null);
+    }
+  }, [stateComparisonResult, stateComparisonFingerprint, stateComparisonStates, getStateComparisonFingerprint]);
+
+  useEffect(() => {
+    if (ssTimingResult && ssTimingFingerprint !== ssTimingComparisonFingerprint) {
+      setSSTimingResult(null);
+      setSSTimingFingerprint(null);
+    }
+  }, [ssTimingResult, ssTimingFingerprint, ssTimingComparisonFingerprint]);
+
+  useEffect(() => {
+    if (allocationResult && allocationFingerprint !== allocationComparisonFingerprint) {
+      setAllocationResult(null);
+      setAllocationFingerprint(null);
+    }
+  }, [allocationResult, allocationFingerprint, allocationComparisonFingerprint]);
+
   const handleCompareStates = useCallback(async (statesToCompare?: string[]) => {
     if (!result) return;
 
     setIsComparingStates(true);
     setStateComparisonResult(null);
+    setStateComparisonFingerprint(null);
+    setStateComparisonStates(null);
 
     try {
       const fullParams = getFullParams();
@@ -91,13 +167,15 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
           NO_TAX_STATES.filter(s => s !== params.state).slice(0, 5));
 
       const comparison = await compareStates(fullParams, states);
+      setStateComparisonFingerprint(getStateComparisonFingerprint(states));
+      setStateComparisonStates(states);
       setStateComparisonResult(comparison);
     } catch (err) {
       setError(err);
     } finally {
       setIsComparingStates(false);
     }
-  }, [result, params.state, selectedCompareStates, getFullParams, setError]);
+  }, [result, params.state, selectedCompareStates, getFullParams, getStateComparisonFingerprint, setError]);
 
   const toggleCompareState = useCallback((state: string) => {
     setSelectedCompareStates(prev =>
@@ -112,6 +190,7 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
 
     setIsComparingSSTiming(true);
     setSSTimingResult(null);
+    setSSTimingFingerprint(null);
 
     try {
       const fullParams = getFullParams();
@@ -121,19 +200,21 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
         birthYear,
         piaMonthly
       );
+      setSSTimingFingerprint(ssTimingComparisonFingerprint);
       setSSTimingResult(comparison);
     } catch (err) {
       setError(err);
     } finally {
       setIsComparingSSTiming(false);
     }
-  }, [result, birthYear, piaMonthly, getFullParams, setError]);
+  }, [result, birthYear, piaMonthly, getFullParams, ssTimingComparisonFingerprint, setError]);
 
   const handleCompareAllocations = useCallback(async () => {
     if (!result) return;
 
     setIsComparingAllocations(true);
     setAllocationResult(null);
+    setAllocationFingerprint(null);
 
     try {
       const fullParams = getFullParams();
@@ -142,13 +223,14 @@ export function useComparisons(deps: ComparisonDeps): UseComparisonsReturn {
         fullParams,
         [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
       );
+      setAllocationFingerprint(allocationComparisonFingerprint);
       setAllocationResult(comparison);
     } catch (err) {
       setError(err);
     } finally {
       setIsComparingAllocations(false);
     }
-  }, [result, getFullParams, setError]);
+  }, [result, getFullParams, allocationComparisonFingerprint, setError]);
 
   return {
     stateComparisonResult,

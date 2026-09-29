@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export default function MarketingLayout({
@@ -9,7 +10,7 @@ export default function MarketingLayout({
     <>
       <nav className="sticky top-0 z-50 flex items-center justify-between border-b border-[var(--color-border-light)] bg-white/95 px-5 py-3 backdrop-blur-md md:px-10">
         <Link href="/" className="flex items-center gap-2">
-          <img src="/logo.svg" alt="EggNest" height="32" className="h-8" />
+          <Image src="/logo.svg" alt="EggNest" width={160} height={32} className="h-8 w-auto" priority />
         </Link>
         <div className="flex items-center gap-6">
           <Link
@@ -83,8 +84,8 @@ export default function MarketingLayout({
           </p>
           <p className="mx-auto mt-2 max-w-lg text-xs opacity-60">
             EggNest provides educational projections only and is not financial
-            advice. Consult a qualified financial advisor for personalized
-            recommendations.
+            advice. Use independent professional judgment before making
+            financial decisions.
           </p>
         </div>
       </footer>

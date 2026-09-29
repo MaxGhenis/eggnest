@@ -1,5 +1,7 @@
 """Tests for Social Security timing comparison API endpoint."""
 
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,6 +14,26 @@ from eggnest.models import (
 from main import app
 
 client = TestClient(app)
+
+
+class FakeSimulator:
+    """Fast deterministic simulator for endpoint contract tests."""
+
+    def __init__(self, params):
+        self.params = params
+
+    def run(self):
+        claiming_age = self.params.social_security_start_age
+        return SimpleNamespace(
+            success_rate=min(0.99, 0.75 + (claiming_age - 62) * 0.02),
+            median_final_value=300_000 + claiming_age * 1_000,
+            total_taxes_median=45_000 + claiming_age * 100,
+        )
+
+
+@pytest.fixture(autouse=True)
+def fake_simulator(monkeypatch):
+    monkeypatch.setattr("main.MonteCarloSimulator", FakeSimulator)
 
 
 @pytest.fixture
@@ -105,8 +127,8 @@ class TestSSTimingModels:
                     breakeven_vs_62=None,
                 ),
             ],
-            optimal_claiming_age=70,
-            optimal_for_longevity=70,
+            highest_success_claiming_age=70,
+            highest_lifetime_income_claiming_age=70,
         )
         assert result.birth_year == 1960
         assert result.full_retirement_age == 67.0
@@ -217,8 +239,8 @@ class TestSSTimingEndpoint:
         assert result["monthly_benefit"] > 0
         assert result["annual_benefit"] == result["monthly_benefit"] * 12
 
-    def test_compare_ss_timing_identifies_optimal(self, base_params):
-        """Test that optimal claiming ages are identified."""
+    def test_compare_ss_timing_identifies_highest_values(self, base_params):
+        """Test that highest-value claiming ages are identified."""
         response = client.post(
             "/compare-ss-timing",
             json={
@@ -231,12 +253,11 @@ class TestSSTimingEndpoint:
 
         data = response.json()
 
-        # Should have optimal ages identified
-        assert "optimal_claiming_age" in data
-        assert 62 <= data["optimal_claiming_age"] <= 70
+        assert "highest_success_claiming_age" in data
+        assert 62 <= data["highest_success_claiming_age"] <= 70
 
-        assert "optimal_for_longevity" in data
-        assert 62 <= data["optimal_for_longevity"] <= 70
+        assert "highest_lifetime_income_claiming_age" in data
+        assert 62 <= data["highest_lifetime_income_claiming_age"] <= 70
 
     def test_compare_ss_timing_fra_varies_by_birth_year(self, base_params):
         """Test that FRA is correctly calculated for different birth years."""

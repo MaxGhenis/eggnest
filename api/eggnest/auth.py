@@ -1,5 +1,7 @@
 """OAuth device flow authentication for EggNest CLI."""
 
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -8,8 +10,10 @@ import time
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from supabase import Client, create_client
+if TYPE_CHECKING:
+    from supabase import Client
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +23,22 @@ DEFAULT_SUPABASE_URL = os.environ.get(
 )
 APP_URL = os.environ.get("EGGNEST_APP_URL", "https://app.eggnest.co")
 CREDENTIALS_FILE = Path.home() / ".eggnest" / "credentials.json"
+
+
+def _missing_supabase_error() -> RuntimeError:
+    return RuntimeError(
+        "Supabase support is not installed. Install the CLI extra with "
+        '`uv pip install -e ".[cli]"` or `pip install "eggnest[cli]"`.'
+    )
+
+
+def _create_client(url: str, key: str) -> Client:
+    try:
+        from supabase import create_client
+    except ModuleNotFoundError as exc:
+        raise _missing_supabase_error() from exc
+
+    return create_client(url, key)
 
 
 @dataclass
@@ -43,7 +63,7 @@ class Credentials:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Credentials":
+    def from_dict(cls, data: dict) -> Credentials:
         return cls(
             access_token=data["access_token"],
             refresh_token=data["refresh_token"],
@@ -88,7 +108,7 @@ def get_supabase_client() -> Client:
     if not supabase_key:
         raise ValueError("EGGNEST_SUPABASE_ANON_KEY environment variable is required")
 
-    return create_client(supabase_url, supabase_key)
+    return _create_client(supabase_url, supabase_key)
 
 
 def refresh_access_token(creds: Credentials) -> Credentials | None:
@@ -101,7 +121,7 @@ def refresh_access_token(creds: Credentials) -> Credentials | None:
             new_creds = Credentials(
                 access_token=response.session.access_token,
                 refresh_token=response.session.refresh_token,
-                expires_at=response.session.expires_at,
+                expires_at=float(response.session.expires_at),
                 user_email=creds.user_email,
             )
             save_credentials(new_creds)
@@ -157,15 +177,8 @@ def device_login(timeout: int = 300) -> Credentials | None:
     # Generate a unique device code
     device_code = secrets.token_urlsafe(32)
 
-    # Build authorization URL
-    auth_url = f"{APP_URL}/auth/device?code={device_code}"
-
-    print("\nOpening browser to complete authentication...")
-    print(f"If browser doesn't open, visit: {auth_url}\n")
-
-    # Open browser
-    webbrowser.open(auth_url)
-
+    # Validate the backend pieces before opening any browser window so a
+    # missing configuration fails with a clear message instead of a dead page.
     try:
         client = get_supabase_client()
     except ValueError as e:
@@ -180,8 +193,21 @@ def device_login(timeout: int = 300) -> Credentials | None:
         ).execute()
     except Exception as e:
         logger.error(f"Failed to create device code: {e}")
-        print("\nFailed to initiate login. Please try again.")
+        print(
+            "\nDevice login is not available: the device_codes table is not "
+            "provisioned in Supabase. Sync commands require it; see "
+            "supabase/migrations for setup."
+        )
         return None
+
+    # Build authorization URL
+    auth_url = f"{APP_URL}/auth/device?code={device_code}"
+
+    print("\nOpening browser to complete authentication...")
+    print(f"If browser doesn't open, visit: {auth_url}\n")
+
+    # Open browser
+    webbrowser.open(auth_url)
 
     print("Waiting for authentication...")
 
