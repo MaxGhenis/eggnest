@@ -36,8 +36,8 @@ export default function HomePage() {
             </h1>
             <p className="mt-6 max-w-md text-xl leading-relaxed text-[var(--color-text-muted)]">
               Monte Carlo simulation meets real tax law. See thousands of
-              possible futures for your finances&mdash;with every tax and
-              benefit figure computed from encoded legislation.
+              possible futures for your finances&mdash;the full range of
+              possibilities.
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
               <Link
@@ -59,9 +59,12 @@ export default function HomePage() {
                 See how it works
               </a>
             </div>
+            {/* Name Pension Credit screening here only once the production
+                API returns pension_credit (the Axiom engine and rulespec-uk
+                in its image); see docs/uk-axiom-engine.md. */}
             <p className="mt-4 text-sm text-[var(--color-text-light)]">
-              UK: live recalculation, ISA/SIPP drawdown, Pension Credit
-              screening with legislation.gov.uk citations.
+              UK: live recalculation and ISA/SIPP drawdown, with income tax
+              (Scottish rates included) and National Insurance.
             </p>
           </div>
 
@@ -122,6 +125,9 @@ export default function HomePage() {
                 "difference between good and bad market sequences with identical average returns",
             },
             {
+              // UK simulator defaults (age 65, £500k, £30k real spending,
+              // 2,000 paths, seed 42), 2026-09-29: real p25 £0 and p75 £694k,
+              // a gap of 139% of the starting portfolio.
               value: "40%+",
               label:
                 "gap between 25th and 75th percentile outcomes on the same starting portfolio",
