@@ -70,6 +70,7 @@ const mockResult = {
   ],
   initial_withdrawal_rate: 8.6,
   prob_10_year_failure: 0.04,
+  sipp_locked_shortfall_rate: 0.12,
 };
 
 test("UK simulator renders mocked calculator results", async ({ page }) => {
@@ -81,6 +82,14 @@ test("UK simulator renders mocked calculator results", async ({ page }) => {
 
   await expect(page.getByText("UK simulator · live")).toBeVisible();
   await expect(page.getByText("91%")).toBeVisible();
-  await expect(page.getByText(/avoid depletion before death or age 90/i)).toBeVisible();
-  await expect(page.getByText("Strict age 90")).toBeVisible();
+  await expect(page.getByText("Spending covered")).toBeVisible();
+  await expect(
+    page.getByText(/meet your spending in every year you're alive, to age 90/i),
+  ).toBeVisible();
+  await expect(page.getByText("Covered to age 90")).toBeVisible();
+  // A two-year run has no ten-year figure.
+  await expect(page.getByText("Needs a horizon over 10 years")).toBeVisible();
+  await expect(
+    page.getByText(/12% of paths fall short before age 55 while money is still in the SIPP/),
+  ).toBeVisible();
 });
