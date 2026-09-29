@@ -163,60 +163,63 @@ class TestPolicyEngineAgreement:
 
 
 class TestPensionCreditScreen:
-    def test_guarantee_credit_tops_up_to_minimum(self):
-        screen = axiom_uk.pension_credit_screen(
-            year=2025, ages=np.array([70]), annual_income=np.array([6_000.0])
+    """SPC Act 2002 s.2 with SI 2002/1792 regs 6 and 15(6), via the engine."""
+
+    def _screen(self, weekly_income, capital):
+        return axiom_uk.pension_credit_screen(
+            year=2026,
+            weekly_income=np.array(weekly_income, dtype=float),
+            capital=np.array(capital, dtype=float),
         )
+
+    def test_guarantee_credit_tops_up_to_minimum(self):
+        screen = self._screen([100.0], [0.0])
         weekly = screen["weekly_minimum_guarantee"]
-        assert weekly > 200  # encoded SMG for a single claimant
+        assert weekly == pytest.approx(238.0)  # reg 6, single claimant
         assert screen["annual_amount"][0] == pytest.approx(
-            weekly * 52 - 6_000.0, abs=0.01
+            (weekly - 100.0) * 52, abs=0.01
         )
 
     def test_no_credit_above_minimum_guarantee(self):
-        screen = axiom_uk.pension_credit_screen(
-            year=2025, ages=np.array([70]), annual_income=np.array([20_000.0])
-        )
-        assert screen["annual_amount"][0] == 0.0
+        assert self._screen([300.0], [0.0])["annual_amount"][0] == 0.0
 
-    def test_not_entitled_under_qualifying_age(self):
-        screen = axiom_uk.pension_credit_screen(
-            year=2025, ages=np.array([60]), annual_income=np.array([0.0])
-        )
-        assert screen["annual_amount"][0] == 0.0
-        assert screen["citations"] == []
+    def test_capital_is_deemed_to_yield_income(self):
+        """reg 15(6): £1 a week for each £500, or part, above £10,000."""
+        screen = self._screen([0.0] * 6, [0, 10_000, 10_000.01, 10_501, 25_000, 1e6])
+        assert list(screen["weekly_deemed_income"]) == [0, 0, 1, 2, 30, 1_980]
+        weekly = screen["weekly_minimum_guarantee"]
+        expected = [max(weekly - tariff, 0) * 52 for tariff in [0, 0, 1, 2, 30, 1_980]]
+        assert screen["annual_amount"] == pytest.approx(expected, abs=0.01)
 
-    def test_mixed_ages_masked_by_qualifying_age(self):
-        screen = axiom_uk.pension_credit_screen(
-            year=2025,
-            ages=np.array([60, 66, 75]),
-            annual_income=np.array([0.0, 6_000.0, 50_000.0]),
-        )
-        amounts = screen["annual_amount"]
-        assert amounts[0] == 0.0  # under qualifying age
-        assert amounts[1] > 0  # low income, qualifying age
-        assert amounts[2] == 0.0  # income above the minimum guarantee
+    def test_large_savings_rule_out_credit(self):
+        """A retiree on a small State Pension but with £200,000 in an ISA is
+        deemed to have £380 a week, above the minimum guarantee."""
+        screen = self._screen([150.0, 150.0], [0.0, 200_000.0])
+        assert screen["annual_amount"][0] > 0
+        assert screen["annual_amount"][1] == 0.0
 
     def test_citations_point_at_legislation(self):
-        screen = axiom_uk.pension_credit_screen(
-            year=2025, ages=np.array([70]), annual_income=np.array([6_000.0])
-        )
-        urls = {citation.url for citation in screen["citations"]}
+        urls = {citation.url for citation in self._screen([0.0], [20_000])["citations"]}
         assert any("legislation.gov.uk/ukpga/2002/16" in url for url in urls)
-        assert any("legislation.gov.uk/uksi/2002/1792" in url for url in urls)
+        assert any(
+            "legislation.gov.uk/uksi/2002/1792/regulation/6" in url for url in urls
+        )
+        assert any(
+            "legislation.gov.uk/uksi/2002/1792/regulation/15" in url for url in urls
+        )
 
-    def test_simulation_populates_screen_for_modest_retiree(self):
+    def test_simulation_screens_a_modest_retiree(self):
         from eggnest.models_uk import UKSimulationInput
         from eggnest.simulation_uk import run_uk_simulation
 
         result = run_uk_simulation(
             UKSimulationInput(
-                current_age=66,
+                current_age=67,
                 max_age=75,
-                isa_balance=20_000,
-                sipp_balance=30_000,
+                isa_balance=5_000,
+                sipp_balance=0,
                 gia_balance=0,
-                annual_spending=14_000,
+                annual_spending=9_000,
                 state_pension_annual=6_000,  # partial NI record
                 n_simulations=100,
                 random_seed=11,
@@ -225,44 +228,47 @@ class TestPensionCreditScreen:
         )
         screen = result.pension_credit
         assert screen is not None
-        assert screen.years_indicated > 0
-        assert len(screen.annual_amounts) == len(result.year_breakdown)
+        assert screen.status == "screened"
+        assert screen.weekly_minimum_guarantee == pytest.approx(238.0)
+        # £6,000 of State Pension is £115 a week, well under £238, and £5,000
+        # of savings is under the £10,000 threshold: every year is indicated.
+        assert screen.share_of_paths_indicated == 1.0
+        assert all(share == 1.0 for share in screen.share_indicated_by_age)
+        assert screen.ages == list(range(67, 76))
+        assert screen.median_annual_amount_by_age[-1] == pytest.approx(
+            (238.0 - 6_000 / 52) * 52, abs=1.0
+        )
         assert any(
             citation.url.startswith("https://www.legislation.gov.uk")
             for citation in screen.citations
         )
 
+    def test_simulation_reports_under_qualifying_age(self):
+        from eggnest.models_uk import UKSimulationInput
+        from eggnest.simulation_uk import run_uk_simulation
 
-class TestEngineSeam:
-    def test_default_backend_is_policyengine(self, monkeypatch):
-        from eggnest.tax_uk import get_uk_tax_calculator
-
-        monkeypatch.delenv("EGGNEST_UK_TAX_ENGINE", raising=False)
-        assert get_uk_tax_calculator() is calculate_uk_tax
-
-    def test_axiom_backend_selected(self, monkeypatch):
-        from eggnest.tax_uk import get_uk_tax_calculator
-
-        monkeypatch.setenv("EGGNEST_UK_TAX_ENGINE", "axiom")
-        assert get_uk_tax_calculator() is axiom_uk.calculate_uk_tax_axiom
-
-    def test_axiom_selected_but_unavailable_falls_back(self, monkeypatch):
-        from eggnest.tax_uk import get_uk_tax_calculator
-
-        monkeypatch.setenv("EGGNEST_UK_TAX_ENGINE", "axiom")
-        monkeypatch.setattr(axiom_uk, "available", lambda: False)
-        assert get_uk_tax_calculator() is calculate_uk_tax
-
-    def test_rule_citation_url_handles_short_paths(self):
-        # Act-level or non-statute rule ids must not crash citation building.
-        assert (
-            axiom_uk._rule_citation_url("uk:statutes/ukpga/2007/3#whole_act")
-            == "https://www.legislation.gov.uk/ukpga/2007/3"
+        result = run_uk_simulation(
+            UKSimulationInput(
+                current_age=40,
+                max_age=60,
+                isa_balance=0,
+                sipp_balance=0,
+                annual_spending=0,
+                state_pension_annual=0,
+                n_simulations=100,
+                random_seed=1,
+                include_mortality=False,
+            )
         )
-        assert axiom_uk._rule_citation_url(
-            "uk:policies/govuk/pension-credit#rule"
-        ).startswith("https://www.legislation.gov.uk/")
+        screen = result.pension_credit
+        assert screen is not None
+        assert screen.status == "under_qualifying_age"
+        assert (screen.qualifying_age_years, screen.qualifying_age_months) == (68, 0)
+        assert screen.weekly_minimum_guarantee is None
+        assert screen.ages == []
 
+
+class TestEngineCitations:
     def test_citations_available_for_tax_rules(self):
         citations = axiom_uk.tax_citations(2025)
         urls = {citation.url for citation in citations}

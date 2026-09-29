@@ -16,6 +16,7 @@ drawing income.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -64,6 +65,10 @@ class UKYearInputs:
     dividend_income: np.ndarray  # GIA dividends, £
     employment_income: np.ndarray  # if still working, £
     region: str = "London"
+    # When known, employee NI stops on earnings paid once the person reaches
+    # State Pension age (SSCBA 1992 s.6(3)); the simulated year runs from
+    # the birthday at ``age`` to the next.
+    birth_date: date | None = None
 
 
 @dataclass
@@ -152,6 +157,31 @@ def _engine_direct_tax(
     )
 
 
+def share_of_year_over_state_pension_age(inputs: UKYearInputs) -> float:
+    """Share of the simulated year after State Pension age, 0 when unknown.
+
+    policyengine-uk-compiled charges employee NI at every age; primary
+    Class 1 contributions are not payable on earnings paid after State
+    Pension age (SSCBA 1992 s.6(3)), so callers scale employee NI by one
+    minus this share.
+    """
+    if inputs.birth_date is None:
+        return 0.0
+    from .state_pension_age import (
+        anniversary,
+        share_of_period_from,
+        state_pension_age_date,
+    )
+
+    start = anniversary(inputs.birth_date, inputs.age)
+    end = anniversary(inputs.birth_date, inputs.age + 1)
+    # Both sexes share one State Pension age for births from 6 December
+    # 1953; anyone born earlier reached it, as a man or a woman, by
+    # December 2018, before any simulated year.
+    reached = state_pension_age_date(inputs.birth_date, "female")
+    return share_of_period_from(start, end, reached)
+
+
 def calculate_uk_tax(inputs: UKYearInputs) -> UKYearResults:
     """Run a single batched UK tax calculation for all paths in one year.
 
@@ -171,7 +201,9 @@ def calculate_uk_tax(inputs: UKYearInputs) -> UKYearResults:
     income_tax, employee_ni = _engine_direct_tax(inputs, unique_rows)
     inverse = inverse.reshape(-1)
     income_tax = income_tax[inverse]
-    employee_ni = employee_ni[inverse]
+    employee_ni = employee_ni[inverse] * (
+        1.0 - share_of_year_over_state_pension_age(inputs)
+    )
     direct_tax = income_tax + employee_ni
     return UKYearResults(
         net_income=gross_income(inputs) - direct_tax,

@@ -216,18 +216,55 @@ class UKCitationRef(BaseModel):
 
 
 class UKPensionCreditScreen(BaseModel):
-    """Modeled guarantee credit screening along the median path.
+    """Guarantee credit (Pension Credit) screening across simulated paths.
 
-    Computed with the Axiom rules engine from statute encodings (State
-    Pension Credit Act 2002 s.2; SI 2002/1792 reg 6). A screening estimate,
-    not a benefits decision: the modeled income stands in for the full
-    SPC Act s.15 income assessment.
+    Computed with the Axiom rules engine from statute encodings: State
+    Pension Credit Act 2002 s.2 with SI 2002/1792 reg 6 (minimum guarantee)
+    and reg 15(6) (income deemed from capital), for a sample of simulated
+    paths in each year they are alive at or past the qualifying age. A
+    screening estimate, not a benefits decision.
     """
 
-    weekly_minimum_guarantee: float
-    ages: list[int]
-    annual_amounts: list[float]
-    years_indicated: int
+    status: Literal["screened", "under_qualifying_age"] = Field(
+        description=(
+            "'under_qualifying_age' when the person reaches Pension Credit "
+            "qualifying age only after max_age, so nothing is screened."
+        )
+    )
+    qualifying_age_years: int
+    qualifying_age_months: int = Field(
+        description="Months past qualifying_age_years (State Pension age)."
+    )
+    weekly_minimum_guarantee: float | None = Field(
+        default=None,
+        description="Single claimant's standard minimum guarantee (reg 6).",
+    )
+    paths_screened: int = 0
+    share_of_paths_indicated: float = Field(
+        default=0.0,
+        description=(
+            "Share of screened paths with guarantee credit indicated in at "
+            "least one year they are alive from the qualifying age."
+        ),
+    )
+    ages: list[int] = Field(
+        default=[], description="Simulated ages from the first qualifying year."
+    )
+    share_indicated_by_age: list[float] = Field(
+        default=[],
+        description="Share of screened paths alive at each age with credit indicated.",
+    )
+    median_annual_amount_by_age: list[float] = Field(
+        default=[],
+        description=(
+            "Median annual guarantee credit among paths indicated at each "
+            "age (0 when none), pro rata in the year the qualifying age falls."
+        ),
+    )
+    first_age_indicated: int | None = Field(
+        default=None,
+        description="Median first age with credit among indicated paths.",
+    )
     citations: list[UKCitationRef] = []
 
 

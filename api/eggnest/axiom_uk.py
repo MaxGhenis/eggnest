@@ -27,7 +27,8 @@ import os
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
@@ -35,7 +36,11 @@ import numpy as np
 import yaml
 
 from .citations import Citation
-from .tax_uk import UKYearInputs, UKYearResults
+from .tax_uk import (
+    UKYearInputs,
+    UKYearResults,
+    share_of_year_over_state_pension_age,
+)
 
 _TAX_YEAR_START = "-04-06"
 _TAX_YEAR_END = "-04-05"
@@ -386,6 +391,12 @@ def _trace_citations(traces: list[dict]) -> list[Citation]:
     return _dedupe_citations(citations)
 
 
+def _tax_year_birth_date(inputs: UKYearInputs) -> date:
+    """With no birth date given, take the person to be ``age`` for the
+    whole tax year that starts in ``year``."""
+    return date(inputs.year - inputs.age, 4, 6)
+
+
 def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
     """UK tax for one simulated year via the Axiom rules engine.
 
@@ -599,8 +610,14 @@ def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
     )
 
     # SSCBA 1992 s.8: primary Class 1 contributions on employment earnings,
-    # weekly basis. s.6(3): no primary contributions over pensionable age.
-    if inputs.age < ni["state_pension_age"] and bool(np.any(employment > 0)):
+    # weekly basis. s.6(3): none on earnings paid after pensionable age
+    # (Pensions Act 1995 Sch 4), so the part of the year past it is exempt.
+    over_spa = share_of_year_over_state_pension_age(
+        inputs
+        if inputs.birth_date is not None
+        else replace(inputs, birth_date=_tax_year_birth_date(inputs))
+    )
+    if over_spa < 1.0 and bool(np.any(employment > 0)):
         s8 = _execute(
             "sscba_s8",
             year=year,
@@ -620,7 +637,9 @@ def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
             },
             outputs=["primary_class_1_contribution"],
         )
-        national_insurance = s8["primary_class_1_contribution"] * 52.0
+        national_insurance = (
+            s8["primary_class_1_contribution"] * 52.0 * (1.0 - over_spa)
+        )
     else:
         national_insurance = np.zeros_like(employment)
 
@@ -634,78 +653,101 @@ def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
     )
 
 
+_REG6_SINGLE_CLAIMANT = {
+    "claimant_has_partner": False,
+    "claimant_is_prisoner": False,
+    "member_of_religious_order_fully_maintained_by_order": False,
+    "detained_in_custody_on_remand_pending_trial": False,
+    "detained_pending_sentence_upon_conviction": False,
+    "detained_pending_trial_or_sentence_following_conviction_by_court": False,
+    "detained_for_period_not_exceeding_52_weeks": False,
+    "detained_in_custody_for_more_than_52_weeks": False,
+    "awarded_tax_credit_under_tax_credits_act": False,
+}
+
+
 def pension_credit_screen(
     *,
     year: int,
-    ages: np.ndarray,
-    annual_income: np.ndarray,
+    weekly_income: np.ndarray,
+    capital: np.ndarray,
 ) -> dict:
-    """Screen guarantee credit entitlement across simulated years.
+    """Guarantee credit for a batch of claimant-years, one entity each.
 
-    Evaluates SPC Act 2002 s.2 with the standard minimum guarantee from
-    SI 2002/1792 reg 6, one entity per simulated year. This is a modeled
-    screening estimate: the full income-assessment rules (capital tariff
-    income, housing additions) are not yet encoded, so the simulator's
-    modeled income stands in for SPC Act s.15 income.
+    ``weekly_income`` is the income State Pension Credit counts, before any
+    income deemed from capital: retirement pension income (SPC Act 2002
+    s.16) and earnings (SI 2002/1792 reg 17A), less the tax and NI payable
+    on them (reg 17(10)). ``capital`` is the capital reg 15(6) deems to
+    yield income: savings such as ISAs and GIAs, not pension pots (Sch V
+    para 22). Actual income from that capital is disregarded (Sch IV para
+    18), so it must not be in ``weekly_income``.
 
-    Returns annual amounts plus the statute citations backing them.
+    Evaluates, through the rules engine: reg 6 (single claimant's standard
+    minimum guarantee), reg 15(6) (deemed weekly income from capital) and
+    SPC Act 2002 s.2 (guarantee credit). Returns the weekly deemed income,
+    the annual guarantee credit (never negative), the weekly minimum
+    guarantee, and the citations the engine's explain traces give.
     """
-    ages = np.asarray(ages)
-    annual_income = np.asarray(annual_income, dtype=float)
-    n = len(annual_income)
-    qualifying_age = int(_statutory_inputs()["national_insurance"]["state_pension_age"])
-    entitled = ages >= qualifying_age
-    if not bool(np.any(entitled)):
-        return {
-            "annual_amount": np.zeros(n, dtype=float),
-            "weekly_minimum_guarantee": 0.0,
-            "citations": [],
-        }
+    weekly_income = np.asarray(weekly_income, dtype=float)
+    capital = np.asarray(capital, dtype=float)
 
-    # SI 2002/1792 reg 6: weekly standard minimum guarantee (single person,
-    # none of the nil-amount paragraph 3 cases applying).
     reg6, reg6_traces = _execute(
         "spc_regs_6",
         year=year,
         per_entity_inputs={},
         n=1,
-        shared_inputs={
-            "claimant_has_partner": False,
-            "claimant_is_prisoner": False,
-            "member_of_religious_order_fully_maintained_by_order": False,
-            "detained_in_custody_on_remand_pending_trial": False,
-            "detained_pending_sentence_upon_conviction": False,
-            "detained_pending_trial_or_sentence_following_conviction_by_court": False,
-            "detained_for_period_not_exceeding_52_weeks": False,
-            "detained_in_custody_for_more_than_52_weeks": False,
-            "awarded_tax_credit_under_tax_credits_act": False,
-        },
+        shared_inputs=_REG6_SINGLE_CLAIMANT,
         outputs=["standard_minimum_guarantee"],
         mode="explain",
     )
     weekly_guarantee = float(reg6["standard_minimum_guarantee"][0])
-    annual_guarantee = weekly_guarantee * 52.0
 
-    s2, s2_traces = _execute(
+    reg15_inputs = {"capital_disregarded_under_regulation_17_8": False}
+    reg15 = _execute(
+        "spc_regs_15",
+        year=year,
+        per_entity_inputs={"claimant_capital": capital},
+        shared_inputs=reg15_inputs,
+        outputs=["capital_deemed_weekly_income"],
+    )
+    tariff = reg15["capital_deemed_weekly_income"]
+
+    s2_inputs = {
+        "claimant_is_entitled_to_guarantee_credit": True,
+        "standard_minimum_guarantee": weekly_guarantee * 52.0,
+        "prescribed_additional_amounts_applicable": 0.0,
+    }
+    s2 = _execute(
         "spca_s2",
         year=year,
-        per_entity_inputs={"claimant_income": annual_income},
-        shared_inputs={
-            "claimant_is_entitled_to_guarantee_credit": True,
-            "standard_minimum_guarantee": annual_guarantee,
-            "prescribed_additional_amounts_applicable": 0.0,
-        },
+        per_entity_inputs={"claimant_income": (weekly_income + tariff) * 52.0},
+        shared_inputs=s2_inputs,
+        outputs=["guarantee_credit"],
+    )
+
+    # Citations from one explained evaluation of each rule; the rules are the
+    # same for every entity in the batch.
+    _, reg15_traces = _execute(
+        "spc_regs_15",
+        year=year,
+        per_entity_inputs={"claimant_capital": np.array([20_000.0])},
+        shared_inputs=reg15_inputs,
+        outputs=["capital_deemed_weekly_income"],
+        mode="explain",
+    )
+    _, s2_traces = _execute(
+        "spca_s2",
+        year=year,
+        per_entity_inputs={"claimant_income": np.array([0.0])},
+        shared_inputs=s2_inputs,
         outputs=["guarantee_credit"],
         mode="explain",
     )
-
-    citations = _trace_citations(reg6_traces + s2_traces)
     return {
-        "annual_amount": np.where(
-            entitled, np.maximum(0.0, s2["guarantee_credit"]), 0.0
-        ),
+        "weekly_deemed_income": tariff,
+        "annual_amount": np.maximum(0.0, s2["guarantee_credit"]),
         "weekly_minimum_guarantee": weekly_guarantee,
-        "citations": citations,
+        "citations": _trace_citations(reg6_traces + reg15_traces + s2_traces),
     }
 
 

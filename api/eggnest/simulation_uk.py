@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date
 
 import numpy as np
 
@@ -44,6 +44,16 @@ from .models_uk import (
     UKYearBreakdown,
 )
 from .mortality import generate_alive_mask
+from .state_pension_age import (
+    PENSION_CREDIT_QUALIFYING_AGE_URL,
+    anniversary,
+    assumed_birth_date,
+    pension_credit_qualifying_date,
+    share_of_period_from,
+    state_pension_age_citation,
+    whole_months_between,
+)
+from .state_pension_age import SCHEDULE_URL as SPA_SCHEDULE_URL
 from .tax_uk import UKYearInputs, UKYearResults, get_uk_tax_calculator
 
 UKTaxCalculator = Callable[[UKYearInputs], UKYearResults]
@@ -283,6 +293,7 @@ class _YearTax:
     state_pension: np.ndarray
     dividends: np.ndarray
     employment: np.ndarray
+    birth_date: date | None = None
 
     def __call__(
         self, taxable_sipp: np.ndarray, idx: np.ndarray | None = None
@@ -298,6 +309,7 @@ class _YearTax:
                 dividend_income=self.dividends[sel],
                 employment_income=self.employment[sel],
                 region=self.region,
+                birth_date=self.birth_date,
             )
         )
 
@@ -419,16 +431,20 @@ def _iterate_years(
     inputs: UKSimulationInput,
     rng: np.random.Generator,
     tax_calculator: UKTaxCalculator,
+    today: date,
 ) -> Iterator[tuple[UKYearBreakdown, _PathState, UKYearFlows, np.ndarray | None]]:
     """Iterate year-by-year over the simulation.
 
     Yields ``(breakdown, state, flows, start_years)`` where ``start_years`` is
     the per-path historical-year array in sequential mode (repeated each
-    yield for convenience) or ``None`` otherwise.
+    yield for convenience) or ``None`` otherwise. Simulated year ``t`` runs
+    from the person's birthday at ``current_age + t``, taking today as the
+    birthday at ``current_age``.
     """
     n_sims = inputs.n_simulations
     n_years = inputs.max_age - inputs.current_age + 1
-    start_year = datetime.now().year
+    start_year = today.year
+    birth_date = assumed_birth_date(inputs.current_age, today)
 
     price_growth, div_yield, inflation_paths, start_years = _build_return_paths(
         inputs, rng
@@ -520,6 +536,7 @@ def _iterate_years(
             state_pension=state_pension,
             dividends=gia_dividends,
             employment=employment,
+            birth_date=birth_date,
         )
         base_tax = tax_for(zeros)
         non_wrapper_income = employment + state_pension + gia_dividends
@@ -679,6 +696,7 @@ def _iterate_years(
 def iterate_uk_year_flows(
     inputs: UKSimulationInput,
     tax_calculator: UKTaxCalculator | None = None,
+    today: date | None = None,
 ) -> Iterator[UKYearFlows]:
     """Yield each simulated year's per-path cash flows.
 
@@ -687,7 +705,10 @@ def iterate_uk_year_flows(
     """
     rng = np.random.default_rng(inputs.random_seed)
     for _, _, flows, _ in _iterate_years(
-        inputs, rng, tax_calculator or get_uk_tax_calculator()
+        inputs,
+        rng,
+        tax_calculator or get_uk_tax_calculator(),
+        today or date.today(),
     ):
         yield flows
 
@@ -721,48 +742,153 @@ def _bands(arr: np.ndarray) -> dict[str, list[float]]:
     return {f"p{p}": rows[i].tolist() for i, p in enumerate(_PERCENTILES)}
 
 
+# Paths screened for Pension Credit: every path in small runs, otherwise an
+# evenly spaced sample (paths are exchangeable, so this is unbiased).
+PENSION_CREDIT_SAMPLE_PATHS = 500
+
+# SI 2002/1792 Sch VI para 5(a): £5 a week of a single claimant's earnings
+# is disregarded.
+_PENSION_CREDIT_EARNINGS_DISREGARD_WEEKLY = 5.0
+
+
+@dataclass
+class _PensionCreditYear:
+    """One simulated year for the sampled paths, as Pension Credit counts it."""
+
+    age: int
+    alive: np.ndarray
+    weekly_income: np.ndarray  # before income deemed from capital
+    capital: np.ndarray  # ISA + GIA at the start of the year
+
+
+def _pension_credit_sample(n_sims: int) -> np.ndarray:
+    count = min(n_sims, PENSION_CREDIT_SAMPLE_PATHS)
+    return np.unique(np.linspace(0, n_sims - 1, count).round().astype(int))
+
+
+def _pension_credit_year(flows: UKYearFlows, sample: np.ndarray) -> _PensionCreditYear:
+    """The income and capital State Pension Credit would count.
+
+    Income (SPC Act 2002 ss.15-16; SI 2002/1792): State Pension and pension
+    drawdown in full, tax-free cash included (s.16(1)(f)); earnings less
+    half of pension contributions (reg 17A(4A)) and a £5 weekly disregard
+    (Sch VI para 5(a)); all less the income tax and NI payable (reg 17(10)).
+    Actual dividends and interest on savings are disregarded (Sch IV para
+    18); the savings count instead as capital (reg 15(6)), and an undrawn
+    pension pot is not capital (Sch V para 22). The tax deducted here also
+    includes any tax on GIA dividends, which slightly understates income.
+    """
+    earnings = np.maximum(
+        flows.employment_income[sample]
+        - 0.5 * flows.contribution_sipp[sample]
+        - _PENSION_CREDIT_EARNINGS_DISREGARD_WEEKLY * 52.0,
+        0.0,
+    )
+    counted = (
+        flows.state_pension[sample]
+        + flows.withdrawal_sipp[sample]
+        + earnings
+        - flows.total_tax[sample]
+    )
+    return _PensionCreditYear(
+        age=flows.age,
+        alive=flows.alive[sample],
+        weekly_income=np.maximum(counted, 0.0) / 52.0,
+        capital=flows.isa_start[sample] + flows.gia_start[sample],
+    )
+
+
 def _pension_credit_screen(
-    inputs: UKSimulationInput,
-    year_breakdown: list[UKYearBreakdown],
+    years: list[_PensionCreditYear], birth_date: date, today: date
 ):
-    """Median-path guarantee credit screening via the Axiom rules engine.
+    """Screen guarantee credit for the sampled paths via the Axiom engine.
 
     Returns None when the engine is not configured in this environment.
-    The screened income is the median path's State Pension, taxable SIPP
-    drawdown, and employment income; ISA withdrawals are capital, not
-    income, for pension credit purposes.
+    Each path is screened in every year it is alive from the Pension Credit
+    qualifying age (State Pension age, SPC Act 2002 s.1(6)); the credit in
+    the year that age is reached is pro rata to the part of the year after
+    it.
     """
     from . import axiom_uk
     from .models_uk import UKCitationRef, UKPensionCreditScreen
 
-    if not axiom_uk.available() or not year_breakdown:
+    if not axiom_uk.available() or not years:
         return None
 
-    ages = np.array([row.age for row in year_breakdown])
-    income = np.array(
+    qualifying_date = pension_credit_qualifying_date(birth_date)
+    qualifying_years, qualifying_months = divmod(
+        whole_months_between(birth_date, qualifying_date), 12
+    )
+    age_citations = [
+        UKCitationRef(
+            id=state_pension_age_citation(birth_date, "female"),
+            url=SPA_SCHEDULE_URL,
+        ),
+        UKCitationRef(
+            id="State Pension Credit Act 2002 s.1(6) (qualifying age)",
+            url=PENSION_CREDIT_QUALIFYING_AGE_URL,
+        ),
+    ]
+
+    shares = np.array(
         [
-            row.state_pension + row.sipp_taxable_withdrawal + row.employment_income
-            for row in year_breakdown
+            share_of_period_from(
+                anniversary(birth_date, year.age),
+                anniversary(birth_date, year.age + 1),
+                qualifying_date,
+            )
+            for year in years
         ]
     )
-    try:
-        # One engine call for all years. The encoded minimum guarantee is
-        # currently a single timeless version, so the period year does not
-        # change the amount; if rulespec-uk versions it by uprating year,
-        # switch to per-year periods here.
-        screen = axiom_uk.pension_credit_screen(
-            year=datetime.now().year, ages=ages, annual_income=income
+    screened = [
+        (year, share) for year, share in zip(years, shares, strict=True) if share > 0
+    ]
+    if not screened:
+        return UKPensionCreditScreen(
+            status="under_qualifying_age",
+            qualifying_age_years=qualifying_years,
+            qualifying_age_months=qualifying_months,
+            citations=age_citations,
         )
-    except RuntimeError:
+
+    n_paths = len(screened[0][0].alive)
+    try:
+        screen = axiom_uk.pension_credit_screen(
+            year=today.year,
+            weekly_income=np.concatenate([year.weekly_income for year, _ in screened]),
+            capital=np.concatenate([year.capital for year, _ in screened]),
+        )
+    except (RuntimeError, KeyError, ValueError):
         return None
 
-    amounts = screen["annual_amount"]
+    alive = np.array([year.alive for year, _ in screened])
+    share = np.array([share for _, share in screened])[:, None]
+    amounts = screen["annual_amount"].reshape(len(screened), n_paths) * share * alive
+    indicated = amounts >= 0.01
+    ever = indicated.any(axis=0)
+    first_ages = np.array([year.age for year, _ in screened])[indicated.argmax(axis=0)]
+    alive_counts = alive.sum(axis=1)
     return UKPensionCreditScreen(
+        status="screened",
+        qualifying_age_years=qualifying_years,
+        qualifying_age_months=qualifying_months,
         weekly_minimum_guarantee=screen["weekly_minimum_guarantee"],
-        ages=[int(age) for age in ages],
-        annual_amounts=[round(float(amount), 2) for amount in amounts],
-        years_indicated=int(np.sum(amounts > 0)),
-        citations=[
+        paths_screened=n_paths,
+        share_of_paths_indicated=float(ever.mean()),
+        ages=[int(year.age) for year, _ in screened],
+        share_indicated_by_age=[
+            float(count / living) if living else 0.0
+            for count, living in zip(indicated.sum(axis=1), alive_counts, strict=True)
+        ],
+        median_annual_amount_by_age=[
+            round(float(np.median(row[flags])), 2) if flags.any() else 0.0
+            for row, flags in zip(amounts, indicated, strict=True)
+        ],
+        first_age_indicated=(
+            int(round(float(np.median(first_ages[ever])))) if ever.any() else None
+        ),
+        citations=age_citations
+        + [
             UKCitationRef(id=citation.id, url=citation.url)
             for citation in screen["citations"]
         ],
@@ -777,6 +903,7 @@ def _assemble_result(
     tax_over_time: np.ndarray,
     earnings_over_time: np.ndarray,
     start_years: np.ndarray | None,
+    pension_credit=None,
 ) -> UKSimulationResult:
     final_portfolio = final_state.gia + final_state.isa + final_state.sipp
     final_quantiles = np.percentile(final_portfolio, _PERCENTILES)
@@ -834,7 +961,7 @@ def _assemble_result(
         initial_withdrawal_rate=initial_withdrawal_rate,
         prob_10_year_failure=float(np.mean(first_10_failed)),
         percentile_path_start_years=percentile_path_start_years,
-        pension_credit=_pension_credit_screen(inputs, year_breakdown),
+        pension_credit=pension_credit,
     )
 
 
@@ -860,11 +987,15 @@ def run_uk_simulation_with_progress(
     year_breakdown: list[UKYearBreakdown] = []
     final_state: _PathState | None = None
     start_years: np.ndarray | None = None
+    today = date.today()
+    pension_credit_sample = _pension_credit_sample(n_sims)
+    pension_credit_years: list[_PensionCreditYear] = []
 
     for breakdown, state, flows, sy in _iterate_years(
-        inputs, rng, tax_calculator or get_uk_tax_calculator()
+        inputs, rng, tax_calculator or get_uk_tax_calculator(), today
     ):
         year_idx = flows.year_index
+        pension_credit_years.append(_pension_credit_year(flows, pension_credit_sample))
         year_breakdown.append(breakdown)
         portfolio_over_time[:, year_idx] = flows.portfolio_end
         tax_over_time[:, year_idx] = flows.total_tax
@@ -886,6 +1017,11 @@ def run_uk_simulation_with_progress(
         tax_over_time,
         earnings_over_time,
         start_years,
+        pension_credit=_pension_credit_screen(
+            pension_credit_years,
+            assumed_birth_date(inputs.current_age, today),
+            today,
+        ),
     )
     yield {"type": "result", "result": result.model_dump()}
 

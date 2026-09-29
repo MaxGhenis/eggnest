@@ -15,10 +15,12 @@ from __future__ import annotations
 import argparse
 import itertools
 import sys
+from datetime import date
 
 import numpy as np
 
 from eggnest import axiom_uk
+from eggnest.state_pension_age import state_pension_age_date
 from eggnest.tax_uk import UKYearInputs, calculate_uk_tax
 
 TOLERANCE = 1.0  # pounds; rounding differences below this are a match
@@ -44,7 +46,6 @@ def _expected_gap_bound(case: dict) -> tuple[float, list[str]]:
     """
     params = axiom_uk._statutory_inputs()
     income_tax = params["income_tax_rates"]
-    ni = params["national_insurance"]
 
     bound = 0.0
     reasons = []
@@ -82,26 +83,6 @@ def _expected_gap_bound(case: dict) -> tuple[float, list[str]]:
             "income (encoding); policyengine-uk-compiled sizes the allowance "
             "before dividend stacking"
         )
-    if case["age"] >= ni["state_pension_age"] and case["employment"] > 0:
-        # PE charges employee NI over pensionable age; bound = the NI it adds.
-        main_rate = axiom_uk._artifact_parameter(
-            "sscba_s8", "main_primary_percentage", YEAR
-        )
-        additional_rate = axiom_uk._artifact_parameter(
-            "sscba_s8", "additional_primary_percentage", YEAR
-        )
-        weekly = case["employment"] / 52.0
-        main_band = max(
-            min(weekly, ni["weekly_upper_earnings_limit"])
-            - ni["weekly_primary_threshold"],
-            0.0,
-        )
-        upper_band = max(weekly - ni["weekly_upper_earnings_limit"], 0.0)
-        bound += (main_band * main_rate + upper_band * additional_rate) * 52.0
-        reasons.append(
-            "policyengine-uk-compiled charges employee NI over pensionable age "
-            "(SSCBA 1992 s.6(3) exempts; Axiom is statutory here)"
-        )
     return bound, reasons
 
 
@@ -135,7 +116,10 @@ def main() -> int:
     ):
         if employment > 0 and pension > 0:
             continue  # keep the grid focused
-        state_pension = STATE_PENSION_AT_70 if age >= 66 else 0.0
+        # A person aged `age` throughout the tax year: born on its first day.
+        birth = date(YEAR - age, 4, 6)
+        over_spa = state_pension_age_date(birth, "female") <= birth.replace(year=YEAR)
+        state_pension = STATE_PENSION_AT_70 if over_spa else 0.0
         case = {
             "age": age,
             "employment": employment,
@@ -152,6 +136,7 @@ def main() -> int:
             savings_interest=np.array([savings]),
             dividend_income=np.array([dividends]),
             employment_income=np.array([employment]),
+            birth_date=birth,
         )
         axiom = float(axiom_uk.calculate_uk_tax_axiom(inputs).total_tax[0])
         pe = float(calculate_uk_tax(inputs).total_tax[0])

@@ -60,7 +60,3 @@ national_insurance:
     value: 967.0
     source: "SSCBA 1992 s.5; SI 2001/1004 reg 10 (annual £50,270 / 52)"
     url: https://www.legislation.gov.uk/uksi/2001/1004/regulation/10
-  state_pension_age:
-    value: 66
-    source: "Pensions Act 1995 Sch 4 as amended; SSCBA 1992 s.6(3) exempts earners over pensionable age from primary contributions"
-    url: https://www.legislation.gov.uk/ukpga/1992/4/section/6
