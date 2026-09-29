@@ -84,14 +84,24 @@ export interface UKCitationRef {
   url: string;
 }
 
-/** Modeled guarantee credit screening along the median path, computed from
- *  statute encodings (SPC Act 2002 s.2; SI 2002/1792 reg 6) via the Axiom
- *  rules engine. Null when the engine is not available server-side. */
+/** Guarantee credit (Pension Credit) screening across simulated paths,
+ *  computed from statute encodings (SPC Act 2002 s.2; SI 2002/1792 regs 6
+ *  and 15(6)) via the Axiom rules engine. Null or absent when the engine is
+ *  not available server-side. */
 export interface UKPensionCreditScreen {
-  weekly_minimum_guarantee: number;
+  /** "under_qualifying_age": the plan ends before State Pension age, so
+   *  nothing is screened. */
+  status: "screened" | "under_qualifying_age";
+  qualifying_age_years: number;
+  qualifying_age_months: number;
+  weekly_minimum_guarantee: number | null;
+  paths_screened: number;
+  /** Share of screened paths with credit indicated in any living year. */
+  share_of_paths_indicated: number;
   ages: number[];
-  annual_amounts: number[];
-  years_indicated: number;
+  share_indicated_by_age: number[];
+  median_annual_amount_by_age: number[];
+  first_age_indicated: number | null;
   citations: UKCitationRef[];
 }
 

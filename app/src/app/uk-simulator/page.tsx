@@ -251,7 +251,7 @@ export default function UKSimulatorPage() {
                 withZeroLine
               />
               {result?.pension_credit && (
-                <BenefitsCheck screen={result.pension_credit} />
+                <BenefitsCheck screen={result.pension_credit} maxAge={input.max_age} />
               )}
               <PercentileFanChart
                 title="HMRC tax by year"
