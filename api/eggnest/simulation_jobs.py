@@ -257,21 +257,22 @@ class SimulationJobManager:
             for job_id in removable:
                 self._jobs.pop(job_id, None)
 
-            if len(self._jobs) <= self._max_records:
-                return
+            if len(self._jobs) > self._max_records:
+                finished = [
+                    record
+                    for record in self._jobs.values()
+                    if record.status in {"succeeded", "failed"}
+                ]
+                finished.sort(key=lambda record: record.updated_at)
+                excess = len(self._jobs) - self._max_records
+                for record in finished[:excess]:
+                    self._jobs.pop(record.job_id, None)
+                    if self._snapshot_store is not None:
+                        self._snapshot_store.delete(self._snapshot_key(record.job_id))
 
-            finished = [
-                record
-                for record in self._jobs.values()
-                if record.status in {"succeeded", "failed"}
-            ]
-            finished.sort(key=lambda record: record.updated_at)
-            excess = len(self._jobs) - self._max_records
-            for record in finished[:excess]:
-                self._jobs.pop(record.job_id, None)
-                if self._snapshot_store is not None:
-                    self._snapshot_store.delete(self._snapshot_key(record.job_id))
-
+        # The shared store also holds jobs this container never ran (external
+        # runners, other containers), so its expiry cannot depend on the
+        # local registry being over capacity.
         self._cleanup_snapshots(now)
 
     def _cleanup_snapshots(self, now: datetime) -> None:
@@ -300,11 +301,12 @@ class SimulationJobManager:
         for key in removable:
             self._snapshot_store.delete(key)
 
-        if len(entries) <= self._max_records:
+        remaining = len(entries) - len(removable)
+        if remaining <= self._max_records:
             return
 
         finished.sort(key=lambda item: item[1].get("updated_at", ""))
-        excess = len(entries) - self._max_records
+        excess = remaining - self._max_records
         for key, _ in finished[:excess]:
             self._snapshot_store.delete(key)
 
@@ -552,21 +554,22 @@ class CoreJobManager:
             for job_id in removable:
                 self._jobs.pop(job_id, None)
 
-            if len(self._jobs) <= self._max_records:
-                return
+            if len(self._jobs) > self._max_records:
+                finished = [
+                    record
+                    for record in self._jobs.values()
+                    if record.status in {"succeeded", "failed"}
+                ]
+                finished.sort(key=lambda record: record.updated_at)
+                excess = len(self._jobs) - self._max_records
+                for record in finished[:excess]:
+                    self._jobs.pop(record.job_id, None)
+                    if self._snapshot_store is not None:
+                        self._snapshot_store.delete(self._snapshot_key(record.job_id))
 
-            finished = [
-                record
-                for record in self._jobs.values()
-                if record.status in {"succeeded", "failed"}
-            ]
-            finished.sort(key=lambda record: record.updated_at)
-            excess = len(self._jobs) - self._max_records
-            for record in finished[:excess]:
-                self._jobs.pop(record.job_id, None)
-                if self._snapshot_store is not None:
-                    self._snapshot_store.delete(self._snapshot_key(record.job_id))
-
+        # The shared store also holds jobs this container never ran (external
+        # runners, other containers), so its expiry cannot depend on the
+        # local registry being over capacity.
         self._cleanup_snapshots(now)
 
     def _cleanup_snapshots(self, now: datetime) -> None:
@@ -595,11 +598,12 @@ class CoreJobManager:
         for key in removable:
             self._snapshot_store.delete(key)
 
-        if len(entries) <= self._max_records:
+        remaining = len(entries) - len(removable)
+        if remaining <= self._max_records:
             return
 
         finished.sort(key=lambda item: item[1].get("updated_at", ""))
-        excess = len(entries) - self._max_records
+        excess = remaining - self._max_records
         for key, _ in finished[:excess]:
             self._snapshot_store.delete(key)
 
