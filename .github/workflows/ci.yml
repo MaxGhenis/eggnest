@@ -42,6 +42,38 @@ jobs:
           uv run ruff check .
           uv run black --check .
 
+      # The Axiom rules engine and rulespec-uk, pinned, so the Axiom backend
+      # and Pension Credit screen tests run instead of skipping. The engine
+      # needs the rulespec checkout in a real directory named rulespec-uk,
+      # passed by its canonical path.
+      - name: Install Axiom rules engine and rulespec-uk (pinned)
+        working-directory: ${{ runner.temp }}
+        env:
+          AXIOM_ENGINE_TAG: v0.2.2
+          AXIOM_ENGINE_SHA256: 76565685230d64edf33e4205f01f77c57ef341ba2d3cf75dc967fc12c883f1f4
+          RULESPEC_UK_SHA: 932390fa793d473cfdb0ff1b52a0b038cabeda41
+        run: |
+          set -euo pipefail
+          asset=axiom-rules-engine-x86_64-unknown-linux-gnu.tar.xz
+          curl -fsSL -o "$asset" \
+            "https://github.com/TheAxiomFoundation/axiom-rules-engine/releases/download/${AXIOM_ENGINE_TAG}/${asset}"
+          echo "${AXIOM_ENGINE_SHA256}  ${asset}" | sha256sum --check
+          tar -xJf "$asset"
+          bin="$(realpath axiom-rules-engine-x86_64-unknown-linux-gnu/axiom-rules-engine)"
+          "$bin" capabilities
+          mkdir rulespec-uk
+          cd rulespec-uk
+          git init -q
+          git remote add origin https://github.com/TheAxiomFoundation/rulespec-uk.git
+          git fetch -q --depth 1 origin "$RULESPEC_UK_SHA"
+          git checkout -q FETCH_HEAD
+          root="$(pwd -P)"
+          "$bin" compile --program "$root/uk/statutes/ukpga/2007/3/10.yaml" \
+            --rulespec-root "$root" --output /dev/null
+          echo "EGGNEST_AXIOM_ENGINE_BIN=$bin" >> "$GITHUB_ENV"
+          echo "EGGNEST_RULESPEC_UK_ROOT=$root" >> "$GITHUB_ENV"
+          echo "EGGNEST_REQUIRE_AXIOM=1" >> "$GITHUB_ENV"
+
       - name: Show runner resources
         run: nproc && free -h
 

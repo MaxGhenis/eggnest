@@ -1,9 +1,14 @@
 """Tests for the experimental Axiom UK tax and benefits backend.
 
-These run only when the Axiom rules engine and a rulespec-uk checkout are
-configured (EGGNEST_AXIOM_ENGINE_BIN / EGGNEST_RULESPEC_UK_ROOT); they are
-skipped otherwise, e.g. in CI until the engine is provisioned there.
+These need the Axiom rules engine and a rulespec-uk checkout
+(EGGNEST_AXIOM_ENGINE_BIN / EGGNEST_RULESPEC_UK_ROOT). Locally they skip
+when those are absent; CI installs the pinned engine and sets
+EGGNEST_REQUIRE_AXIOM=1, which turns a missing engine into a failure
+instead of a silent skip. Engine-free wiring tests live in
+test_axiom_uk_wiring.py.
 """
+
+import os
 
 import numpy as np
 import pytest
@@ -11,10 +16,18 @@ import pytest
 from eggnest import axiom_uk
 from eggnest.tax_uk import UKYearInputs, calculate_uk_tax
 
+REQUIRED = os.environ.get("EGGNEST_REQUIRE_AXIOM") == "1"
+
 pytestmark = pytest.mark.skipif(
-    not axiom_uk.available(),
+    not REQUIRED and not axiom_uk.available(),
     reason="Axiom rules engine not configured",
 )
+
+
+def test_engine_is_available():
+    """Fails (rather than skipping the module) when CI requires the engine
+    but it is missing or incompatible."""
+    assert axiom_uk.available()
 
 
 def _inputs(**overrides) -> UKYearInputs:
