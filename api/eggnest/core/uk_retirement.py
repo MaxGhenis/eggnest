@@ -68,12 +68,20 @@ def build_uk_retirement_result(
     result: UKSimulationResult,
 ) -> EngineResult:
     """Wrap a UK simulator result in the stable core result envelope."""
+    citations = []
+    if result.pension_credit is not None:
+        from eggnest.citations import Citation
+
+        citations = [
+            Citation(id=ref.id, url=ref.url) for ref in result.pension_credit.citations
+        ]
     return EngineResult(
         scenario_schema_version=scenario.schema_version,
         engine=ENGINE_ID,
         country=ENGINE_COUNTRY,
         assumptions=_assumptions(inputs),
         outputs={OUTPUT_KEY: result.model_dump()},
+        citations=citations,
         sources=_sources(),
         caveats=_caveats(inputs),
         reproducibility=Reproducibility(
@@ -172,9 +180,12 @@ def _caveats(inputs: UKSimulationInput) -> list[str]:
         "Net income is income less income tax and employee National Insurance; benefits such as Pension Credit and Universal Credit are not added.",
         "The State Pension and earnings inputs are held flat in cash terms; they are not uprated with inflation.",
         "GIA sales are modeled without Capital Gains Tax, and pension contributions without tax relief.",
-        "Employee National Insurance is charged on earnings at every age, including past State Pension age.",
+        "State Pension age follows Pensions Act 1995 Sch 4 for a birth date one current_age before the run date; employee National Insurance stops on earnings after it.",
         "SIPP money cannot be drawn before the minimum pension age; spending it cannot cover counts as unmet (sipp_locked_shortfall_rate).",
     ]
+    caveats.append(
+        "pension_credit, when present, is a guarantee credit screen (State Pension Credit Act 2002 s.2; SI 2002/1792 regs 6 and 15(6)) of up to 500 simulated paths, not a benefits decision; it omits notional income from undrawn pension pots (reg 18), savings credit and housing costs, and is never added to spendable income."
+    )
     if inputs.include_mortality:
         caveats.append(
             "success_rate is mortality-adjusted: a path succeeds if spending is met in every simulated year the person is alive."

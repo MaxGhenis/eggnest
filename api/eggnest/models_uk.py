@@ -201,8 +201,71 @@ class UKYearBreakdown(BaseModel):
     state_pension: float
     employment_income: float
     sipp_withdrawal: float
+    # Taxable portion of the SIPP draw (gross minus tax-free cash); the
+    # income figure pension credit screening should use.
+    sipp_taxable_withdrawal: float = 0.0
     isa_withdrawal: float
     gia_withdrawal: float
+
+
+class UKCitationRef(BaseModel):
+    """Statute or regulation citation backing a computed number."""
+
+    id: str
+    url: str
+
+
+class UKPensionCreditScreen(BaseModel):
+    """Guarantee credit (Pension Credit) screening across simulated paths.
+
+    Computed with the Axiom rules engine from statute encodings: State
+    Pension Credit Act 2002 s.2 with SI 2002/1792 reg 6 (minimum guarantee)
+    and reg 15(6) (income deemed from capital), for a sample of simulated
+    paths in each year they are alive at or past the qualifying age. A
+    screening estimate, not a benefits decision.
+    """
+
+    status: Literal["screened", "under_qualifying_age"] = Field(
+        description=(
+            "'under_qualifying_age' when the person reaches Pension Credit "
+            "qualifying age only after max_age, so nothing is screened."
+        )
+    )
+    qualifying_age_years: int
+    qualifying_age_months: int = Field(
+        description="Months past qualifying_age_years (State Pension age)."
+    )
+    weekly_minimum_guarantee: float | None = Field(
+        default=None,
+        description="Single claimant's standard minimum guarantee (reg 6).",
+    )
+    paths_screened: int = 0
+    share_of_paths_indicated: float = Field(
+        default=0.0,
+        description=(
+            "Share of screened paths with guarantee credit indicated in at "
+            "least one year they are alive from the qualifying age."
+        ),
+    )
+    ages: list[int] = Field(
+        default=[], description="Simulated ages from the first qualifying year."
+    )
+    share_indicated_by_age: list[float] = Field(
+        default=[],
+        description="Share of screened paths alive at each age with credit indicated.",
+    )
+    median_annual_amount_by_age: list[float] = Field(
+        default=[],
+        description=(
+            "Median annual guarantee credit among paths indicated at each "
+            "age (0 when none), pro rata in the year the qualifying age falls."
+        ),
+    )
+    first_age_indicated: int | None = Field(
+        default=None,
+        description="Median first age with credit among indicated paths.",
+    )
+    citations: list[UKCitationRef] = []
 
 
 class UKSimulationResult(BaseModel):
@@ -251,5 +314,12 @@ class UKSimulationResult(BaseModel):
             "p ∈ {5,25,50,75,95}, the start year of the sim whose final "
             "portfolio value is closest to that percentile. Only populated for "
             "sequential sampling."
+        ),
+    )
+    pension_credit: UKPensionCreditScreen | None = Field(
+        default=None,
+        description=(
+            "Guarantee credit screening along the median path, computed from "
+            "statute encodings via the Axiom rules engine when available."
         ),
     )

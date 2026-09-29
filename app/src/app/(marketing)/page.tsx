@@ -41,18 +41,31 @@ export default function HomePage() {
             </p>
             <div className="mt-8 flex flex-wrap gap-4">
               <Link
-                href="/simulator"
+                href="/uk-simulator"
                 className="inline-flex items-center gap-2 rounded-full bg-gradient-golden px-8 py-4 text-base font-semibold text-white shadow-[var(--shadow-md),0_4px_20px_var(--color-primary-glow)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-lg),0_8px_30px_rgba(234,88,12,0.3)]"
               >
-                Try the simulator
+                Try the UK simulator
+              </Link>
+              <Link
+                href="/simulator"
+                className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-[var(--color-border)] bg-white px-8 py-4 text-base font-semibold text-[var(--color-text)] shadow-[var(--shadow-sm)] transition-all hover:border-[var(--color-primary-200)] hover:bg-[var(--color-primary-50)]"
+              >
+                US simulator
               </Link>
               <a
                 href="#how-it-works"
-                className="inline-flex items-center gap-2 rounded-full border-[1.5px] border-[var(--color-border)] bg-white px-8 py-4 text-base font-semibold text-[var(--color-text)] shadow-[var(--shadow-sm)] transition-all hover:border-[var(--color-primary-200)] hover:bg-[var(--color-primary-50)]"
+                className="inline-flex items-center gap-2 rounded-full px-4 py-4 text-base font-semibold text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
               >
                 See how it works
               </a>
             </div>
+            {/* Name Pension Credit screening here only once the production
+                API returns pension_credit (the Axiom engine and rulespec-uk
+                in its image); see docs/uk-axiom-engine.md. */}
+            <p className="mt-4 text-sm text-[var(--color-text-light)]">
+              UK: live recalculation and ISA/SIPP drawdown, with income tax
+              (Scottish rates included) and National Insurance.
+            </p>
           </div>
 
           {/* Chart preview */}
@@ -112,9 +125,12 @@ export default function HomePage() {
                 "difference between good and bad market sequences with identical average returns",
             },
             {
-              value: "$400K+",
+              // UK simulator defaults (age 65, £500k, £30k real spending,
+              // 2,000 paths, seed 42), 2026-09-29: real p25 £0 and p75 £694k,
+              // a gap of 139% of the starting portfolio.
+              value: "40%+",
               label:
-                "gap between 25th and 75th percentile outcomes on a $1M portfolio",
+                "gap between 25th and 75th percentile outcomes on the same starting portfolio",
             },
           ].map(({ value, label }) => (
             <div
