@@ -75,6 +75,46 @@ jobs:
             uv run pytest "$file" --tb=short
           done
 
+  # test-api runs on Python 3.14, but the Modal image (api/modal_app.py) runs
+  # 3.11. Install the same lock on 3.11, import the app and run the household
+  # tests there.
+  test-api-py311:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: api
+    env:
+      UV_PYTHON: '3.11'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: api/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Import the app
+        run: uv run python -c "import main"
+
+      - name: Run household tests
+        run: >-
+          uv run pytest tests/test_household_net_income.py
+          tests/test_household_calculator.py
+          tests/test_core_us_household_resources.py
+          tests/test_agent_household_surfaces.py
+          -n 2 --dist loadfile --tb=short
+
   test-app:
     runs-on: ubuntu-latest
     defaults:
