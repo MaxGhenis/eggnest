@@ -25,10 +25,10 @@ EggNest drops, shows up as a gap.
 """
 
 import copy
-import os
 
+import numpy as np
 import pytest
-from hypothesis import HealthCheck, example, given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from policyengine_us import Simulation
 
@@ -38,9 +38,13 @@ from eggnest.core.us_household_resources import (
     run_us_household_resources,
 )
 from eggnest.household import (
+    CENT,
+    FLOAT32_RELATIVE_ROUNDING,
     HouseholdCalculator,
+    _itemize,
+    _primary_earner_index,
+    _rounding,
     compare_earnings_grid,
-    primary_earner_index,
 )
 from eggnest.models import (
     EarningsGridInput,
@@ -57,20 +61,22 @@ REFERENCE_VARIABLES = [
     "household_health_costs",
     "household_refundable_tax_credits",
     "household_tax_before_refundable_credits",
+    "household_refundable_state_tax_credits",
+    "state_income_tax",
+    "state_income_tax_before_refundable_credits",
     "social_security",
     "income_tax",
     "income_tax_before_refundable_credits",
     "income_tax_refundable_credits",
     "income_tax_capped_non_refundable_credits",
     "income_tax_unavailable_non_refundable_credits",
+    "non_refundable_ctc",
     "eitc",
     "refundable_ctc",
-    "non_refundable_ctc",
 ]
 
 # Tolerance for float32 aggregation inside PolicyEngine.
 DOLLAR = 1.0
-CENTS = 0.01
 
 # Keys the calculator uses for amounts it could not attribute to a program.
 UNITEMIZED_KEYS = {
@@ -90,12 +96,44 @@ def _reference(situation: dict, year: int) -> dict[str, float]:
     }
 
 
+def _state_rows(ref: dict[str, float]) -> tuple[float, float]:
+    """The state tax row and state refundable credits EggNest should report.
+
+    Normally the before-refundable tax and the refundable credits. Where
+    state_income_tax applies an election the before-refundable figure ignores
+    (Wisconsin's retirement income exclusion, from 2025, ages 67+), the
+    election path applies no credits, so the row is that path's tax and the
+    credits are forfeited.
+    """
+    after = ref["state_income_tax"]
+    before = ref["state_income_tax_before_refundable_credits"]
+    credits = ref["household_refundable_state_tax_credits"]
+    if after < before - credits - (CENT + FLOAT32_RELATIVE_ROUNDING * abs(before)):
+        return max(after, 0.0), max(-after, 0.0)
+    return before, credits
+
+
+def _state_election_adjustment(ref: dict[str, float]) -> float:
+    """EggNest's net state tax minus the one household_net_income uses.
+
+    household_net_income nets state_income_tax_before_refundable_credits
+    against the refundable credits, so it misses the Wisconsin exclusion.
+    Zero elsewhere, and never positive.
+    """
+    row, credits = _state_rows(ref)
+    return (row - credits) - (
+        ref["state_income_tax_before_refundable_credits"]
+        - ref["household_refundable_state_tax_credits"]
+    )
+
+
 def _expected_net_income(ref: dict[str, float]) -> float:
     """PolicyEngine household net income with health coverage excluded."""
     return (
         ref["household_net_income"]
         - ref["household_health_benefits"]
         + ref["household_health_costs"]
+        - _state_election_adjustment(ref)
     )
 
 
@@ -136,6 +174,7 @@ def assert_net_income_identity(
         + non_credit_benefits
         + ref["household_refundable_tax_credits"]
         - ref["household_tax_before_refundable_credits"]
+        - _state_election_adjustment(ref)
     )
     assert result.net_income == pytest.approx(identity, abs=DOLLAR)
 
@@ -155,9 +194,8 @@ def assert_net_income_identity(
         + result.other_taxes,
         abs=1e-6,
     )
-    # Sub-cent remainders are dropped from the breakdown.
     assert result.total_taxes == pytest.approx(
-        sum(result.tax_breakdown.values()), abs=CENTS
+        sum(result.tax_breakdown.values()), abs=1e-6
     )
     assert result.total_benefits == pytest.approx(
         sum(result.benefits.values()), abs=1e-6
@@ -167,16 +205,32 @@ def assert_net_income_identity(
     assert result.federal_income_tax == pytest.approx(
         ref["income_tax_before_refundable_credits"], abs=DOLLAR
     )
+    state_row, state_credits = _state_rows(ref)
     assert result.total_taxes == pytest.approx(
-        ref["household_tax_before_refundable_credits"], abs=DOLLAR
+        ref["household_tax_before_refundable_credits"]
+        + state_row
+        - ref["state_income_tax_before_refundable_credits"],
+        abs=DOLLAR,
     )
+    # The state row keeps elections state_income_tax applies; they only ever
+    # lower tax, and only Wisconsin's retirement income exclusion exists.
+    assert result.state_income_tax == pytest.approx(state_row, abs=DOLLAR)
+    assert result.state_income_tax - result.benefits.get(
+        "household_refundable_state_tax_credits", 0.0
+    ) == pytest.approx(ref["state_income_tax"], abs=DOLLAR)
+    assert _state_election_adjustment(ref) <= DOLLAR
+    if not (household.state == "WI" and household.year >= 2025):
+        assert abs(_state_election_adjustment(ref)) <= DOLLAR
 
     # 5. ... and refundable credits are counted once, inside benefits.
     assert result.refundable_tax_credits == pytest.approx(
-        ref["household_refundable_tax_credits"], abs=DOLLAR
+        ref["household_refundable_tax_credits"]
+        - ref["household_refundable_state_tax_credits"]
+        + state_credits,
+        abs=DOLLAR,
     )
     assert result.total_benefits == pytest.approx(
-        non_credit_benefits + computed_income + ref["household_refundable_tax_credits"],
+        non_credit_benefits + computed_income + result.refundable_tax_credits,
         abs=DOLLAR,
     )
     # Federal tax net of the federal refundable credits is PolicyEngine's income_tax.
@@ -191,7 +245,7 @@ def assert_net_income_identity(
         ref["income_tax_capped_non_refundable_credits"], abs=DOLLAR
     )
     assert result.non_refundable_tax_credits == pytest.approx(
-        sum(result.non_refundable_credit_breakdown.values()), abs=CENTS
+        sum(result.non_refundable_credit_breakdown.values()), abs=1e-6
     )
     assert result.non_refundable_credit_breakdown.get(
         "unavailable_non_refundable_credits", 0.0
@@ -462,8 +516,156 @@ class TestCreditsCountedOnce:
         assert "benefits.child_tax_credit" not in result.output_citations
 
 
+class TestStateElections:
+    """State tax keeps elections that household_net_income misses."""
+
+    def test_wisconsin_retirement_income_exclusion(self):
+        # In policyengine-us 2.15.16, state_income_tax for this retiree is $41
+        # with the exclusion, while household_net_income charges the $1,078
+        # before-exclusion figure.
+        year = 2026
+        household = HouseholdInput(
+            state="WI",
+            year=year,
+            people=[
+                PersonInput(
+                    age=70,
+                    pension_income=40_000,
+                    social_security=24_000,
+                    is_tax_unit_head=True,
+                )
+            ],
+        )
+        calc = HouseholdCalculator()
+        ref = _reference(calc._build_situation(household), year)
+        # Guard: the example exercises the exclusion.
+        assert (
+            ref["state_income_tax"] + ref["household_refundable_state_tax_credits"]
+            < ref["state_income_tax_before_refundable_credits"] - 100
+        )
+
+        result = calc.calculate(household)
+
+        assert result.state_income_tax - result.benefits.get(
+            "household_refundable_state_tax_credits", 0.0
+        ) == pytest.approx(ref["state_income_tax"], abs=DOLLAR)
+        # Independent of the formula: $41.30 in policyengine-us 2.15.16.
+        # Re-verify this figure when PolicyEngine-US is upgraded.
+        assert result.state_income_tax == pytest.approx(41.30, abs=DOLLAR)
+        assert_net_income_identity(household, result, ref)
+
+    def test_wisconsin_exclusion_forfeits_refundable_credits(self):
+        # The exclusion path applies no credits. Here it wins ($0 tax) over
+        # the standard path ($691.63 before a $17.54 refundable credit), so
+        # neither the tax row nor the benefits may show the $17.54.
+        year = 2026
+        household = HouseholdInput(
+            state="WI",
+            year=year,
+            people=[
+                PersonInput(
+                    age=68,
+                    employment_income=5_000,
+                    pension_income=30_000,
+                    social_security=20_000,
+                    is_tax_unit_head=True,
+                ),
+                PersonInput(age=10),
+            ],
+        )
+        calc = HouseholdCalculator()
+        ref = _reference(calc._build_situation(household), year)
+        # Guard: a refundable credit exists and the exclusion wins.
+        assert ref["household_refundable_state_tax_credits"] > 1
+        assert ref["state_income_tax"] < (
+            ref["state_income_tax_before_refundable_credits"]
+            - ref["household_refundable_state_tax_credits"]
+            - 100
+        )
+
+        result = calc.calculate(household)
+
+        assert result.state_income_tax == pytest.approx(
+            max(ref["state_income_tax"], 0.0), abs=0.01
+        )
+        # Independent of the formula: $0 in policyengine-us 2.15.16.
+        assert result.state_income_tax == pytest.approx(0.0, abs=0.01)
+        assert "household_refundable_state_tax_credits" not in result.benefits
+        assert_net_income_identity(household, result, ref)
+
+
+class _StubSimulation:
+    """Just enough of a Simulation for _itemize: fixed variable values."""
+
+    def __init__(self, values: dict[str, float]):
+        self.values = values
+
+    def calculate(self, variable: str, year: int) -> np.ndarray:
+        return np.array([self.values[variable]])
+
+
+class TestRounding:
+    """Float32 rounding inside PolicyEngine never shows up as a line item."""
+
+    def test_rounding_threshold_is_a_dollar_until_it_scales(self):
+        assert _rounding(1e6) == 1.0
+        assert _rounding(2e7) == pytest.approx(FLOAT32_RELATIVE_ROUNDING * 2e7)
+        assert _rounding(2e7) > 1.0
+
+    def test_itemize_keeps_material_remainders_and_drops_rounding(self):
+        sim = _StubSimulation({"snap": 100.0})
+
+        kept = _itemize(sim, ["snap"], 101.5, 2025, "other_benefits", scale=1e5)
+        dropped = _itemize(sim, ["snap"], 101.5, 2025, "other_benefits", scale=2e7)
+
+        assert kept == {"snap": 100.0, "other_benefits": pytest.approx(1.5)}
+        assert dropped == {"snap": 100.0}
+
+    def test_very_high_income_has_no_unitemized_lines(self):
+        household = HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[
+                PersonInput(
+                    age=50,
+                    employment_income=20_000_000.37,
+                    capital_gains=1_234_567.89,
+                    is_tax_unit_head=True,
+                )
+            ],
+        )
+        result = HouseholdCalculator().calculate(household)
+
+        assert not UNITEMIZED_KEYS & set(result.benefits)
+        assert not UNITEMIZED_KEYS & set(result.tax_breakdown)
+
+
 class TestMarginalTaxRate:
     """The marginal rate is the share of an extra $1,000 of wages not kept."""
+
+    def test_marginal_rate_goes_to_the_primary_earner(self):
+        # A child listed first and a non-earning head must not carry the raise.
+        calc = HouseholdCalculator()
+        child = PersonInput(age=10)
+        head = PersonInput(age=40, is_tax_unit_head=True)
+        spouse = PersonInput(age=38, employment_income=60_000, is_tax_unit_spouse=True)
+        household = HouseholdInput(state="NY", year=2025, people=[child, head, spouse])
+        raised = household.model_copy(
+            update={
+                "people": [
+                    child,
+                    head,
+                    spouse.model_copy(update={"employment_income": 61_000}),
+                ]
+            }
+        )
+
+        base = calc.calculate(household)
+
+        assert base.marginal_tax_rate == pytest.approx(
+            1 - (calc.calculate(raised).net_income - base.net_income) / 1_000,
+            abs=1e-6,
+        )
 
     def test_self_employed_marginal_rate_is_a_rate(self):
         # Self-employment tax used to enter the base but not the +$1,000 run,
@@ -502,33 +704,6 @@ class TestMarginalTaxRate:
             1 - (after_raise.net_income - base.net_income) / 1_000, abs=1e-6
         )
 
-    def test_marginal_rate_raises_the_primary_earner_not_a_child_listed_first(self):
-        calc = HouseholdCalculator()
-        household = HouseholdInput(
-            state="OH",
-            year=2026,
-            people=[
-                PersonInput(age=4),
-                PersonInput(age=30, employment_income=28_000, is_tax_unit_head=True),
-            ],
-        )
-        assert primary_earner_index(household) == 1
-        raised = household.model_copy(
-            update={
-                "people": [
-                    household.people[0],
-                    household.people[1].model_copy(
-                        update={"employment_income": 29_000}
-                    ),
-                ]
-            }
-        )
-        base = calc.calculate(household)
-        assert base.marginal_tax_rate == pytest.approx(
-            1 - (calc.calculate(raised).net_income - base.net_income) / 1_000,
-            abs=1e-6,
-        )
-
     def test_marginal_rate_matches_policyengine_net_income_change(self):
         # Compared against two fresh PolicyEngine simulations rather than the
         # PolicyEngine-US ``marginal_tax_rate`` variable: in policyengine-us
@@ -556,21 +731,7 @@ class TestMarginalTaxRate:
 
 
 # --- Property-based tests --------------------------------------------------
-
-settings.register_profile(
-    "default",
-    max_examples=20,
-    deadline=None,
-    derandomize=True,
-    suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
-)
-settings.register_profile(
-    "thorough",
-    max_examples=int(os.environ.get("HYPOTHESIS_MAX_EXAMPLES", "400")),
-    deadline=None,
-    suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
-)
-settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
+# Profiles are registered in conftest.py.
 
 # The determinism and comparison properties each run four simulations per
 # example, so they get a quarter of the example budget.
@@ -578,11 +739,15 @@ light = settings(max_examples=max(5, settings.default.max_examples // 4))
 
 
 def _money(high: int) -> st.SearchStrategy[float]:
-    """Mostly zero or low amounts, where benefits and credits phase in and out."""
+    """Mostly zero or low amounts, where benefits and credits phase in and out.
+
+    Some amounts carry cents.
+    """
     return st.one_of(
         st.just(0.0),
         st.integers(0, 40_000).map(float),
         st.integers(0, high).map(float),
+        st.integers(0, high * 100).map(lambda cents: cents / 100),
     )
 
 
@@ -602,16 +767,36 @@ def _adult(draw, role: str) -> PersonInput:
 
 
 @st.composite
+def _child(draw) -> PersonInput:
+    # Under 19 and not head or spouse, so PersonInput makes them a dependent.
+    age = draw(st.integers(0, 18))
+    wages = draw(st.one_of(st.just(0.0), _money(15_000))) if age >= 14 else 0.0
+    return PersonInput(age=age, employment_income=wages)
+
+
+@st.composite
 def households(draw) -> HouseholdInput:
     people = [draw(_adult("is_tax_unit_head"))]
-    if draw(st.booleans()):
+    married = draw(st.booleans())
+    if married:
         people.append(draw(_adult("is_tax_unit_spouse")))
-    for _ in range(draw(st.integers(0, 3))):
-        people.append(PersonInput(age=draw(st.integers(0, 17))))
+    children = draw(st.lists(_child(), max_size=3))
+    people.extend(children)
+    # Filing status: inferred, or an explicit one consistent with the household.
+    # An explicit "single" with children is not offered: HouseholdInput treats
+    # "single" as unset and infers head of household.
+    if married:
+        statuses = ["married_filing_jointly", "married_filing_separately"]
+    elif children:
+        statuses = ["head_of_household"]
+    else:
+        statuses = ["single"]
+    filing_status = draw(st.one_of(st.none(), st.sampled_from(statuses)))
     return HouseholdInput(
         state=draw(st.sampled_from(sorted(STATE_FIPS))),
-        year=draw(st.sampled_from([2024, 2025, 2026])),
-        people=people,
+        year=draw(st.integers(2020, 2035)),
+        people=draw(st.permutations(people)),
+        **({"filing_status": filing_status} if filing_status else {}),
     )
 
 
@@ -675,6 +860,7 @@ class TestNetIncomeProperties:
         result = HouseholdCalculator().calculate(household)
 
         assert result.federal_income_tax >= -DOLLAR
+        assert result.state_income_tax >= -DOLLAR
         assert result.payroll_tax >= -DOLLAR
         assert result.refundable_tax_credits >= -DOLLAR
         assert all(value > 0 for value in result.benefits.values())
@@ -710,7 +896,7 @@ class TestAgentSurfacesAgree:
     def test_earnings_grid_step_matches_marginal_tax_rate(self, household):
         # A two-row grid from the primary earner's wages to $1,000 more
         # measures the same change in net income as the marginal tax rate.
-        earner = primary_earner_index(household)
+        earner = _primary_earner_index(household)
         wages = household.people[earner].employment_income
         grid = compare_earnings_grid(
             EarningsGridInput(
