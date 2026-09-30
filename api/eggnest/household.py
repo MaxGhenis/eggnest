@@ -42,7 +42,8 @@ CENT = 0.005
 
 # Unitemized remainders smaller than this are float32 rounding inside
 # PolicyEngine-US aggregates, not missing programs, and are dropped. The
-# threshold grows with the size of the amounts involved (4 float32 ulps).
+# threshold grows with the size of the amounts involved (4 * 2**-24 relative,
+# 2 to 4 float32 ulps).
 ROUNDING = 1.0
 FLOAT32_RELATIVE_ROUNDING = 4 * 2**-24
 
@@ -289,8 +290,12 @@ class HouseholdCalculator:
         state_refundable_credits = _sum(
             sim, "household_refundable_state_tax_credits", year
         )
+        # float32 rounding inside PolicyEngine must not look like an election.
+        election_tolerance = CENT + FLOAT32_RELATIVE_ROUNDING * abs(
+            state_before_refundable
+        )
         if state_tax_after_credits < (
-            state_before_refundable - state_refundable_credits - CENT
+            state_before_refundable - state_refundable_credits - election_tolerance
         ):
             state_income_tax = max(state_tax_after_credits, 0.0)
             state_refundable_credits = max(-state_tax_after_credits, 0.0)

@@ -26,13 +26,20 @@ EggNest drops, shows up as a gap.
 
 import copy
 
+import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from policyengine_us import Simulation
 
 from eggnest.constants import STATE_FIPS
-from eggnest.household import HouseholdCalculator
+from eggnest.household import (
+    CENT,
+    FLOAT32_RELATIVE_ROUNDING,
+    HouseholdCalculator,
+    _itemize,
+    _rounding,
+)
 from eggnest.models import HouseholdInput, HouseholdResult, PersonInput
 
 REFERENCE_VARIABLES = [
@@ -87,7 +94,7 @@ def _state_rows(ref: dict[str, float]) -> tuple[float, float]:
     after = ref["state_income_tax"]
     before = ref["state_income_tax_before_refundable_credits"]
     credits = ref["household_refundable_state_tax_credits"]
-    if after < before - credits - 0.005:
+    if after < before - credits - (CENT + FLOAT32_RELATIVE_ROUNDING * abs(before)):
         return max(after, 0.0), max(-after, 0.0)
     return before, credits
 
@@ -326,9 +333,9 @@ class TestStateElections:
 
         result = calc.calculate(household)
 
-        assert result.state_income_tax - ref[
-            "household_refundable_state_tax_credits"
-        ] == pytest.approx(ref["state_income_tax"], abs=DOLLAR)
+        assert result.state_income_tax - result.benefits.get(
+            "household_refundable_state_tax_credits", 0.0
+        ) == pytest.approx(ref["state_income_tax"], abs=DOLLAR)
         # Independent of the formula: $41.30 in policyengine-us 2.15.16.
         # Re-verify this figure when PolicyEngine-US is upgraded.
         assert result.state_income_tax == pytest.approx(41.30, abs=DOLLAR)
@@ -368,12 +375,38 @@ class TestStateElections:
         assert result.state_income_tax == pytest.approx(
             max(ref["state_income_tax"], 0.0), abs=0.01
         )
+        # Independent of the formula: $0 in policyengine-us 2.15.16.
+        assert result.state_income_tax == pytest.approx(0.0, abs=0.01)
         assert "household_refundable_state_tax_credits" not in result.benefits
         assert_net_income_identity(household, result, ref)
 
 
+class _StubSimulation:
+    """Just enough of a Simulation for _itemize: fixed variable values."""
+
+    def __init__(self, values: dict[str, float]):
+        self.values = values
+
+    def calculate(self, variable: str, year: int) -> np.ndarray:
+        return np.array([self.values[variable]])
+
+
 class TestRounding:
     """Float32 rounding inside PolicyEngine never shows up as a line item."""
+
+    def test_rounding_threshold_is_a_dollar_until_it_scales(self):
+        assert _rounding(1e6) == 1.0
+        assert _rounding(2e7) == pytest.approx(FLOAT32_RELATIVE_ROUNDING * 2e7)
+        assert _rounding(2e7) > 1.0
+
+    def test_itemize_keeps_material_remainders_and_drops_rounding(self):
+        sim = _StubSimulation({"snap": 100.0})
+
+        kept = _itemize(sim, ["snap"], 101.5, 2025, "other_benefits", scale=1e5)
+        dropped = _itemize(sim, ["snap"], 101.5, 2025, "other_benefits", scale=2e7)
+
+        assert kept == {"snap": 100.0, "other_benefits": pytest.approx(1.5)}
+        assert dropped == {"snap": 100.0}
 
     def test_very_high_income_has_no_unitemized_lines(self):
         household = HouseholdInput(
