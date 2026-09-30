@@ -630,7 +630,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "numpy-financial", specifier = ">=1.0.0" },
     { name = "pandas", specifier = ">=2.0.0" },
-    { name = "policyengine-us", specifier = ">=1.0.0" },
+    { name = "policyengine-us", specifier = ">=2.15.16" },
     { name = "pydantic", specifier = ">=2.5.0" },
     { name = "pydantic-settings", specifier = ">=2.1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },

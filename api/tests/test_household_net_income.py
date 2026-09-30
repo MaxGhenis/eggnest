@@ -25,10 +25,9 @@ EggNest drops, shows up as a gap.
 """
 
 import copy
-import os
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 from policyengine_us import Simulation
 
@@ -44,6 +43,9 @@ REFERENCE_VARIABLES = [
     "household_health_costs",
     "household_refundable_tax_credits",
     "household_tax_before_refundable_credits",
+    "household_refundable_state_tax_credits",
+    "state_income_tax",
+    "state_income_tax_before_refundable_credits",
     "social_security",
     "income_tax",
     "income_tax_before_refundable_credits",
@@ -54,7 +56,6 @@ REFERENCE_VARIABLES = [
 
 # Tolerance for float32 aggregation inside PolicyEngine.
 DOLLAR = 1.0
-CENTS = 0.01
 
 # Keys the calculator uses for amounts it could not attribute to a program.
 UNITEMIZED_KEYS = {
@@ -74,12 +75,27 @@ def _reference(situation: dict, year: int) -> dict[str, float]:
     }
 
 
+def _state_election_adjustment(ref: dict[str, float]) -> float:
+    """EggNest's state tax row minus PolicyEngine's before-refundable figure.
+
+    EggNest starts from state_income_tax, which applies Wisconsin's retirement
+    income exclusion (from 2025, ages 67+); household_net_income uses
+    state_income_tax_before_refundable_credits, which does not. Zero elsewhere.
+    """
+    return (
+        ref["state_income_tax"]
+        + ref["household_refundable_state_tax_credits"]
+        - ref["state_income_tax_before_refundable_credits"]
+    )
+
+
 def _expected_net_income(ref: dict[str, float]) -> float:
     """PolicyEngine household net income with health coverage excluded."""
     return (
         ref["household_net_income"]
         - ref["household_health_benefits"]
         + ref["household_health_costs"]
+        - _state_election_adjustment(ref)
     )
 
 
@@ -120,6 +136,7 @@ def assert_net_income_identity(
         + non_credit_benefits
         + ref["household_refundable_tax_credits"]
         - ref["household_tax_before_refundable_credits"]
+        - _state_election_adjustment(ref)
     )
     assert result.net_income == pytest.approx(identity, abs=DOLLAR)
 
@@ -139,9 +156,8 @@ def assert_net_income_identity(
         + result.other_taxes,
         abs=1e-6,
     )
-    # Sub-cent remainders are dropped from the breakdown.
     assert result.total_taxes == pytest.approx(
-        sum(result.tax_breakdown.values()), abs=CENTS
+        sum(result.tax_breakdown.values()), abs=1e-6
     )
     assert result.total_benefits == pytest.approx(
         sum(result.benefits.values()), abs=1e-6
@@ -152,8 +168,17 @@ def assert_net_income_identity(
         ref["income_tax_before_refundable_credits"], abs=DOLLAR
     )
     assert result.total_taxes == pytest.approx(
-        ref["household_tax_before_refundable_credits"], abs=DOLLAR
+        ref["household_tax_before_refundable_credits"]
+        + _state_election_adjustment(ref),
+        abs=DOLLAR,
     )
+    # The state row keeps elections state_income_tax applies, and they only
+    # ever lower tax.
+    assert result.state_income_tax == pytest.approx(
+        ref["state_income_tax"] + ref["household_refundable_state_tax_credits"],
+        abs=DOLLAR,
+    )
+    assert _state_election_adjustment(ref) <= DOLLAR
 
     # 5. ... and refundable credits are counted once, inside benefits.
     assert result.refundable_tax_credits == pytest.approx(
@@ -247,8 +272,68 @@ class TestCreditsCountedOnce:
         )
 
 
+class TestStateElections:
+    """State tax keeps elections that household_net_income misses."""
+
+    def test_wisconsin_retirement_income_exclusion(self):
+        # In policyengine-us 2.15.16, state_income_tax for this retiree is $41
+        # with the exclusion, while household_net_income charges the $1,078
+        # before-exclusion figure.
+        year = 2026
+        household = HouseholdInput(
+            state="WI",
+            year=year,
+            people=[
+                PersonInput(
+                    age=70,
+                    pension_income=40_000,
+                    social_security=24_000,
+                    is_tax_unit_head=True,
+                )
+            ],
+        )
+        calc = HouseholdCalculator()
+        ref = _reference(calc._build_situation(household), year)
+        # Guard: the example exercises the exclusion.
+        assert (
+            ref["state_income_tax"] + ref["household_refundable_state_tax_credits"]
+            < ref["state_income_tax_before_refundable_credits"] - 100
+        )
+
+        result = calc.calculate(household)
+
+        assert result.state_income_tax - ref[
+            "household_refundable_state_tax_credits"
+        ] == pytest.approx(ref["state_income_tax"], abs=DOLLAR)
+        assert_net_income_identity(household, result, ref)
+
+
 class TestMarginalTaxRate:
     """The marginal rate is the share of an extra $1,000 of wages not kept."""
+
+    def test_marginal_rate_goes_to_the_primary_earner(self):
+        # A child listed first and a non-earning head must not carry the raise.
+        calc = HouseholdCalculator()
+        child = PersonInput(age=10)
+        head = PersonInput(age=40, is_tax_unit_head=True)
+        spouse = PersonInput(age=38, employment_income=60_000, is_tax_unit_spouse=True)
+        household = HouseholdInput(state="NY", year=2025, people=[child, head, spouse])
+        raised = household.model_copy(
+            update={
+                "people": [
+                    child,
+                    head,
+                    spouse.model_copy(update={"employment_income": 61_000}),
+                ]
+            }
+        )
+
+        base = calc.calculate(household)
+
+        assert base.marginal_tax_rate == pytest.approx(
+            1 - (calc.calculate(raised).net_income - base.net_income) / 1_000,
+            abs=1e-6,
+        )
 
     def test_self_employed_marginal_rate_is_a_rate(self):
         # Self-employment tax used to enter the base but not the +$1,000 run,
@@ -314,21 +399,7 @@ class TestMarginalTaxRate:
 
 
 # --- Property-based tests --------------------------------------------------
-
-settings.register_profile(
-    "default",
-    max_examples=20,
-    deadline=None,
-    derandomize=True,
-    suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
-)
-settings.register_profile(
-    "thorough",
-    max_examples=int(os.environ.get("HYPOTHESIS_MAX_EXAMPLES", "400")),
-    deadline=None,
-    suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
-)
-settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
+# Profiles are registered in conftest.py.
 
 # The determinism and comparison properties each run four simulations per
 # example, so they get a quarter of the example budget.
@@ -336,11 +407,15 @@ light = settings(max_examples=max(5, settings.default.max_examples // 4))
 
 
 def _money(high: int) -> st.SearchStrategy[float]:
-    """Mostly zero or low amounts, where benefits and credits phase in and out."""
+    """Mostly zero or low amounts, where benefits and credits phase in and out.
+
+    Some amounts carry cents.
+    """
     return st.one_of(
         st.just(0.0),
         st.integers(0, 40_000).map(float),
         st.integers(0, high).map(float),
+        st.integers(0, high * 100).map(lambda cents: cents / 100),
     )
 
 
@@ -360,16 +435,33 @@ def _adult(draw, role: str) -> PersonInput:
 
 
 @st.composite
+def _child(draw) -> PersonInput:
+    age = draw(st.integers(0, 17))
+    wages = draw(st.one_of(st.just(0.0), _money(15_000))) if age >= 14 else 0.0
+    return PersonInput(age=age, employment_income=wages)
+
+
+@st.composite
 def households(draw) -> HouseholdInput:
     people = [draw(_adult("is_tax_unit_head"))]
-    if draw(st.booleans()):
+    married = draw(st.booleans())
+    if married:
         people.append(draw(_adult("is_tax_unit_spouse")))
-    for _ in range(draw(st.integers(0, 3))):
-        people.append(PersonInput(age=draw(st.integers(0, 17))))
+    children = draw(st.lists(_child(), max_size=3))
+    people.extend(children)
+    # Filing status: inferred, or an explicit one consistent with the household.
+    if married:
+        statuses = ["married_filing_jointly", "married_filing_separately"]
+    elif children:
+        statuses = ["head_of_household", "single"]
+    else:
+        statuses = ["single"]
+    filing_status = draw(st.one_of(st.none(), st.sampled_from(statuses)))
     return HouseholdInput(
         state=draw(st.sampled_from(sorted(STATE_FIPS))),
-        year=draw(st.sampled_from([2024, 2025, 2026])),
-        people=people,
+        year=draw(st.integers(2020, 2035)),
+        people=draw(st.permutations(people)),
+        **({"filing_status": filing_status} if filing_status else {}),
     )
 
 

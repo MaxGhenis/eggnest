@@ -611,7 +611,7 @@ class HouseholdResult(BaseModel):
     marginal_tax_rate: float = Field(
         default=0,
         description=(
-            "Share of $1,000 more wages for the first person that does not reach "
+            "Share of $1,000 more wages for the primary earner that does not reach "
             "net income (taxes plus benefit and credit reductions)"
         ),
     )
