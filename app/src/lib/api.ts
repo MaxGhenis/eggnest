@@ -855,18 +855,46 @@ export interface HouseholdInput {
   people: PersonInput[];
 }
 
+export interface Citation {
+  id: string;
+  url: string;
+}
+
+/**
+ * net_income = total_income - total_taxes + total_benefits.
+ * Taxes are before refundable credits; refundable credits are counted once,
+ * inside benefits.
+ */
 export interface HouseholdResult {
+  /** After non-refundable credits, before refundable credits. */
   federal_income_tax: number;
+  /** Before refundable credits. */
   state_income_tax: number;
+  /** Employee payroll taxes plus self-employment tax. */
   payroll_tax: number;
+  /** State use tax and local income and occupational taxes. Absent from older API versions. */
+  other_taxes?: number;
   total_taxes: number;
+  /** Benefits and refundable credits, keyed by PolicyEngine-US variable. */
   benefits: Record<string, number>;
   total_benefits: number;
+  /** Refundable credits included in total_benefits. */
+  refundable_tax_credits?: number;
+  /** Non-refundable credits already subtracted in federal_income_tax. */
+  non_refundable_tax_credits?: number;
+  /**
+   * Non-refundable credits by PolicyEngine-US variable; the negative
+   * unavailable_non_refundable_credits entry is the part that exceeds the
+   * tax the credits can offset. Sums to non_refundable_tax_credits.
+   */
+  non_refundable_credit_breakdown?: Record<string, number>;
   total_income: number;
   net_income: number;
   tax_breakdown: Record<string, number>;
   marginal_tax_rate: number;
   effective_tax_rate: number;
+  citations: Citation[];
+  output_citations: Record<string, Citation[]>;
 }
 
 export interface LifeEventComparison {
