@@ -329,7 +329,7 @@ export default function LifeEventPage() {
 
             <div className="space-y-2">
               {Object.entries({ ...before_result.benefits, ...after_result.benefits })
-                .filter(([key, v]) => v > 0 || (before_result.benefits[key] || 0) > 0)
+                .filter(([key, v]) => v !== 0 || (before_result.benefits[key] || 0) !== 0)
                 .map(([key]) => {
                   const beforeVal = before_result.benefits[key] || 0;
                   const afterVal = after_result.benefits[key] || 0;

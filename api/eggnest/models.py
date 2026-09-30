@@ -802,7 +802,12 @@ class HouseholdResult(BaseModel):
         ),
     )
     state_income_tax: float = Field(
-        ..., description="State income tax before refundable credits"
+        ...,
+        description=(
+            "State income tax before refundable credits (or the tax on an "
+            "election path that forfeits them, such as Wisconsin's retirement "
+            "income exclusion)"
+        ),
     )
     payroll_tax: float = Field(
         default=0,
