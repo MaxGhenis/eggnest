@@ -18,6 +18,7 @@ import {
   type ValidationError,
 } from "../../lib/validation";
 import { US_STATES } from "../../lib/constants";
+import { benefitLabel, stateAndLocalTax } from "../../lib/household";
 
 type FilingStatus = "single" | "married_filing_jointly" | "married_filing_separately" | "head_of_household";
 
@@ -59,6 +60,9 @@ function formatCurrencyLocal(value: number): string {
   if (absValue >= 1_000) return `${value < 0 ? "-" : ""}$${(absValue / 1_000).toFixed(0)}K`;
   return `${value < 0 ? "-" : ""}$${absValue.toFixed(0)}`;
 }
+
+const ACCOUNTING_NOTE =
+  "Net income is total income minus total taxes plus benefits. Taxes are after non-refundable credits and before refundable credits; refundable credits such as the EITC are counted once, under benefits. Health coverage is not included.";
 
 function formatPercentLocal(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
@@ -205,14 +209,16 @@ export default function LifeEventPage() {
           <div className="mt-6">
             <div className="divider-fade mb-5" />
             <h3 className="text-sm font-semibold uppercase tracking-wider text-[var(--color-text-light)]">Your current tax situation</h3>
-            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
                 { label: "Total income", value: formatCurrencyLocal(currentResult.total_income) },
-                { label: "Federal tax", value: formatCurrencyLocal(currentResult.federal_income_tax) },
-                { label: "State tax", value: formatCurrencyLocal(currentResult.state_income_tax) },
-                { label: "FICA", value: formatCurrencyLocal(currentResult.payroll_tax) },
+                { label: "Total taxes", value: formatCurrencyLocal(currentResult.total_taxes) },
+                { label: "Benefits", value: formatCurrencyLocal(currentResult.total_benefits) },
                 { label: "Net income", value: formatCurrencyLocal(currentResult.net_income), highlight: true },
-                { label: "Effective rate", value: formatPercentLocal(currentResult.effective_tax_rate) },
+                { label: "Federal income tax", value: formatCurrencyLocal(currentResult.federal_income_tax) },
+                { label: "State and local tax", value: formatCurrencyLocal(stateAndLocalTax(currentResult)) },
+                { label: "Payroll tax", value: formatCurrencyLocal(currentResult.payroll_tax) },
+                { label: "Effective tax rate", value: formatPercentLocal(currentResult.effective_tax_rate) },
               ].map(({ label, value, highlight }) => (
                 <div key={label} className={`metric-card ${highlight ? "metric-card-primary bg-[var(--color-primary-50)]" : ""}`}>
                   <div className="text-[0.65rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">{label}</div>
@@ -220,6 +226,7 @@ export default function LifeEventPage() {
                 </div>
               ))}
             </div>
+            <p className="mt-3 text-xs text-[var(--color-text-muted)]">{ACCOUNTING_NOTE}</p>
           </div>
         )}
       </div>
@@ -289,8 +296,8 @@ export default function LifeEventPage() {
               <tbody>
                 {[
                   { label: "Total income", before: before_result.total_income, after: after_result.total_income, positive: "more" as const },
-                  { label: "Federal tax", before: before_result.federal_income_tax, after: after_result.federal_income_tax, positive: "less" as const },
-                  { label: "State tax", before: before_result.state_income_tax, after: after_result.state_income_tax, positive: "less" as const },
+                  { label: "Federal income tax", before: before_result.federal_income_tax, after: after_result.federal_income_tax, positive: "less" as const },
+                  { label: "State and local tax", before: stateAndLocalTax(before_result), after: stateAndLocalTax(after_result), positive: "less" as const },
                   { label: "Payroll tax", before: before_result.payroll_tax, after: after_result.payroll_tax, positive: "less" as const },
                   { label: "Total taxes", before: before_result.total_taxes, after: after_result.total_taxes, positive: "less" as const, bold: true },
                   { label: "Total benefits", before: before_result.total_benefits, after: after_result.total_benefits, positive: "more" as const },
@@ -312,23 +319,24 @@ export default function LifeEventPage() {
               </tbody>
             </table>
           </div>
+          <p className="mt-3 text-xs text-[var(--color-text-muted)]">{ACCOUNTING_NOTE}</p>
         </div>
 
         {/* Benefits breakdown */}
         {(Object.keys(before_result.benefits).length > 0 || Object.keys(after_result.benefits).length > 0) && (
           <div className={sectionCls}>
-            <h3 className="text-lg font-semibold mb-4">Benefits breakdown</h3>
+            <h3 className="text-lg font-semibold mb-4">Benefits and refundable credits</h3>
 
             <div className="space-y-2">
               {Object.entries({ ...before_result.benefits, ...after_result.benefits })
-                .filter(([key, v]) => v > 0 || (before_result.benefits[key] || 0) > 0)
+                .filter(([key, v]) => v !== 0 || (before_result.benefits[key] || 0) !== 0)
                 .map(([key]) => {
                   const beforeVal = before_result.benefits[key] || 0;
                   const afterVal = after_result.benefits[key] || 0;
                   const change = afterVal - beforeVal;
                   return (
                     <div key={key} className="flex items-center justify-between text-sm">
-                      <span className="text-[var(--color-text-muted)] capitalize">{key.replace(/_/g, " ")}</span>
+                      <span className="text-[var(--color-text-muted)]">{benefitLabel(key)}</span>
                       <div className="flex items-center gap-3">
                         <span>{formatCurrencyLocal(beforeVal)}</span>
                         <span className="text-[var(--color-text-light)]" aria-hidden="true">&rarr;</span>
@@ -349,11 +357,12 @@ export default function LifeEventPage() {
           <h3 className="text-lg font-semibold mb-4">Tax rates</h3>
           <div className="grid gap-4 sm:grid-cols-2">
             {[
-              { label: "Effective tax rate", before: formatPercentLocal(before_result.effective_tax_rate), after: formatPercentLocal(after_result.effective_tax_rate) },
-              { label: "Marginal tax rate", before: formatPercentLocal(before_result.marginal_tax_rate), after: formatPercentLocal(after_result.marginal_tax_rate) },
-            ].map(({ label, before, after }) => (
+              { label: "Effective tax rate", description: "Total taxes as a share of total income", before: formatPercentLocal(before_result.effective_tax_rate), after: formatPercentLocal(after_result.effective_tax_rate) },
+              { label: "Marginal tax rate", description: "Share of $1,000 more in wages lost to taxes and lower benefits", before: formatPercentLocal(before_result.marginal_tax_rate), after: formatPercentLocal(after_result.marginal_tax_rate) },
+            ].map(({ label, description, before, after }) => (
               <div key={label} className="rounded-[var(--radius-md)] bg-[var(--color-gray-50)] p-4">
                 <div className="text-xs font-semibold uppercase tracking-wider text-[var(--color-text-light)]">{label}</div>
+                <div className="mt-1 text-xs text-[var(--color-text-muted)]">{description}</div>
                 <div className="mt-2 flex items-center gap-3 text-lg font-bold tabular-nums">
                   <span>{before}</span>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 text-[var(--color-text-light)]" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
