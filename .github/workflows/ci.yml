@@ -102,7 +102,7 @@ jobs:
           cache-dependency-glob: api/uv.lock
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --all-extras --frozen
 
       - name: Import the app
         run: uv run python -c "import main"
