@@ -23,7 +23,10 @@ PROGRAMS: list[ProgramSpec] = [
                 label="Net household resources",
                 kind="scalar",
                 unit="USD/year",
-                description="Gross income minus modeled taxes plus modeled benefits.",
+                description=(
+                    "Gross income minus modeled taxes plus modeled benefits; equals "
+                    "PolicyEngine-US household_net_income without health coverage."
+                ),
             ),
             ProgramOutput(
                 name="total_taxes",
@@ -31,8 +34,10 @@ PROGRAMS: list[ProgramSpec] = [
                 kind="scalar",
                 unit="USD/year",
                 description=(
-                    "Federal income tax before refundable credits, state income tax, "
-                    "and payroll taxes."
+                    "All taxes before refundable credits: federal income tax after "
+                    "non-refundable credits, state and local income taxes, state "
+                    "use tax, local occupational taxes, employee payroll taxes "
+                    "(including state payroll taxes), and self-employment tax."
                 ),
             ),
             ProgramOutput(
@@ -41,8 +46,9 @@ PROGRAMS: list[ProgramSpec] = [
                 kind="scalar",
                 unit="USD/year",
                 description=(
-                    "Modeled cash benefits and refundable tax credits returned by "
-                    "PolicyEngine-US."
+                    "Modeled benefits other than Social Security and health "
+                    "coverage, federal and state refundable tax credits, and the "
+                    "Alaska Permanent Fund Dividend, returned by PolicyEngine-US."
                 ),
             ),
             ProgramOutput(
@@ -50,12 +56,17 @@ PROGRAMS: list[ProgramSpec] = [
                 label="Marginal tax rate",
                 kind="scalar",
                 unit="rate",
-                description="Modeled tax change from $1,000 more annual earnings.",
+                description=(
+                    "Share of $1,000 more annual wages for the primary earner "
+                    "that does not reach net income, including benefit and credit "
+                    "phase-outs."
+                ),
             ),
         ],
         caveats=[
             "Policy logic is delegated to PolicyEngine-US.",
-            "Current household surface captures annual income and selected benefits; detailed monthly expenses are not yet modeled.",
+            "Current household surface captures annual income and the benefits PolicyEngine-US models; detailed monthly expenses are not yet modeled.",
+            "Health coverage is excluded from net income.",
         ],
     ),
     ProgramSpec(

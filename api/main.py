@@ -609,7 +609,11 @@ def calculate_household_endpoint(household: HouseholdInput):
     Calculate taxes and benefits for a household.
 
     Supports any household composition: singles, married couples, families with children.
-    Returns federal/state taxes, payroll taxes, and benefit amounts (CTC, EITC, etc.).
+    Returns federal/state taxes, payroll taxes, and benefit amounts (EITC, SNAP, etc.).
+
+    ``net_income = total_income - total_taxes + total_benefits``, matching
+    PolicyEngine-US ``household_net_income`` without health coverage. Taxes are
+    before refundable credits; refundable credits are counted once, as benefits.
     """
     calc = HouseholdCalculator()
     return calc.calculate(household)

@@ -24,7 +24,11 @@ from .schemas import (
 
 ENGINE_ID = "us_household_resources"
 ENGINE_COUNTRY = "USA"
-ENGINE_VERSION = "0.1.0"
+# 0.2.0: net income follows PolicyEngine-US household_net_income; benefit keys
+# are PolicyEngine-US variable names (child_tax_credit became refundable_ctc);
+# tax_breakdown sums to total_taxes; non-refundable credits moved to
+# non_refundable_credit_breakdown; the marginal rate counts benefit phase-outs.
+ENGINE_VERSION = "0.2.0"
 OUTPUT_KEY = "household_resources_result"
 
 
@@ -120,15 +124,25 @@ def _assumptions(inputs: HouseholdInput) -> dict[str, Any]:
             "investment_income",
             "capital_gains",
         ],
-        "benefit_outputs": [
-            "child_tax_credit",
-            "eitc",
-            "snap",
-            "child_care_credit",
-        ],
+        "benefit_outputs": (
+            "PolicyEngine-US household_benefits programs other than Social Security "
+            "and health coverage, federal and state refundable tax credits, and "
+            "the Alaska Permanent Fund Dividend, keyed by PolicyEngine-US "
+            "variable name."
+        ),
+        "net_income_definition": (
+            "total_income - total_taxes + total_benefits, equal to PolicyEngine-US "
+            "household_net_income with health benefits and health costs excluded."
+        ),
         "tax_credit_accounting": (
-            "Federal income tax is reported after non-refundable credits and before "
-            "refundable credits; refundable credits are included in total benefits."
+            "Taxes are reported before refundable credits: federal income tax "
+            "after non-refundable credits, and state income tax before state "
+            "refundable credits. Refundable credits are counted once, in total "
+            "benefits."
+        ),
+        "marginal_tax_rate_definition": (
+            "1 - (change in net income) / $1,000 of additional wages for the "
+            "primary earner, the non-dependent person with the highest earnings."
         ),
     }
 
@@ -153,6 +167,7 @@ def _sources() -> list[ModelSource]:
 def _caveats() -> list[str]:
     return [
         "Educational calculator output only; not financial, tax, legal, or benefits application advice.",
-        "This engine reports annual modeled resources and selected benefits; it is not a full benefits eligibility screener.",
+        "This engine reports annual modeled resources and the benefits PolicyEngine-US models; it is not a full benefits eligibility screener.",
+        "Health coverage and its costs are excluded from net income: Medicaid, CHIP, Medicare Savings Programs, ACA premium tax credits, state health programs and premium subsidies, and marketplace and CHIP premiums.",
         "Program details, take-up, documentation requirements, and local administration are not fully modeled.",
     ]
