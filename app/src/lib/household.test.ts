@@ -49,16 +49,24 @@ describe("stateAndLocalTax", () => {
     expect(stateAndLocalTax(result({ state_income_tax: 2775 }))).toBe(2775);
   });
 
-  it("makes the tax rows sum to total taxes", () => {
+  it("makes the tax rows sum to total taxes for real API output", () => {
+    // /calculate-household for a CA single filer, age 35, $75,000 wages, 2025
+    // (policyengine-us 2.15.16): state use tax is the $7 in other_taxes.
     const r = result({
-      federal_income_tax: 7949,
-      state_income_tax: 2775,
-      other_taxes: 7,
-      payroll_tax: 6712,
-      total_taxes: 17443,
+      federal_income_tax: 7949.0,
+      state_income_tax: 2774.570068359375,
+      payroll_tax: 6712.5,
+      other_taxes: 7.0,
+      total_taxes: 17443.070068359375,
+      total_income: 75000.0,
+      net_income: 57556.929931640625,
     });
-    expect(r.federal_income_tax + stateAndLocalTax(r) + r.payroll_tax).toBe(
-      r.total_taxes
+    expect(
+      r.federal_income_tax + stateAndLocalTax(r) + r.payroll_tax
+    ).toBeCloseTo(r.total_taxes, 6);
+    expect(r.total_income - r.total_taxes + r.total_benefits).toBeCloseTo(
+      r.net_income,
+      6
     );
   });
 });
