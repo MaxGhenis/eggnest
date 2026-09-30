@@ -45,8 +45,9 @@ export function benefitLabel(key: string): string {
 }
 
 /**
- * State income tax plus state use tax and local income taxes, so that
- * federal + state and local + payroll equals total_taxes.
+ * State income tax plus other_taxes (state use tax, local income and
+ * occupational taxes, and any reform flat tax), so that federal + state and
+ * local + payroll equals total_taxes.
  */
 export function stateAndLocalTax(result: HouseholdResult): number {
   return result.state_income_tax + (result.other_taxes ?? 0);

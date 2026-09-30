@@ -923,7 +923,7 @@ export interface HouseholdResult {
   state_income_tax: number;
   /** Employee payroll taxes plus self-employment tax. */
   payroll_tax: number;
-  /** State use tax and local income and occupational taxes. Absent from older API versions. */
+  /** State use tax, local income and occupational taxes, and any reform flat tax. Absent from older API versions. */
   other_taxes?: number;
   total_taxes: number;
   /** Benefits and refundable credits, keyed by PolicyEngine-US variable. */
