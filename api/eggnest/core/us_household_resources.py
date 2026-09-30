@@ -170,4 +170,5 @@ def _caveats() -> list[str]:
         "This engine reports annual modeled resources and the benefits PolicyEngine-US models; it is not a full benefits eligibility screener.",
         "Health coverage and its costs are excluded from net income: Medicaid, CHIP, Medicare Savings Programs, ACA premium tax credits, state health programs and premium subsidies, and marketplace and CHIP premiums.",
         "Program details, take-up, documentation requirements, and local administration are not fully modeled.",
+        "The household input has no county, so PolicyEngine-US places the household in the first county it lists for the state (for example Albany County, NY, or Alameda County, CA); county- and city-specific rules are that county's, and New York City and city wage taxes do not apply.",
     ]

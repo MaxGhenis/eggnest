@@ -815,7 +815,8 @@ class HouseholdResult(BaseModel):
         default=0,
         description=(
             "Taxes other than federal income, state income and payroll taxes: "
-            "state use tax and local income and occupational taxes"
+            "state use tax, local income and occupational taxes, and any flat "
+            "tax a PolicyEngine-US reform adds"
         ),
     )
     total_taxes: float = Field(..., description="All taxes before refundable credits")

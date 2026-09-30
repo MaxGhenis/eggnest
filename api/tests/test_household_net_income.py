@@ -270,6 +270,141 @@ def _ohio_single_parent() -> tuple[HouseholdInput, dict]:
     return household, situation
 
 
+def _hand_built(
+    year: int, state: str, filing_status: str, people: dict[str, dict]
+) -> dict:
+    """A PolicyEngine situation written without HouseholdCalculator.
+
+    ``people`` maps a person id to PolicyEngine person variables for ``year``.
+    Everyone is in one tax unit, family, SPM unit and household; dependents
+    get their own marital unit.
+    """
+    members = list(people)
+    dependents = [pid for pid, v in people.items() if v.get("is_tax_unit_dependent")]
+    adults = [pid for pid in members if pid not in dependents]
+    marital_units = {"adults": {"members": adults}}
+    marital_units.update({pid: {"members": [pid]} for pid in dependents})
+    return {
+        "people": {
+            pid: {name: {year: value} for name, value in variables.items()}
+            for pid, variables in people.items()
+        },
+        "tax_units": {
+            "tax_unit": {"members": members, "filing_status": {year: filing_status}}
+        },
+        "families": {"family": {"members": members}},
+        "spm_units": {"spm_unit": {"members": members}},
+        "marital_units": marital_units,
+        "households": {"household": {"members": members, "state_code": {year: state}}},
+    }
+
+
+# Households whose PolicyEngine situation is written out by hand, so the
+# input mapping (which EggNest field becomes which PolicyEngine variable, the
+# tax unit roles and the filing status) is checked independently of
+# HouseholdCalculator._build_situation.
+HAND_BUILT_CASES = {
+    "CA single, $75k wages": (
+        HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[
+                PersonInput(age=35, employment_income=75_000, is_tax_unit_head=True)
+            ],
+        ),
+        _hand_built(
+            2025,
+            "CA",
+            "SINGLE",
+            {
+                "head": {
+                    "age": 35,
+                    "employment_income": 75_000,
+                    "is_tax_unit_head": True,
+                }
+            },
+        ),
+    ),
+    "NY retiree, $9k Social Security": (
+        HouseholdInput(
+            state="NY",
+            year=2025,
+            people=[PersonInput(age=70, social_security=9_000, is_tax_unit_head=True)],
+        ),
+        _hand_built(
+            2025,
+            "NY",
+            "SINGLE",
+            {
+                "head": {
+                    "age": 70,
+                    "social_security_retirement": 9_000,
+                    "is_tax_unit_head": True,
+                }
+            },
+        ),
+    ),
+    "GA couple with every income type and a child": (
+        HouseholdInput(
+            state="GA",
+            year=2025,
+            people=[
+                PersonInput(
+                    age=45,
+                    self_employment_income=40_000,
+                    investment_income=5_000,
+                    is_tax_unit_head=True,
+                ),
+                PersonInput(
+                    age=66,
+                    employment_income=12_000,
+                    social_security=18_000,
+                    pension_income=20_000,
+                    capital_gains=10_000,
+                    is_tax_unit_spouse=True,
+                ),
+                PersonInput(age=10),
+            ],
+        ),
+        _hand_built(
+            2025,
+            "GA",
+            "JOINT",
+            {
+                "head": {
+                    "age": 45,
+                    "self_employment_income": 40_000,
+                    "dividend_income": 5_000,
+                    "is_tax_unit_head": True,
+                },
+                "spouse": {
+                    "age": 66,
+                    "employment_income": 12_000,
+                    "social_security_retirement": 18_000,
+                    "taxable_pension_income": 20_000,
+                    "long_term_capital_gains": 10_000,
+                    "is_tax_unit_spouse": True,
+                },
+                "child": {"age": 10, "is_tax_unit_dependent": True},
+            },
+        ),
+    ),
+}
+
+
+class TestHandBuiltSituations:
+    """Net income matches PolicyEngine-US for situations EggNest did not build."""
+
+    @pytest.mark.parametrize("case", sorted(HAND_BUILT_CASES))
+    def test_net_income_matches_hand_built_situation(self, case):
+        household, situation = HAND_BUILT_CASES[case]
+        ref = _reference(situation, household.year)
+
+        result = HouseholdCalculator().calculate(household)
+
+        assert_net_income_identity(household, result, ref)
+
+
 class TestCreditsCountedOnce:
     """Refundable credits must not reduce tax and also be added as benefits."""
 

@@ -170,6 +170,7 @@ OTHER_TAX_KEYS = (
     "state_use_tax",
     "local_income_tax_before_refundable_credits",
     "local_occupational_tax",
+    "flat_tax",
     "other_taxes",
 )
 
