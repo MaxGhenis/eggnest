@@ -1,5 +1,6 @@
 """Tests for household tax and benefits calculator."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from eggnest.household import HouseholdCalculator
@@ -121,11 +122,17 @@ class TestHouseholdCalculator:
                 PersonInput(age=8, is_tax_unit_dependent=True),
             ],
         )
+        without_child = household.model_copy(update={"people": household.people[:2]})
         calc = HouseholdCalculator()
         result = calc.calculate(household)
 
-        # Should get CTC for 1 child
-        assert result.benefits.get("child_tax_credit", 0) > 0
+        # At $80,000 the CTC is non-refundable: it lowers federal income tax
+        # rather than appearing as a benefit.
+        assert result.non_refundable_tax_credits > 0
+        assert "refundable_ctc" not in result.benefits
+        assert (
+            result.federal_income_tax < calc.calculate(without_child).federal_income_tax
+        )
 
     def test_low_income_gets_eitc(self):
         """Test that low-income family gets EITC."""
@@ -295,8 +302,11 @@ class TestHouseholdEndpoint:
 
         data = response.json()
         assert data["total_income"] == 160000
-        # Should have CTC for 2 children
-        assert data["benefits"].get("child_tax_credit", 0) > 0
+        # The CTC for 2 children is non-refundable at this income
+        assert data["non_refundable_tax_credits"] > 0
+        assert data["net_income"] == pytest.approx(
+            data["total_income"] - data["total_taxes"] + data["total_benefits"]
+        )
 
     def test_calculate_endpoint_validates_state(self):
         """Test that endpoint validates state code."""

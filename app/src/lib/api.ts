@@ -667,13 +667,28 @@ export interface HouseholdInput {
   people: PersonInput[];
 }
 
+/**
+ * net_income = total_income - total_taxes + total_benefits.
+ * Taxes are before refundable credits; refundable credits are counted once,
+ * inside benefits.
+ */
 export interface HouseholdResult {
+  /** After non-refundable credits, before refundable credits. */
   federal_income_tax: number;
+  /** Before refundable credits. */
   state_income_tax: number;
+  /** Employee payroll taxes plus self-employment tax. */
   payroll_tax: number;
+  /** State use tax and local income taxes. Absent from older API versions. */
+  other_taxes?: number;
   total_taxes: number;
+  /** Benefits and refundable credits, keyed by PolicyEngine-US variable. */
   benefits: Record<string, number>;
   total_benefits: number;
+  /** Refundable credits included in total_benefits. */
+  refundable_tax_credits?: number;
+  /** Non-refundable credits already subtracted in federal_income_tax. */
+  non_refundable_tax_credits?: number;
   total_income: number;
   net_income: number;
   tax_breakdown: Record<string, number>;

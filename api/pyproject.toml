@@ -9,7 +9,7 @@ packages = ["eggnest"]
 name = "eggnest"
 version = "0.1.0"
 description = "EggNest - Monte Carlo financial planning with real tax calculations"
-readme = "../README.md"
+readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
@@ -27,7 +27,7 @@ dependencies = [
     "pandas>=2.0.0",
     "scipy>=1.10.0",
     "httpx>=0.26.0",
-    "policyengine-us>=1.0.0",
+    "policyengine-us>=2.15.16",
     # CLI dependencies
     "click>=8.0",
     "rich>=13.0",
@@ -42,6 +42,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
+    "hypothesis>=6.100.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.5.0",

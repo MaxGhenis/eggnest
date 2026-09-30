@@ -1,4 +1,24 @@
-"""Household tax and benefits calculator using PolicyEngine-US."""
+"""Household tax and benefits calculator using PolicyEngine-US.
+
+The rows follow PolicyEngine-US ``household_net_income``:
+
+    net_income = total_income - total_taxes + total_benefits
+
+- ``total_income`` is the income the user entered, including Social Security.
+- ``total_taxes`` follows ``household_tax_before_refundable_credits``: federal
+  income tax after non-refundable credits, state income tax, payroll taxes and
+  other taxes, all before refundable credits. The state row starts from
+  ``state_income_tax`` so that elections it applies, such as Wisconsin's
+  retirement income exclusion, are kept.
+- ``total_benefits`` is ``household_benefits`` without Social Security (already
+  in ``total_income``) and health coverage (excluded), plus federal and state
+  refundable tax credits, plus market income PolicyEngine computes that the
+  user did not enter (the Alaska Permanent Fund Dividend).
+
+Refundable credits are counted once, as benefits. PolicyEngine's ``income_tax``
+already subtracts them, so it does not feed a tax row, and the state row is the
+tax before them (or the tax on an election path that forfeits them).
+"""
 
 from policyengine_us import Simulation
 
@@ -8,6 +28,101 @@ from eggnest.models import (
     HouseholdResult,
     LifeEventComparison,
 )
+
+# household_benefits entries that are not added to total_benefits:
+# Social Security is user input, already in total_income; health coverage is
+# excluded from net income (PolicyEngine's default as well).
+EXCLUDED_BENEFITS = frozenset({"social_security", "household_health_benefits"})
+
+# Extra wages, in dollars, used to measure the marginal tax rate.
+MARGINAL_RATE_DELTA = 1_000
+
+# Amounts smaller than this are treated as zero.
+CENT = 0.005
+
+# Unitemized remainders smaller than this are float32 rounding inside
+# PolicyEngine-US aggregates, not missing programs, and are dropped. The
+# threshold grows with the size of the amounts involved (4 * 2**-24 relative,
+# 2 to 4 float32 ulps).
+ROUNDING = 1.0
+FLOAT32_RELATIVE_ROUNDING = 4 * 2**-24
+
+
+def _rounding(scale: float) -> float:
+    return max(ROUNDING, FLOAT32_RELATIVE_ROUNDING * abs(scale))
+
+
+def _sum(sim: Simulation, variable: str, year: int) -> float:
+    """Calculate a PolicyEngine-US variable and sum it over the household."""
+    return float(sim.calculate(variable, year).sum())
+
+
+def _parameter_list(sim: Simulation, path: str, year: int) -> list[str]:
+    """Read a list-valued PolicyEngine-US parameter, such as a program list."""
+    node = sim.tax_benefit_system.parameters(f"{year}-01-01")
+    for name in path.split("."):
+        node = getattr(node, name)
+    return list(node)
+
+
+def _add_nonzero(values: dict[str, float], key: str, value: float) -> None:
+    if abs(value) > CENT:
+        values[key] = values.get(key, 0.0) + value
+
+
+def _itemize(
+    sim: Simulation,
+    programs: list[str],
+    total: float,
+    year: int,
+    remainder_key: str,
+    scale: float = 0.0,
+) -> dict[str, float]:
+    """Itemize an aggregate by program; a material remainder gets its own key.
+
+    The items sum to ``total`` within ``_rounding(scale)``, even if
+    PolicyEngine-US adds a program this list does not name. ``scale`` is the
+    size of the PolicyEngine amounts ``total`` was computed from.
+    """
+    items: dict[str, float] = {}
+    for program in programs:
+        _add_nonzero(items, program, _sum(sim, program, year))
+    remainder = total - sum(items.values())
+    if abs(remainder) >= _rounding(max(scale, abs(total))):
+        items[remainder_key] = remainder
+    return items
+
+
+def _primary_earner_index(household: HouseholdInput) -> int:
+    """Index of the adult whose wages carry the marginal $1,000.
+
+    The non-dependent with the most earnings, preferring the tax-unit head on
+    ties, so a child or a non-earning adult listed first is not used.
+    """
+    candidates = [
+        (i, person)
+        for i, person in enumerate(household.people)
+        if not person.is_tax_unit_dependent
+    ]
+    if not candidates:
+        return 0
+    return max(
+        candidates,
+        key=lambda item: (
+            item[1].employment_income + item[1].self_employment_income,
+            item[1].is_tax_unit_head,
+        ),
+    )[0]
+
+
+def _with_extra_wages(household: HouseholdInput, amount: float) -> HouseholdInput:
+    """Copy of the household with ``amount`` more wages for the primary earner."""
+    index = _primary_earner_index(household)
+    people = list(household.people)
+    people[index] = people[index].model_copy(
+        update={"employment_income": people[index].employment_income + amount}
+    )
+    return household.model_copy(update={"people": people})
 
 
 class HouseholdCalculator:
@@ -129,14 +244,26 @@ class HouseholdCalculator:
         return situation
 
     def calculate(self, household: HouseholdInput) -> HouseholdResult:
-        """Calculate taxes and benefits for a household."""
+        """Calculate taxes, benefits and net income for a household.
+
+        The marginal tax rate is the share of ``MARGINAL_RATE_DELTA`` more
+        wages for the primary earner that does not reach net income, so it
+        reflects taxes, refundable credit phase-outs and benefit reductions.
+        """
+        result = self._calculate_resources(household)
+        raised = self._calculate_resources(
+            _with_extra_wages(household, MARGINAL_RATE_DELTA)
+        )
+        marginal_tax_rate = 1 - (raised.net_income - result.net_income) / (
+            MARGINAL_RATE_DELTA
+        )
+        return result.model_copy(update={"marginal_tax_rate": marginal_tax_rate})
+
+    def _calculate_resources(self, household: HouseholdInput) -> HouseholdResult:
+        """Taxes, benefits and net income, without the marginal tax rate."""
         year = household.year
-        situation = self._build_situation(household)
+        sim = Simulation(situation=self._build_situation(household))
 
-        # Run simulation
-        sim = Simulation(situation=situation)
-
-        # Calculate total income
         total_income = sum(
             p.employment_income
             + p.self_employment_income
@@ -147,123 +274,143 @@ class HouseholdCalculator:
             for p in household.people
         )
 
-        # Get tax results
-        federal_income_tax = float(sim.calculate("income_tax", year).sum())
-        state_income_tax = float(sim.calculate("state_income_tax", year).sum())
-
-        # Calculate payroll taxes (employee side)
-        employee_social_security_tax = float(
-            sim.calculate("employee_social_security_tax", year).sum()
+        # Taxes, all before refundable credits.
+        federal_income_tax = _sum(sim, "income_tax_before_refundable_credits", year)
+        # state_income_tax is after refundable credits. It equals
+        # state_income_tax_before_refundable_credits minus the refundable
+        # credits, except where it applies an election the before-refundable
+        # figure ignores: Wisconsin's retirement income exclusion (from 2025,
+        # ages 67+). household_net_income uses the before-refundable figure
+        # and so misses the exclusion. The exclusion path applies no credits,
+        # so when it wins the refundable credits are forfeited.
+        state_tax_after_credits = _sum(sim, "state_income_tax", year)
+        state_before_refundable = _sum(
+            sim, "state_income_tax_before_refundable_credits", year
         )
-        employee_medicare_tax = float(
-            sim.calculate("employee_medicare_tax", year).sum()
+        state_refundable_credits = _sum(
+            sim, "household_refundable_state_tax_credits", year
         )
-        payroll_tax = employee_social_security_tax + employee_medicare_tax
+        # float32 rounding inside PolicyEngine must not look like an election.
+        election_tolerance = CENT + FLOAT32_RELATIVE_ROUNDING * abs(
+            state_before_refundable
+        )
+        if state_tax_after_credits < (
+            state_before_refundable - state_refundable_credits - election_tolerance
+        ):
+            state_income_tax = max(state_tax_after_credits, 0.0)
+            state_refundable_credits = max(-state_tax_after_credits, 0.0)
+        else:
+            state_income_tax = state_before_refundable
+        employee_payroll_tax = _sum(sim, "employee_payroll_tax", year)
+        state_payroll_tax = _sum(sim, "employee_state_payroll_tax", year)
+        self_employment_tax = _sum(sim, "self_employment_tax", year)
+        payroll_tax = employee_payroll_tax + self_employment_tax
+        # State use tax and local taxes: the rest of
+        # household_tax_before_refundable_credits.
+        household_taxes = _sum(sim, "household_tax_before_refundable_credits", year)
+        other_tax_items = _itemize(
+            sim,
+            [
+                "state_use_tax",
+                "local_income_tax_before_refundable_credits",
+                "local_occupational_tax",
+            ],
+            household_taxes
+            - federal_income_tax
+            - state_before_refundable
+            - payroll_tax,
+            year,
+            remainder_key="other_taxes",
+            scale=household_taxes,
+        )
+        other_taxes = sum(other_tax_items.values())
 
-        # Self-employment tax if applicable
-        try:
-            self_employment_tax = float(
-                sim.calculate("self_employment_tax", year).sum()
-            )
-            payroll_tax += self_employment_tax
-        except Exception:
-            pass
-
-        total_taxes = federal_income_tax + state_income_tax + payroll_tax
-
-        # Get benefits
-        benefits = {}
-
-        # Child Tax Credit
-        try:
-            ctc = float(sim.calculate("ctc", year).sum())
-            if ctc > 0:
-                benefits["child_tax_credit"] = ctc
-        except Exception:
-            pass
-
-        # EITC
-        try:
-            eitc = float(sim.calculate("eitc", year).sum())
-            if eitc > 0:
-                benefits["eitc"] = eitc
-        except Exception:
-            pass
-
-        # SNAP
-        try:
-            snap = float(sim.calculate("snap", year).sum())
-            if snap > 0:
-                benefits["snap"] = snap
-        except Exception:
-            pass
-
-        # Other credits
-        try:
-            cdcc = float(sim.calculate("cdcc", year).sum())
-            if cdcc > 0:
-                benefits["child_care_credit"] = cdcc
-        except Exception:
-            pass
-
-        total_benefits = sum(benefits.values())
-
-        # Calculate net income
-        net_income = total_income - total_taxes + total_benefits
-
-        # Tax breakdown
         tax_breakdown = {
             "federal_income_tax": federal_income_tax,
             "state_income_tax": state_income_tax,
-            "fica": payroll_tax,
+            "fica": employee_payroll_tax - state_payroll_tax,
+            "state_payroll_tax": state_payroll_tax,
+            "self_employment_tax": self_employment_tax,
+            **other_tax_items,
         }
+        total_taxes = sum(tax_breakdown.values())
 
-        # Calculate marginal tax rate (add $1000 and see tax change)
-        if total_income > 0:
-            marginal_situation = self._build_situation(household)
-            # Add $1000 to first person's employment income
-            first_person = list(marginal_situation["people"].keys())[0]
-            current_income = (
-                marginal_situation["people"][first_person]
-                .get("employment_income", {})
-                .get(year, 0)
-            )
-            marginal_situation["people"][first_person]["employment_income"] = {
-                year: current_income + 1000
-            }
+        # Benefits: PolicyEngine's household benefits, less Social Security and
+        # health coverage, plus refundable credits. Each item appears once.
+        household_benefits = _sum(sim, "household_benefits", year)
+        non_credit_benefits = (
+            household_benefits
+            - _sum(sim, "social_security", year)
+            - _sum(sim, "household_health_benefits", year)
+        )
+        federal_refundable_credits = _sum(sim, "income_tax_refundable_credits", year)
+        refundable_tax_credits = federal_refundable_credits + state_refundable_credits
 
-            marginal_sim = Simulation(situation=marginal_situation)
-            marginal_federal = float(marginal_sim.calculate("income_tax", year).sum())
-            marginal_state = float(
-                marginal_sim.calculate("state_income_tax", year).sum()
+        benefits = _itemize(
+            sim,
+            [
+                program
+                for program in _parameter_list(
+                    sim, "gov.household.household_benefits", year
+                )
+                if program not in EXCLUDED_BENEFITS
+            ],
+            non_credit_benefits,
+            year,
+            remainder_key="other_benefits",
+            scale=household_benefits,
+        )
+        # Market income PolicyEngine computes beyond what the user entered,
+        # such as the Alaska Permanent Fund Dividend. PolicyEngine counts it as
+        # market income; EggNest shows it as its own line so total_income stays
+        # what the user typed.
+        entered_market_income = total_income - sum(
+            p.social_security for p in household.people
+        )
+        market_income = _sum(sim, "household_market_income", year)
+        benefits.update(
+            _itemize(
+                sim,
+                ["ak_permanent_fund_dividend"],
+                market_income - entered_market_income,
+                year,
+                remainder_key="other_computed_income",
+                scale=market_income,
             )
-            marginal_payroll = float(
-                marginal_sim.calculate("employee_social_security_tax", year).sum()
+        )
+        benefits.update(
+            _itemize(
+                sim,
+                _parameter_list(sim, "gov.irs.credits.refundable", year),
+                federal_refundable_credits,
+                year,
+                remainder_key="other_federal_refundable_credits",
+                scale=federal_refundable_credits,
             )
-            marginal_payroll += float(
-                marginal_sim.calculate("employee_medicare_tax", year).sum()
-            )
+        )
+        _add_nonzero(
+            benefits, "household_refundable_state_tax_credits", state_refundable_credits
+        )
+        total_benefits = sum(benefits.values())
 
-            marginal_total = marginal_federal + marginal_state + marginal_payroll
-            base_total = federal_income_tax + state_income_tax + payroll_tax
-            marginal_tax_rate = (marginal_total - base_total) / 1000
-        else:
-            marginal_tax_rate = 0
-
-        # Effective tax rate
+        net_income = total_income - total_taxes + total_benefits
         effective_tax_rate = total_taxes / total_income if total_income > 0 else 0
 
         return HouseholdResult(
             federal_income_tax=federal_income_tax,
             state_income_tax=state_income_tax,
             payroll_tax=payroll_tax,
+            other_taxes=other_taxes,
             total_taxes=total_taxes,
             benefits=benefits,
             total_benefits=total_benefits,
+            refundable_tax_credits=refundable_tax_credits,
+            non_refundable_tax_credits=_sum(
+                sim, "income_tax_capped_non_refundable_credits", year
+            ),
             total_income=total_income,
             net_income=net_income,
             tax_breakdown=tax_breakdown,
-            marginal_tax_rate=marginal_tax_rate,
             effective_tax_rate=effective_tax_rate,
         )
 
