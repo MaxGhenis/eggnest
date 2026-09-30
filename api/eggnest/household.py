@@ -301,6 +301,8 @@ class HouseholdCalculator:
                     "state_use_tax",
                     "local_income_tax_before_refundable_credits",
                     "local_occupational_tax",
+                    # Zero under current law; a PolicyEngine-US reform can add it.
+                    "flat_tax",
                 ],
                 other_taxes,
                 year,
