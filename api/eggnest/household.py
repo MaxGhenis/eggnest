@@ -16,8 +16,8 @@ The rows follow PolicyEngine-US ``household_net_income``:
   user did not enter (the Alaska Permanent Fund Dividend).
 
 Refundable credits are counted once, as benefits. PolicyEngine's ``income_tax``
-already subtracts them, so it does not feed a tax row, and the state row adds
-them back to ``state_income_tax``.
+already subtracts them, so it does not feed a tax row, and the state row is the
+tax before them (or the tax on an election path that forfeits them).
 """
 
 from policyengine_us import Simulation
@@ -41,8 +41,14 @@ MARGINAL_RATE_DELTA = 1_000
 CENT = 0.005
 
 # Unitemized remainders smaller than this are float32 rounding inside
-# PolicyEngine-US aggregates, not missing programs, and are dropped.
+# PolicyEngine-US aggregates, not missing programs, and are dropped. The
+# threshold grows with the size of the amounts involved (4 float32 ulps).
 ROUNDING = 1.0
+FLOAT32_RELATIVE_ROUNDING = 4 * 2**-24
+
+
+def _rounding(scale: float) -> float:
+    return max(ROUNDING, FLOAT32_RELATIVE_ROUNDING * abs(scale))
 
 
 def _sum(sim: Simulation, variable: str, year: int) -> float:
@@ -69,17 +75,19 @@ def _itemize(
     total: float,
     year: int,
     remainder_key: str,
+    scale: float = 0.0,
 ) -> dict[str, float]:
-    """Itemize an aggregate by program; a remainder of $1 or more gets its own key.
+    """Itemize an aggregate by program; a material remainder gets its own key.
 
-    The items sum to ``total`` within ``ROUNDING``, even if PolicyEngine-US
-    adds a program this list does not name.
+    The items sum to ``total`` within ``_rounding(scale)``, even if
+    PolicyEngine-US adds a program this list does not name. ``scale`` is the
+    size of the PolicyEngine amounts ``total`` was computed from.
     """
     items: dict[str, float] = {}
     for program in programs:
         _add_nonzero(items, program, _sum(sim, program, year))
     remainder = total - sum(items.values())
-    if abs(remainder) >= ROUNDING:
+    if abs(remainder) >= _rounding(max(scale, abs(total))):
         items[remainder_key] = remainder
     return items
 
@@ -267,23 +275,34 @@ class HouseholdCalculator:
 
         # Taxes, all before refundable credits.
         federal_income_tax = _sum(sim, "income_tax_before_refundable_credits", year)
-        # state_income_tax is after refundable credits; adding them back gives
-        # state_income_tax_before_refundable_credits, except where
-        # state_income_tax also applies an election the latter ignores, such
-        # as Wisconsin's retirement income exclusion (from 2025, ages 67+).
-        # household_net_income uses the latter and so misses the exclusion.
+        # state_income_tax is after refundable credits. It equals
+        # state_income_tax_before_refundable_credits minus the refundable
+        # credits, except where it applies an election the before-refundable
+        # figure ignores: Wisconsin's retirement income exclusion (from 2025,
+        # ages 67+). household_net_income uses the before-refundable figure
+        # and so misses the exclusion. The exclusion path applies no credits,
+        # so when it wins the refundable credits are forfeited.
+        state_tax_after_credits = _sum(sim, "state_income_tax", year)
+        state_before_refundable = _sum(
+            sim, "state_income_tax_before_refundable_credits", year
+        )
         state_refundable_credits = _sum(
             sim, "household_refundable_state_tax_credits", year
         )
-        state_income_tax = (
-            _sum(sim, "state_income_tax", year) + state_refundable_credits
-        )
+        if state_tax_after_credits < (
+            state_before_refundable - state_refundable_credits - CENT
+        ):
+            state_income_tax = max(state_tax_after_credits, 0.0)
+            state_refundable_credits = max(-state_tax_after_credits, 0.0)
+        else:
+            state_income_tax = state_before_refundable
         employee_payroll_tax = _sum(sim, "employee_payroll_tax", year)
         state_payroll_tax = _sum(sim, "employee_state_payroll_tax", year)
         self_employment_tax = _sum(sim, "self_employment_tax", year)
         payroll_tax = employee_payroll_tax + self_employment_tax
         # State use tax and local taxes: the rest of
         # household_tax_before_refundable_credits.
+        household_taxes = _sum(sim, "household_tax_before_refundable_credits", year)
         other_tax_items = _itemize(
             sim,
             [
@@ -291,12 +310,13 @@ class HouseholdCalculator:
                 "local_income_tax_before_refundable_credits",
                 "local_occupational_tax",
             ],
-            _sum(sim, "household_tax_before_refundable_credits", year)
+            household_taxes
             - federal_income_tax
-            - _sum(sim, "state_income_tax_before_refundable_credits", year)
+            - state_before_refundable
             - payroll_tax,
             year,
             remainder_key="other_taxes",
+            scale=household_taxes,
         )
         other_taxes = sum(other_tax_items.values())
 
@@ -312,8 +332,9 @@ class HouseholdCalculator:
 
         # Benefits: PolicyEngine's household benefits, less Social Security and
         # health coverage, plus refundable credits. Each item appears once.
+        household_benefits = _sum(sim, "household_benefits", year)
         non_credit_benefits = (
-            _sum(sim, "household_benefits", year)
+            household_benefits
             - _sum(sim, "social_security", year)
             - _sum(sim, "household_health_benefits", year)
         )
@@ -332,6 +353,7 @@ class HouseholdCalculator:
             non_credit_benefits,
             year,
             remainder_key="other_benefits",
+            scale=household_benefits,
         )
         # Market income PolicyEngine computes beyond what the user entered,
         # such as the Alaska Permanent Fund Dividend. PolicyEngine counts it as
@@ -340,13 +362,15 @@ class HouseholdCalculator:
         entered_market_income = total_income - sum(
             p.social_security for p in household.people
         )
+        market_income = _sum(sim, "household_market_income", year)
         benefits.update(
             _itemize(
                 sim,
                 ["ak_permanent_fund_dividend"],
-                _sum(sim, "household_market_income", year) - entered_market_income,
+                market_income - entered_market_income,
                 year,
                 remainder_key="other_computed_income",
+                scale=market_income,
             )
         )
         benefits.update(
@@ -356,6 +380,7 @@ class HouseholdCalculator:
                 federal_refundable_credits,
                 year,
                 remainder_key="other_federal_refundable_credits",
+                scale=federal_refundable_credits,
             )
         )
         _add_nonzero(
