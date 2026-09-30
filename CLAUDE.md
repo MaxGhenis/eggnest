@@ -11,12 +11,16 @@ EggNest is an agent-callable household finance calculator suite with real tax ca
 ### Backend (Python/FastAPI)
 ```bash
 cd api
-uv venv && uv pip install -e ".[dev]"
+uv sync --all-extras  # dev extra: pytest, pytest-xdist, Hypothesis
 uv run uvicorn main:app --reload --port 8000
 
 # Run tests
-uv run pytest tests/
+uv run pytest tests/ -n 4 --dist loadfile
 uv run pytest tests/test_simulation.py -v  # Single test file
+HYPOTHESIS_PROFILE=thorough uv run pytest tests/test_household_net_income.py  # 400 examples per property
+
+# After changing uv.lock, regenerate the Modal image requirements (CI checks this)
+uv export --frozen --no-dev --no-emit-project --no-hashes --no-header -o requirements-modal.txt
 
 # Linting
 uv run black .
@@ -85,7 +89,7 @@ eggnest/
 - `POST /simulate/stream` - SSE streaming with progress events
 - `GET /mortality/{gender}` - Mortality rates and survival curves
 - `POST /household/validate` - Validate partial household intake and return missing fields plus next questions
-- `POST /household/resources` - Calculate annual US taxes, refundable credits, selected benefits, and net resources
+- `POST /household/resources` - Calculate annual US taxes, refundable credits, benefits, and net resources
 - `POST /compare-earnings-grid` - Compare household resources over an annual earnings grid and flag cliffs
 - `POST /compare-annuity` - Compare portfolio withdrawals vs annuity cash flows
 - `POST /compare-withdrawal-strategies` - Compare holdings withdrawal orders under shared market/tax assumptions
@@ -103,7 +107,8 @@ eggnest/
 - New product surfaces should use `eggnest.core` scenario/result envelopes before adding API- or UI-specific contracts
 - CLI/MCP-style callers should prefer `GET /programs`, `POST /core/simulate`, or `uv run eggnest core run ... --output-format envelope`; legacy product endpoints are compatibility shims
 - For low- and middle-income household work, use `eggnest household validate`, `eggnest household run`, and `eggnest compare earnings-grid`; do not add tax or benefit policy formulas to EggNest
-- Household resources report federal income tax after non-refundable credits and before refundable credits; refundable credits and cash benefits are counted in `total_benefits`
+- Household resources follow PolicyEngine-US `household_net_income` with health coverage excluded: `net_income = total_income - total_taxes + total_benefits`. Taxes are before refundable credits (federal income tax after non-refundable credits, state income tax before state refundable credits, payroll including state payroll such as CA SDI, self-employment tax, `other_taxes` for state use tax, local taxes and any reform flat tax). Refundable credits and benefits are counted once, in `total_benefits`. The marginal tax rate is `1 - Δnet_income / $1,000` of extra wages for the primary earner (the non-dependent person with the highest earnings)
+- Household `benefits`, `tax_breakdown` and `non_refundable_credit_breakdown` keys are PolicyEngine-US variable names (`refundable_ctc`, `eitc`, `snap`, `ssi`, ...); `benefits` sums to `total_benefits` and `tax_breakdown` sums to `total_taxes`
 - Agent-facing household outputs expose FinBot-style citations as `citations: [{id, url}]`; `HouseholdResult.output_citations` maps fields like `benefits.snap` to supporting sources
 - Frontend uses Next.js App Router with React 19, TypeScript, and Tailwind CSS v4
 - Styling uses Tailwind utility classes plus CSS custom properties defined in `globals.css`
