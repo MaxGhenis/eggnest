@@ -39,6 +39,14 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --frozen
 
+      # The Modal image installs requirements-modal.txt, so it must be the
+      # runtime part of uv.lock that these tests run against. (Extras such as
+      # dev are left out of `uv export` unless requested.)
+      - name: Check Modal requirements match uv.lock
+        run: |
+          uv export --frozen --no-dev --no-emit-project --no-hashes --no-header -o /tmp/requirements-modal.txt
+          diff -u requirements-modal.txt /tmp/requirements-modal.txt
+
       - name: Run linting
         run: |
           uv run ruff check .
@@ -55,13 +63,13 @@ jobs:
         run: |
           (while true; do free -m | awk '/Mem:/{printf "[mem] used=%dMiB avail=%dMiB\n",$3,$7}'; sleep 20; done) &
           MEMMON=$!
+          trap 'kill $MEMMON' EXIT
           FILES=( $(ls tests/test_*.py | sort) )
           TOTAL=${#FILES[@]}
           THIRD=$(( (TOTAL + 2) / 3 ))
           uv run pytest "${FILES[@]:0:THIRD}" -n 2 --dist loadfile --tb=short
           uv run pytest "${FILES[@]:THIRD:THIRD}" -n 2 --dist loadfile --tb=short
           uv run pytest "${FILES[@]:$((2 * THIRD))}" -n 2 --dist loadfile --tb=short
-          kill $MEMMON
 
   test-app:
     runs-on: ubuntu-latest
