@@ -28,8 +28,18 @@ const BENEFIT_LABELS: Record<string, string> = {
   commodity_supplemental_food_program: "Commodity Supplemental Food Program",
   household_head_start_benefits: "Head Start",
   unemployment_compensation: "Unemployment compensation",
+  child_support_received: "Child support received",
+  workers_compensation: "Workers' compensation",
+  survivor_benefits: "Survivor benefits",
+  educational_assistance: "Educational assistance",
+  financial_assistance: "Financial assistance",
   acp: "Affordable Connectivity Program",
   ebb: "Emergency Broadband Benefit",
+  high_efficiency_electric_home_rebate: "High-efficiency electric home rebate",
+  residential_efficiency_electrification_rebate:
+    "Home efficiency and electrification rebate",
+  ak_energy_relief: "Alaska energy relief",
+  basic_income: "Basic income",
   other_benefits: "Other benefits",
   // Income PolicyEngine computes that the user did not enter
   ak_permanent_fund_dividend: "Alaska Permanent Fund Dividend",
