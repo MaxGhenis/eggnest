@@ -67,7 +67,7 @@ PROGRAMS: list[ProgramSpec] = [
             "Policy logic is delegated to PolicyEngine-US.",
             "Current household surface captures annual income and the benefits PolicyEngine-US models; detailed monthly expenses are not yet modeled.",
             "Health coverage is excluded from net income.",
-            "The household input has no county, so PolicyEngine-US places the household in the first county it lists for the state (for example Albany County, NY, or Alameda County, CA); county- and city-specific rules are that county's, and New York City and city wage taxes do not apply.",
+            "The household input has no county, so PolicyEngine-US places the household in the alphabetically first county in its state (for example Albany County, NY, or Alameda County, CA); county- and city-specific rules are that county's, so New York City income tax and city wage taxes such as Philadelphia's do not apply.",
         ],
     ),
     ProgramSpec(
