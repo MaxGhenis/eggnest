@@ -24,7 +24,6 @@ from eggnest.models import (
 )
 from eggnest.simulation import MonteCarloSimulator
 
-
 # Shared-store sweeps list the whole store (every job's snapshot), so each
 # manager sweeps at most this often rather than on every 1-3 s poll.
 SNAPSHOT_SWEEP_INTERVAL_SECONDS = 60.0
@@ -155,6 +154,10 @@ class SimulationJobManager:
                     updated_at=_now_iso(),
                     completed_at=_now_iso(),
                 )
+            # The external worker reports through the snapshot store; the
+            # local record would stay "queued" forever, so drop it here.
+            with self._lock:
+                self._jobs.pop(job_id, None)
             return record.snapshot()
 
         with self._lock:
@@ -418,6 +421,10 @@ class CoreJobManager:
                     updated_at=_now_iso(),
                     completed_at=_now_iso(),
                 )
+            # The external worker reports through the snapshot store; the
+            # local record would stay "queued" forever, so drop it here.
+            with self._lock:
+                self._jobs.pop(job_id, None)
             return record.snapshot()
 
         with self._lock:

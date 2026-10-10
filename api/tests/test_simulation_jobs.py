@@ -379,3 +379,27 @@ def test_shared_store_sweep_is_throttled(kind):
     store.put(f"{kind}:b", _snapshot("b", "succeeded", old, old))
     manager.get("missing")  # within the interval: no second sweep
     assert [key for key, _ in store.items()] == [f"{kind}:b"]
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_jobs_handed_to_a_worker_leave_no_local_record(kind):
+    """With an external runner the worker reports through the shared store;
+    a local copy would answer "queued" forever once the snapshot expired."""
+    store = MemorySnapshotStore()
+    manager_cls = CoreJobManager if kind == "core" else SimulationJobManager
+    manager = manager_cls(
+        max_workers=1,
+        ttl_seconds=3600,
+        max_records=100,
+        snapshot_store=store,
+        snapshot_prefix=f"{kind}:",
+    )
+    manager.set_external_runner(lambda job_id, payload: None)  # never reports
+    if kind == "core":
+        created = manager.submit(build_us_retirement_scenario(small_input()))
+    else:
+        created = manager.submit(small_input())
+
+    assert manager.get(created.job_id).status == "queued"  # from the store
+    store.delete(f"{kind}:{created.job_id}")
+    assert manager.get(created.job_id) is None
