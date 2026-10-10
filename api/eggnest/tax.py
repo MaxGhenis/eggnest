@@ -5,9 +5,13 @@ from pathlib import Path
 
 import numpy as np
 from policyengine_core.data import Dataset
-from policyengine_us import Microsimulation
+from policyengine_us import Microsimulation, Simulation
 
-from eggnest.constants import FILING_STATUS_PE_DATASET, STATE_FIPS
+from eggnest.constants import (
+    FILING_STATUS_PE_DATASET,
+    FILING_STATUS_PE_SITUATION,
+    STATE_FIPS,
+)
 
 
 class MonteCarloDataset(Dataset):
@@ -49,6 +53,7 @@ class MonteCarloDataset(Dataset):
 
         self.tmp_file = tempfile.NamedTemporaryFile(suffix=".h5", delete=False)
         self.file_path = Path(self.tmp_file.name)
+        self.tmp_file.close()
 
         super().__init__()
 
@@ -104,6 +109,10 @@ class MonteCarloDataset(Dataset):
         """Clean up temporary file."""
         if hasattr(self, "tmp_file"):
             try:
+                self.tmp_file.close()
+            except Exception:
+                pass
+            try:
                 self.file_path.unlink()
             except Exception:
                 pass
@@ -134,6 +143,137 @@ class TaxCalculator:
                   PolicyEngine inflates tax brackets, so future years will
                   have lower effective tax rates on the same nominal income.
         """
+        n_scenarios = len(capital_gains_array)
+        calc_year = year if year is not None else self.year
+
+        if dividend_income_array is None:
+            dividend_income_array = np.zeros(n_scenarios)
+
+        if employment_income_array is None:
+            employment_income_array = np.zeros(n_scenarios)
+
+        return self._calculate_batch_taxes_with_situation(
+            capital_gains_array=capital_gains_array,
+            social_security_array=social_security_array,
+            ages=ages,
+            filing_status=filing_status,
+            dividend_income_array=dividend_income_array,
+            employment_income_array=employment_income_array,
+            calc_year=calc_year,
+        )
+
+    def _calculate_batch_taxes_with_situation(
+        self,
+        capital_gains_array: np.ndarray,
+        social_security_array: np.ndarray,
+        ages: np.ndarray,
+        filing_status: str,
+        dividend_income_array: np.ndarray,
+        employment_income_array: np.ndarray,
+        calc_year: int,
+    ) -> dict[str, np.ndarray]:
+        """Calculate taxes with PolicyEngine's direct situation API.
+
+        This avoids generating an HDF5 dataset for every simulated year. The
+        dataset path works locally but is much slower in the Modal runtime.
+        """
+        n_scenarios = len(capital_gains_array)
+        state_code = STATE_FIPS.get(self.state, 6)
+        pe_filing_status = _filing_status_for_situation(filing_status)
+
+        people = {}
+        households = {}
+        tax_units = {}
+        families = {}
+        spm_units = {}
+        marital_units = {}
+
+        for index in range(n_scenarios):
+            person_id = f"person_{index}"
+            household_id = f"household_{index}"
+            tax_unit_id = f"tax_unit_{index}"
+            family_id = f"family_{index}"
+            spm_unit_id = f"spm_unit_{index}"
+            marital_unit_id = f"marital_unit_{index}"
+
+            people[person_id] = {
+                "age": {calc_year: int(ages[index])},
+                "long_term_capital_gains": {
+                    calc_year: float(capital_gains_array[index])
+                },
+                "social_security": {calc_year: float(social_security_array[index])},
+                "social_security_retirement": {
+                    calc_year: float(social_security_array[index])
+                },
+                "employment_income": {calc_year: float(employment_income_array[index])},
+                "dividend_income": {calc_year: float(dividend_income_array[index])},
+            }
+            households[household_id] = {
+                "members": [person_id],
+                "state_fips": {calc_year: state_code},
+            }
+            tax_units[tax_unit_id] = {
+                "members": [person_id],
+                "filing_status": {calc_year: pe_filing_status},
+            }
+            families[family_id] = {"members": [person_id]}
+            spm_units[spm_unit_id] = {"members": [person_id]}
+            marital_units[marital_unit_id] = {"members": [person_id]}
+
+        sim = Simulation(
+            situation={
+                "people": people,
+                "households": households,
+                "tax_units": tax_units,
+                "families": families,
+                "spm_units": spm_units,
+                "marital_units": marital_units,
+            }
+        )
+
+        results = {
+            "federal_income_tax": sim.calculate("income_tax", calc_year),
+            "state_income_tax": sim.calculate("state_income_tax", calc_year),
+            "taxable_income": sim.calculate("taxable_income", calc_year),
+        }
+
+        results["total_tax"] = (
+            results["federal_income_tax"] + results["state_income_tax"]
+        )
+
+        total_income = (
+            capital_gains_array
+            + social_security_array
+            + dividend_income_array
+            + employment_income_array
+        )
+        results["effective_tax_rate"] = np.where(
+            total_income > 0, results["total_tax"] / total_income, 0
+        )
+
+        return results
+
+
+def _filing_status_for_situation(filing_status: str) -> str:
+    return FILING_STATUS_PE_SITUATION.get(
+        filing_status,
+        FILING_STATUS_PE_SITUATION.get(filing_status.lower(), "SINGLE"),
+    )
+
+
+class DatasetTaxCalculator(TaxCalculator):
+    """Legacy HDF5 dataset tax path kept for debugging and comparisons."""
+
+    def calculate_batch_taxes(
+        self,
+        capital_gains_array: np.ndarray,
+        social_security_array: np.ndarray,
+        ages: np.ndarray,
+        filing_status: str = "SINGLE",
+        dividend_income_array: np.ndarray | None = None,
+        employment_income_array: np.ndarray | None = None,
+        year: int | None = None,
+    ) -> dict[str, np.ndarray]:
         n_scenarios = len(capital_gains_array)
         calc_year = year if year is not None else self.year
 

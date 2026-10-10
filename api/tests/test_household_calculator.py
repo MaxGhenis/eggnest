@@ -129,6 +129,7 @@ class TestHouseholdCalculator:
         # At $80,000 the CTC is non-refundable: it lowers federal income tax
         # rather than appearing as a benefit.
         assert result.non_refundable_tax_credits > 0
+        assert result.non_refundable_credit_breakdown["non_refundable_ctc"] > 0
         assert "refundable_ctc" not in result.benefits
         assert (
             result.federal_income_tax < calc.calculate(without_child).federal_income_tax
@@ -304,6 +305,7 @@ class TestHouseholdEndpoint:
         assert data["total_income"] == 160000
         # The CTC for 2 children is non-refundable at this income
         assert data["non_refundable_tax_credits"] > 0
+        assert data["non_refundable_credit_breakdown"]["non_refundable_ctc"] > 0
         assert data["net_income"] == pytest.approx(
             data["total_income"] - data["total_taxes"] + data["total_benefits"]
         )

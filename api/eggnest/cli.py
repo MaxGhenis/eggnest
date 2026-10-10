@@ -21,11 +21,46 @@ from .auth import (
     get_current_user,
     is_logged_in,
 )
-from .models import SimulationInput
+from .comparisons import compare_historical_cohorts, compare_withdrawal_strategies
+from .core.router import run_core_scenario
+from .core.schemas import EngineResult, EngineScenario
+from .core.uk_retirement import (
+    OUTPUT_KEY as UK_OUTPUT_KEY,
+)
+from .core.uk_retirement import (
+    build_uk_retirement_scenario,
+)
+from .core.us_household_resources import (
+    OUTPUT_KEY as HOUSEHOLD_OUTPUT_KEY,
+)
+from .core.us_household_resources import (
+    build_us_household_resources_scenario,
+)
+from .core.us_retirement import OUTPUT_KEY, build_us_retirement_scenario
+from .household import compare_earnings_grid, validate_household_payload
+from .models import (
+    EarningsGridInput,
+    HistoricalCohortComparisonInput,
+    HouseholdInput,
+    SimulationInput,
+    WithdrawalStrategyComparisonInput,
+)
+from .models_uk import UKSimulationInput
+from .programs import list_programs
 from .sync import DEFAULT_SCENARIOS_DIR, get_sync_client
 
 # Setup rich console
 console = Console()
+MACHINE_OUTPUT_FORMATS = ("summary", "result", "envelope")
+CORE_OUTPUT_FORMATS = ("envelope", "outputs", "legacy")
+WITHDRAWAL_STRATEGY_CHOICES = (
+    "taxable_first",
+    "traditional_first",
+    "roth_first",
+    "pro_rata",
+)
+STOCK_INDEX_CHOICES = ("sp500", "vt")
+BOND_INDEX_CHOICES = ("treasury", "bnd")
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -37,6 +72,160 @@ def setup_logging(verbose: bool = False) -> None:
         datefmt="[%X]",
         handlers=[RichHandler(console=console, rich_tracebacks=True)],
     )
+
+
+def _read_structured_input(path: Path) -> dict:
+    """Read JSON or YAML from a file path or stdin."""
+    import yaml
+
+    text = sys.stdin.read() if str(path) == "-" else path.read_text()
+    data = yaml.safe_load(text)
+    if not isinstance(data, dict):
+        raise ValueError("Input must be a JSON or YAML object")
+    return data
+
+
+def _write_json_payload(payload: dict, output: Path | None = None) -> None:
+    """Write a JSON payload to stdout or an output file."""
+    serialized = json.dumps(payload, indent=2)
+    if output:
+        output.write_text(serialized + "\n")
+    else:
+        click.echo(serialized)
+
+
+def _core_result_dict(result: EngineResult | dict) -> dict:
+    """Return a JSON-safe dict for a core result."""
+    if isinstance(result, EngineResult):
+        return result.model_dump(mode="json")
+    return result
+
+
+def _output_key_for_engine(engine: str) -> str:
+    """Return the legacy output key for a core engine."""
+    if engine == "us_retirement":
+        return OUTPUT_KEY
+    if engine == "uk_retirement":
+        return UK_OUTPUT_KEY
+    if engine == "us_household_resources":
+        return HOUSEHOLD_OUTPUT_KEY
+    raise ValueError(f"Unsupported engine: {engine}")
+
+
+def _format_core_output(core_result: EngineResult | dict, output_format: str) -> dict:
+    """Format a core result for machine-readable callers."""
+    result = _core_result_dict(core_result)
+    if output_format == "envelope":
+        return result
+    if output_format == "outputs":
+        return result["outputs"]
+    if output_format == "result":
+        return result["outputs"][_output_key_for_engine(result["engine"])]
+    if output_format == "legacy":
+        return result["outputs"][_output_key_for_engine(result["engine"])]
+    raise ValueError(f"Unsupported output format: {output_format}")
+
+
+def _run_core_job(
+    api_url: str,
+    scenario: EngineScenario,
+    poll_interval: float,
+    progress: Progress | None = None,
+    task: int | None = None,
+) -> dict:
+    """Run a remote core job to completion and return the result envelope."""
+    import time
+
+    import httpx
+
+    base_url = api_url.rstrip("/")
+    response = httpx.post(
+        f"{base_url}/core/jobs",
+        json=scenario.model_dump(),
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    status = response.json()
+    job_id = status["job_id"]
+
+    while status["status"] in {"queued", "running"}:
+        if progress is not None and task is not None:
+            percent = int(float(status.get("progress") or 0) * 100)
+            message = status.get("message") or "Running core engine"
+            progress.update(
+                task,
+                description=f"{message} ({percent}%)",
+            )
+        time.sleep(poll_interval)
+        response = httpx.get(f"{base_url}/core/jobs/{job_id}", timeout=30.0)
+        response.raise_for_status()
+        status = response.json()
+
+    if status["status"] == "failed":
+        raise click.ClickException(status.get("error") or "Core job failed")
+
+    result = status.get("result")
+    if not result:
+        raise click.ClickException("Core job completed without a result")
+    return result
+
+
+def _looks_like_uk_input(data: dict) -> bool:
+    """Infer UK retirement inputs from UK-specific account fields."""
+    uk_markers = {
+        "isa_balance",
+        "sipp_balance",
+        "gia_balance",
+        "state_pension_annual",
+        "state_pension_start_age",
+        "equity_weight",
+        "return_source",
+    }
+    return bool(uk_markers.intersection(data))
+
+
+def _looks_like_household_input(data: dict) -> bool:
+    """Infer US household-resource inputs from household member fields."""
+    return "people" in data and "annual_spending" not in data
+
+
+def _build_core_scenario(
+    data: dict,
+    engine: str = "auto",
+    country: str | None = None,
+) -> EngineScenario:
+    """Build or validate a core scenario envelope from JSON/YAML input."""
+    if "engine" in data and "inputs" in data:
+        scenario = EngineScenario.model_validate(data)
+        if engine != "auto" and scenario.engine != engine:
+            raise ValueError(
+                f"Scenario engine is {scenario.engine}, but --engine={engine} was requested"
+            )
+        return scenario
+
+    resolved_engine = engine
+    if resolved_engine == "auto":
+        if _looks_like_uk_input(data):
+            resolved_engine = "uk_retirement"
+        elif _looks_like_household_input(data):
+            resolved_engine = "us_household_resources"
+        else:
+            resolved_engine = "us_retirement"
+
+    if resolved_engine == "us_retirement":
+        scenario = build_us_retirement_scenario(SimulationInput.model_validate(data))
+    elif resolved_engine == "uk_retirement":
+        scenario = build_uk_retirement_scenario(UKSimulationInput.model_validate(data))
+    elif resolved_engine == "us_household_resources":
+        scenario = build_us_household_resources_scenario(
+            HouseholdInput.model_validate(data)
+        )
+    else:
+        raise ValueError(f"Unsupported engine: {resolved_engine}")
+
+    if country:
+        scenario = scenario.model_copy(update={"country": country})
+    return scenario
 
 
 @click.group()
@@ -256,13 +445,374 @@ def status(ctx: click.Context) -> None:
         console.print("\n[dim]Login to see cloud scenarios: eggnest auth login[/dim]")
 
 
+# === Core Engine Commands ===
+
+
+@main.group()
+def programs() -> None:
+    """List agent-callable EggNest programs."""
+    pass
+
+
+@programs.command("list")
+@click.option(
+    "--jurisdiction",
+    help="Optional jurisdiction or country filter, e.g. us or USA.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Write JSON to this file instead of stdout.",
+)
+def programs_list(jurisdiction: str | None, output: Path | None) -> None:
+    """Emit the machine-readable program catalog."""
+    payload = {
+        "programs": [
+            program.model_dump(mode="json")
+            for program in list_programs(jurisdiction=jurisdiction)
+        ]
+    }
+    _write_json_payload(payload, output)
+
+
+@main.group()
+def core() -> None:
+    """Run stable core engines for API, agent, and MCP-style callers."""
+    pass
+
+
+@core.command("schema")
+@click.argument(
+    "kind",
+    type=click.Choice(
+        ["scenario", "result", "us-input", "uk-input", "household-input"]
+    ),
+    default="scenario",
+)
+def core_schema(kind: str) -> None:
+    """Print JSON Schema for core envelopes or engine inputs."""
+    model = {
+        "scenario": EngineScenario,
+        "result": EngineResult,
+        "us-input": SimulationInput,
+        "uk-input": UKSimulationInput,
+        "household-input": HouseholdInput,
+    }[kind]
+    _write_json_payload(model.model_json_schema())
+
+
+@core.command("run")
+@click.argument("scenario_file", type=click.Path(path_type=Path))
+@click.option(
+    "--engine",
+    type=click.Choice(
+        ["auto", "us_retirement", "uk_retirement", "us_household_resources"]
+    ),
+    default="auto",
+    show_default=True,
+    help="Engine for raw input files. Core envelopes carry their own engine.",
+)
+@click.option(
+    "--country",
+    help="Optional country override for raw input files.",
+)
+@click.option(
+    "--output-format",
+    type=click.Choice(CORE_OUTPUT_FORMATS),
+    default="envelope",
+    show_default=True,
+    help="JSON shape to emit.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Write JSON to this file instead of stdout.",
+)
+def core_run(
+    scenario_file: Path,
+    engine: str,
+    country: str | None,
+    output_format: str,
+    output: Path | None,
+) -> None:
+    """Run a core scenario locally and emit machine-readable JSON.
+
+    SCENARIO_FILE may be a core envelope or raw engine inputs in JSON/YAML.
+    Use '-' to read from stdin.
+    """
+    try:
+        data = _read_structured_input(scenario_file)
+        scenario = _build_core_scenario(data, engine=engine, country=country)
+        core_result = run_core_scenario(scenario)
+        payload = _format_core_output(core_result, output_format)
+    except Exception as e:
+        raise click.ClickException(str(e)) from e
+
+    _write_json_payload(payload, output)
+
+
+# === Household Resource Commands ===
+
+
+@main.group()
+def household() -> None:
+    """Run and validate household resource scenarios for agents."""
+    pass
+
+
+@household.command("validate")
+@click.argument("household_file", type=click.Path(path_type=Path))
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Write JSON to this file instead of stdout.",
+)
+def household_validate(household_file: Path, output: Path | None) -> None:
+    """Validate partial household intake and return next questions."""
+    try:
+        data = _read_structured_input(household_file)
+        data = dict(data)
+        data.pop("name", None)
+        data.pop("id", None)
+        result = validate_household_payload(data)
+    except Exception as e:
+        raise click.ClickException(str(e)) from e
+
+    _write_json_payload(result.model_dump(mode="json"), output)
+
+
+@household.command("run")
+@click.argument("household_file", type=click.Path(path_type=Path))
+@click.option(
+    "--output-format",
+    type=click.Choice(CORE_OUTPUT_FORMATS),
+    default="envelope",
+    show_default=True,
+    help="JSON shape to emit.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Write JSON to this file instead of stdout.",
+)
+def household_run(
+    household_file: Path,
+    output_format: str,
+    output: Path | None,
+) -> None:
+    """Run annual US household resources and emit JSON."""
+    try:
+        data = _read_structured_input(household_file)
+        data = dict(data)
+        data.pop("name", None)
+        data.pop("id", None)
+        household_input = HouseholdInput.model_validate(data)
+        scenario = build_us_household_resources_scenario(household_input)
+        core_result = run_core_scenario(scenario)
+        payload = _format_core_output(core_result, output_format)
+    except Exception as e:
+        raise click.ClickException(str(e)) from e
+
+    _write_json_payload(payload, output)
+
+
+# === Comparison Commands ===
+
+
+@main.group()
+def compare() -> None:
+    """Run deterministic scenario comparisons for tool callers."""
+    pass
+
+
+@compare.command("withdrawal-strategies")
+@click.argument("scenario_file", type=click.Path(path_type=Path))
+@click.option(
+    "--strategy",
+    "strategies",
+    multiple=True,
+    type=click.Choice(WITHDRAWAL_STRATEGY_CHOICES),
+    help="Strategy to include. Repeat to compare a subset.",
+)
+@click.option(
+    "--random-seed",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Shared seed for all strategy runs.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Write JSON to this file instead of stdout.",
+)
+def compare_withdrawal_strategies_command(
+    scenario_file: Path,
+    strategies: tuple[str, ...],
+    random_seed: int,
+    output: Path | None,
+) -> None:
+    """Compare US holdings withdrawal strategies and emit JSON."""
+    try:
+        data = _read_structured_input(scenario_file)
+        data = dict(data)
+        data.pop("name", None)
+        data.pop("id", None)
+        sim_input = SimulationInput.model_validate(data)
+        comparison_kwargs = {
+            "base_input": sim_input,
+            "random_seed": random_seed,
+        }
+        if strategies:
+            comparison_kwargs["strategies"] = list(strategies)
+        comparison = WithdrawalStrategyComparisonInput.model_validate(comparison_kwargs)
+        result = compare_withdrawal_strategies(comparison)
+    except Exception as e:
+        raise click.ClickException(str(e)) from e
+
+    _write_json_payload(result.model_dump(mode="json"), output)
+
+
+@compare.command("historical-cohorts")
+@click.argument("scenario_file", type=click.Path(path_type=Path))
+@click.option(
+    "--start-year",
+    "start_years",
+    multiple=True,
+    type=int,
+    help="Historical start year to include. Repeat to compare a subset.",
+)
+@click.option(
+    "--stock-index",
+    type=click.Choice(STOCK_INDEX_CHOICES),
+    default="sp500",
+    show_default=True,
+    help="Stock index for historical cohorts.",
+)
+@click.option(
+    "--bond-index",
+    type=click.Choice(BOND_INDEX_CHOICES),
+    default="treasury",
+    show_default=True,
+    help="Bond index for historical cohorts.",
+)
+@click.option(
+    "--include-mortality",
+    is_flag=True,
+    help="Include stochastic mortality in cohort outcomes.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Write JSON to this file instead of stdout.",
+)
+def compare_historical_cohorts_command(
+    scenario_file: Path,
+    start_years: tuple[int, ...],
+    stock_index: str,
+    bond_index: str,
+    include_mortality: bool,
+    output: Path | None,
+) -> None:
+    """Compare US historical market cohorts and emit JSON."""
+    try:
+        data = _read_structured_input(scenario_file)
+        data = dict(data)
+        data.pop("name", None)
+        data.pop("id", None)
+        sim_input = SimulationInput.model_validate(data)
+        comparison = HistoricalCohortComparisonInput.model_validate(
+            {
+                "base_input": sim_input,
+                "start_years": list(start_years) if start_years else None,
+                "stock_index": stock_index,
+                "bond_index": bond_index,
+                "include_mortality": include_mortality,
+            }
+        )
+        result = compare_historical_cohorts(comparison)
+    except Exception as e:
+        raise click.ClickException(str(e)) from e
+
+    _write_json_payload(result.model_dump(mode="json"), output)
+
+
+@compare.command("earnings-grid")
+@click.argument("household_file", type=click.Path(path_type=Path))
+@click.option(
+    "--person-index",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Person index whose annual employment income varies.",
+)
+@click.option(
+    "--income-min",
+    type=float,
+    default=0.0,
+    show_default=True,
+    help="Lowest annual employment income.",
+)
+@click.option(
+    "--income-max",
+    type=float,
+    default=80_000.0,
+    show_default=True,
+    help="Highest annual employment income.",
+)
+@click.option(
+    "--step",
+    type=float,
+    default=1_000.0,
+    show_default=True,
+    help="Annual employment income increment.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Write JSON to this file instead of stdout.",
+)
+def compare_earnings_grid_command(
+    household_file: Path,
+    person_index: int,
+    income_min: float,
+    income_max: float,
+    step: float,
+    output: Path | None,
+) -> None:
+    """Compare US household resources across earned-income levels."""
+    try:
+        data = _read_structured_input(household_file)
+        data = dict(data)
+        data.pop("name", None)
+        data.pop("id", None)
+        household_input = HouseholdInput.model_validate(data)
+        grid_input = EarningsGridInput(
+            base_input=household_input,
+            person_index=person_index,
+            income_min=income_min,
+            income_max=income_max,
+            step=step,
+        )
+        result = compare_earnings_grid(grid_input)
+    except Exception as e:
+        raise click.ClickException(str(e)) from e
+
+    _write_json_payload(result.model_dump(mode="json"), output)
+
+
 # === Simulate Command ===
 
 
 @main.command()
-@click.argument(
-    "scenario_file", type=click.Path(exists=True, path_type=Path), required=False
-)
+@click.argument("scenario_file", type=click.Path(path_type=Path), required=False)
 @click.option(
     "--output",
     "-o",
@@ -274,81 +824,154 @@ def status(ctx: click.Context) -> None:
     default="http://localhost:8000",
     help="API URL (default: localhost:8000)",
 )
+@click.option(
+    "--local",
+    is_flag=True,
+    help="Run the core engine in-process instead of calling the API.",
+)
+@click.option(
+    "--job",
+    is_flag=True,
+    help="Use the pollable remote /core/jobs API instead of one blocking request.",
+)
+@click.option(
+    "--poll-interval",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Seconds between remote job status polls.",
+)
+@click.option(
+    "--output-format",
+    type=click.Choice(MACHINE_OUTPUT_FORMATS),
+    default="summary",
+    show_default=True,
+    help="Use result or envelope for machine-readable JSON.",
+)
 @click.pass_context
 def simulate(
     ctx: click.Context,
     scenario_file: Path | None,
     output: Path | None,
     api_url: str,
+    local: bool,
+    job: bool,
+    poll_interval: float,
+    output_format: str,
 ) -> None:
     """Run a Monte Carlo simulation on a scenario.
 
     If no scenario file is provided, uses the first YAML in the scenarios directory.
     """
     import httpx
-    import yaml
 
     scenarios_dir = ctx.obj["scenarios_dir"]
+    machine_output = output_format != "summary"
+    if local and job:
+        raise click.ClickException("Use either --local or --job, not both.")
 
     # Find scenario file
     if not scenario_file:
         yaml_files = list(scenarios_dir.glob("*.yaml"))
         if not yaml_files:
-            console.print(
-                f"[red]No scenario files found in {scenarios_dir}[/red]\n"
+            raise click.ClickException(
+                f"No scenario files found in {scenarios_dir}. "
                 "Create a scenario file or run 'eggnest sync pull' to download."
             )
-            sys.exit(1)
         scenario_file = yaml_files[0]
-        console.print(f"[dim]Using scenario: {scenario_file.name}[/dim]")
+        if not machine_output:
+            console.print(f"[dim]Using scenario: {scenario_file.name}[/dim]")
 
     # Load scenario
-    with open(scenario_file) as f:
-        data = yaml.safe_load(f)
+    try:
+        data = _read_structured_input(scenario_file)
+    except Exception as e:
+        raise click.ClickException(f"Could not read scenario: {e}") from e
 
     # Remove non-simulation fields
+    data = dict(data)
     name = data.pop("name", scenario_file.stem)
     data.pop("id", None)
 
     # Validate with Pydantic
     try:
-        sim_input = SimulationInput(**data)
+        scenario = _build_core_scenario(data, engine="us_retirement")
+        sim_input = SimulationInput.model_validate(scenario.inputs)
     except Exception as e:
-        console.print(f"[red]Invalid scenario: {e}[/red]")
-        sys.exit(1)
+        raise click.ClickException(f"Invalid scenario: {e}") from e
 
-    console.print(f"\n[bold]Running simulation: {name}[/bold]")
-    console.print(f"  Capital: ${sim_input.initial_capital:,.0f}")
-    console.print(f"  Annual spending: ${sim_input.annual_spending:,.0f}")
-    console.print(f"  Age: {sim_input.current_age} → {sim_input.max_age}")
-    console.print(f"  Simulations: {sim_input.n_simulations:,}")
+    if not machine_output:
+        console.print(f"\n[bold]Running simulation: {name}[/bold]")
+        console.print(f"  Capital: ${sim_input.total_capital:,.0f}")
+        console.print(f"  Annual spending: ${sim_input.annual_spending:,.0f}")
+        console.print(f"  Age: {sim_input.current_age} → {sim_input.max_age}")
+        console.print(f"  Simulations: {sim_input.n_simulations:,}")
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Running Monte Carlo simulation...", total=None)
-
-        try:
+    try:
+        if local:
+            core_result = _core_result_dict(run_core_scenario(scenario))
+        elif job:
+            if machine_output:
+                core_result = _run_core_job(api_url, scenario, poll_interval)
+            else:
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=console,
+                ) as progress:
+                    task = progress.add_task("Starting simulation job...", total=None)
+                    core_result = _run_core_job(
+                        api_url,
+                        scenario,
+                        poll_interval,
+                        progress=progress,
+                        task=task,
+                    )
+                    progress.update(task, description="Done!")
+        elif machine_output:
             response = httpx.post(
-                f"{api_url}/simulate",
-                json=sim_input.model_dump(),
+                f"{api_url}/core/simulate",
+                json=scenario.model_dump(),
                 timeout=120.0,
             )
             response.raise_for_status()
-            result = response.json()
-        except httpx.ConnectError:
-            console.print(f"\n[red]Could not connect to API at {api_url}[/red]")
-            console.print(
-                "[dim]Start the API with: cd api && uv run uvicorn main:app --port 8000[/dim]"
-            )
-            sys.exit(1)
-        except Exception as e:
-            console.print(f"\n[red]Simulation failed: {e}[/red]")
-            sys.exit(1)
+            core_result = response.json()
+        else:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                task = progress.add_task(
+                    "Running Monte Carlo simulation...", total=None
+                )
+                response = httpx.post(
+                    f"{api_url}/core/simulate",
+                    json=scenario.model_dump(),
+                    timeout=120.0,
+                )
+                response.raise_for_status()
+                core_result = response.json()
+                progress.update(task, description="Done!")
+    except httpx.ConnectError as e:
+        if machine_output:
+            raise click.ClickException(f"Could not connect to API at {api_url}") from e
+        console.print(f"\n[red]Could not connect to API at {api_url}[/red]")
+        console.print(
+            "[dim]Start the API with: cd api && uv run uvicorn main:app --port 8000[/dim]"
+        )
+        sys.exit(1)
+    except Exception as e:
+        if machine_output:
+            raise click.ClickException(f"Simulation failed: {e}") from e
+        console.print(f"\n[red]Simulation failed: {e}[/red]")
+        sys.exit(1)
 
-        progress.update(task, description="Done!")
+    result = core_result["outputs"][OUTPUT_KEY]
+
+    if machine_output:
+        _write_json_payload(_format_core_output(core_result, output_format), output)
+        return
 
     # Display results
     console.print("\n")
@@ -370,7 +993,7 @@ def simulate(
 
     # Save results if requested
     if output:
-        output.write_text(json.dumps(result, indent=2))
+        output.write_text(json.dumps(result, indent=2) + "\n")
         console.print(f"\n[dim]Results saved to {output}[/dim]")
 
 

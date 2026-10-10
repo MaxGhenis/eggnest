@@ -45,7 +45,7 @@ export const DEFAULT_PARAMS: SimulationInput = {
   filing_status: "single",
   has_spouse: false,
   has_annuity: false,
-  n_simulations: 10000,
+  n_simulations: 1000,
   include_mortality: true,
   expected_return: 0.07,
   return_volatility: 0.16,
