@@ -42,6 +42,7 @@ coverage/
 .coverage
 htmlcov/
 .pytest_cache/
+.hypothesis/
 
 # Misc
 *.h5

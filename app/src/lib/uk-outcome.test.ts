@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { UKSimulationInput, UKSimulationResult, UKYearBreakdown } from "./api-uk";
-import { hasTenYearHorizon, summarizeUKOutcome } from "./uk-outcome";
+import {
+  formatShare,
+  hasTenYearHorizon,
+  scoresUnmetSpending,
+  summarizeUKOutcome,
+} from "./uk-outcome";
 
 const input: UKSimulationInput = {
   current_age: 65,
@@ -49,6 +54,7 @@ function resultWithYears(years: number, overrides: Partial<UKSimulationResult> =
     year_breakdown: Array.from({ length: years }, (_, i) => row(65 + i, 2_000)),
     initial_withdrawal_rate: 8.6,
     prob_10_year_failure: 0.043,
+    sipp_locked_shortfall_rate: 0,
     ...overrides,
   };
   return result;
@@ -129,11 +135,43 @@ describe("summarizeUKOutcome", () => {
     ).toMatch(/^0\.4% of paths/);
   });
 
-  it("works against an API that predates the new fields", () => {
+  it("keeps the depletion wording for an API that predates unmet spending", () => {
     const result = resultWithYears(26);
     delete (result as Partial<UKSimulationResult>).sipp_locked_shortfall_rate;
+    expect(scoresUnmetSpending(result)).toBe(false);
     const summary = summarizeUKOutcome(input, result);
+    expect(summary.headline).toEqual({
+      label: "Chance of lasting",
+      value: "91%",
+      detail: "of simulated paths avoid depletion before death or age 90",
+    });
+    expect(summary.metrics.map((metric) => metric.label)).toEqual([
+      "10-year depletion",
+      "Lasts to age 90",
+      "First-year withdrawal",
+      "Lifetime tax",
+    ]);
     expect(summary.sippLockedNote).toBeNull();
-    expect(summary.metrics).toHaveLength(4);
+  });
+
+  it("never rounds a failing path away", () => {
+    const nearlyAll = summarizeUKOutcome(
+      input,
+      resultWithYears(26, { success_rate: 0.9975, strict_horizon_success_rate: 0.003 }),
+    );
+    expect(nearlyAll.headline.value).toBe(">99%");
+    expect(nearlyAll.metrics[1].value).toBe("<1%");
+  });
+});
+
+describe("formatShare", () => {
+  it("rounds to whole percentages except at the extremes", () => {
+    expect(formatShare(0)).toBe("0%");
+    expect(formatShare(0.004)).toBe("<1%");
+    expect(formatShare(0.005)).toBe("1%");
+    expect(formatShare(0.5)).toBe("50%");
+    expect(formatShare(0.994)).toBe("99%");
+    expect(formatShare(0.995)).toBe(">99%");
+    expect(formatShare(1)).toBe("100%");
   });
 });
