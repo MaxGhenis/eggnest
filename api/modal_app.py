@@ -20,7 +20,7 @@ image = (
         "pandas>=2.0.0",
         "scipy>=1.10.0",
         "httpx>=0.26.0",
-        "policyengine-us>=1.0.0",
+        "policyengine-us>=2.15.16",
         "policyengine-uk-compiled>=0.20.0",
     )
     .add_local_dir(str(HERE / "eggnest"), "/root/eggnest")
