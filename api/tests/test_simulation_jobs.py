@@ -205,7 +205,9 @@ def _finished_snapshot(job_id: str, finished_at: datetime) -> dict:
     }
 
 
-def _manager_with_external_runner(kind: str, store, ttl_seconds: int, max_records):
+def _manager_with_external_runner(
+    kind: str, store, ttl_seconds: int, max_records, sweep_interval: float = 0.0
+):
     manager_cls = CoreJobManager if kind == "core" else SimulationJobManager
     manager = manager_cls(
         max_workers=1,
@@ -213,6 +215,7 @@ def _manager_with_external_runner(kind: str, store, ttl_seconds: int, max_record
         max_records=max_records,
         snapshot_store=store,
         snapshot_prefix=f"{kind}:",
+        snapshot_sweep_interval_seconds=sweep_interval,
     )
     if kind == "core":
         manager.set_external_runner(
@@ -289,3 +292,90 @@ def test_capacity_trim_counts_only_unexpired_snapshots(kind):
 
     keys = sorted(key for key, _ in store.items())
     assert keys == [f"{kind}:fresh-0", f"{kind}:fresh-1", f"{kind}:fresh-2"]
+
+
+def _snapshot(job_id: str, status: str, updated: datetime, finished=None) -> dict:
+    data = {
+        "job_id": job_id,
+        "status": status,
+        "created_at": _iso(updated),
+        "updated_at": _iso(updated),
+    }
+    if finished is not None:
+        data["completed_at"] = _iso(finished)
+    return data
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_in_flight_snapshots_survive_and_stale_ones_expire(kind):
+    """A running job's snapshot stays while it keeps updating; one whose
+    worker died (no update for longer than the TTL) is expired, as the local
+    registry already does."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=60, max_records=3)
+    now = datetime.now(UTC)
+    store.put(f"{kind}:running", _snapshot("running", "running", now))
+    store.put(f"{kind}:queued", _snapshot("queued", "queued", now))
+    store.put(f"{kind}:dead", _snapshot("dead", "running", now - timedelta(minutes=5)))
+
+    manager.get("missing")
+
+    keys = {key for key, _ in store.items()}
+    assert keys == {f"{kind}:running", f"{kind}:queued"}
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_only_finished_snapshots_count_toward_capacity(kind):
+    """Many in-flight jobs must not evict a result a client is about to
+    read: the capacity trim counts and removes finished snapshots only."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=60, max_records=3)
+    now = datetime.now(UTC)
+    for i in range(5):
+        store.put(f"{kind}:running-{i}", _snapshot(f"running-{i}", "running", now))
+    for i in range(4):
+        moment = now - timedelta(seconds=10 - i)
+        store.put(
+            f"{kind}:done-{i}", _snapshot(f"done-{i}", "succeeded", moment, moment)
+        )
+
+    manager.get("missing")
+
+    keys = {key for key, _ in store.items()}
+    assert {f"{kind}:running-{i}" for i in range(5)} <= keys
+    # Four finished against a limit of three: only the oldest goes.
+    assert {key for key in keys if "done" in key} == {
+        f"{kind}:done-1",
+        f"{kind}:done-2",
+        f"{kind}:done-3",
+    }
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_unreadable_timestamps_do_not_fail_requests(kind):
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=60, max_records=3)
+    store.put(f"{kind}:bad", {"status": "succeeded", "completed_at": "not a date"})
+    store.put(f"{kind}:none", {"status": "running"})
+    store.put(f"{kind}:junk", "not a snapshot")
+
+    assert manager.get("missing") is None
+    assert len(store.items()) == 3
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_shared_store_sweep_is_throttled(kind):
+    """Polls arrive every 1-3 s; the full-store sweep runs at most once per
+    interval per manager."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(
+        kind, store, ttl_seconds=60, max_records=3, sweep_interval=60.0
+    )
+    old = datetime.now(UTC) - timedelta(minutes=5)
+    store.put(f"{kind}:a", _snapshot("a", "succeeded", old, old))
+    manager.get("missing")
+    assert store.items() == []
+
+    store.put(f"{kind}:b", _snapshot("b", "succeeded", old, old))
+    manager.get("missing")  # within the interval: no second sweep
+    assert [key for key, _ in store.items()] == [f"{kind}:b"]
