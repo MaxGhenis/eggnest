@@ -548,7 +548,6 @@ def _iterate_years(
                 base_tax,
                 tax_for.sipp_draw_evaluator(tfc_available),
             )
-            sipp_draw = np.minimum(sipp_draw, state.sipp)
             tax_free_cash = _tax_free_cash(sipp_draw, tfc_available)
             state.sipp = state.sipp - sipp_draw
             state.tfc_used = state.tfc_used + tax_free_cash
