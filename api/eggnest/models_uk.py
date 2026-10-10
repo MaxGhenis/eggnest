@@ -51,8 +51,11 @@ class UKSimulationInput(BaseModel):
     # Income sources (annual, GBP)
     state_pension_annual: float = Field(
         ge=0.0,
-        default=11502.0,
-        description="Full new State Pension 2024/25 = £221.20/wk × 52 ≈ £11,502.",
+        default=12547.60,
+        description=(
+            "Annual State Pension. Default: the full new State Pension for "
+            "2026/27, £241.30 a week x 52 (gov.uk/new-state-pension/what-youll-get)."
+        ),
     )
     state_pension_start_age: int = Field(ge=55, le=75, default=67)
     employment_income: float = Field(
@@ -187,10 +190,12 @@ class UKYearBreakdown(BaseModel):
     contributions: float = 0.0
     # Spending the accounts could not cover this year (median across paths).
     unmet_spending: float = 0.0
-    # Share of all paths alive this year with more than £1 of unmet spending.
+    # Share of all simulated paths that are alive this year and have more than
+    # £1 of unmet spending (the denominator includes paths that have died).
     shortfall_share: float = 0.0
-    # Share of all paths alive this year with unmet spending while their SIPP
-    # held money they could not draw before Minimum Pension Age.
+    # Share of all simulated paths that are alive this year with unmet
+    # spending while their SIPP held money they could not draw before
+    # Minimum Pension Age.
     sipp_locked_shortfall_share: float = 0.0
     # GIA dividends not needed for spending, reinvested in the GIA.
     reinvested_dividends: float = 0.0

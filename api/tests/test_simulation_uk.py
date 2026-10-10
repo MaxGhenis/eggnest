@@ -501,3 +501,85 @@ def test_contributions_are_not_spendable():
     assert b.isa_withdrawal == pytest.approx(5000)
     assert b.unmet_spending == 0.0
     assert result.median_final_value == pytest.approx(0.0, abs=0.01)
+
+
+# --- Cases the property tests reach only rarely ------------------------------
+
+
+def test_success_counts_only_years_the_person_is_alive():
+    """From 85 to 105 a £200,000 ISA cannot fund £30,000 a year: every path
+    runs short eventually (strict success 0), but many people die first, so
+    the mortality-adjusted success rate is well above zero."""
+    inp = UKSimulationInput(
+        current_age=85,
+        max_age=105,
+        annual_spending=30000,
+        isa_balance=200000,
+        state_pension_annual=0,
+        state_pension_start_age=67,
+        return_source="gaussian",
+        expected_return=0.04,
+        return_volatility=0.0,
+        inflation_rate=0.0,
+        n_simulations=400,
+        random_seed=3,
+        include_mortality=True,
+    )
+    result = run_uk_simulation(inp)
+    assert result.strict_horizon_success_rate == 0.0
+    assert 0.3 < result.success_rate < 0.9
+
+
+def test_tax_free_cash_stops_at_the_lump_sum_allowance():
+    """UFPLS tax-free cash is 25% of each draw only until the £268,275 lump
+    sum allowance is used up; after that the whole draw is taxable."""
+    from eggnest.simulation_uk import LSA_CAP, iterate_uk_year_flows
+
+    inp = UKSimulationInput(
+        current_age=60,
+        max_age=69,
+        annual_spending=250000,
+        sipp_balance=3_000_000,
+        state_pension_annual=0,
+        state_pension_start_age=75,
+        return_source="gaussian",
+        expected_return=0.04,
+        return_volatility=0.0,
+        inflation_rate=0.0,
+        n_simulations=100,
+        random_seed=1,
+        include_mortality=False,
+    )
+    taken = np.zeros(inp.n_simulations)
+    taxed_in_full = False
+    for flows in iterate_uk_year_flows(inp):
+        taken += flows.sipp_tax_free_cash
+        drew = flows.withdrawal_sipp > 0
+        taxed_in_full |= bool(np.any(drew & (flows.sipp_tax_free_cash == 0)))
+    assert np.all(taken <= LSA_CAP + 0.01)
+    assert taken.max() == pytest.approx(LSA_CAP, abs=0.01)
+    assert taxed_in_full
+
+
+def test_sipp_can_be_drawn_from_age_55():
+    """Minimum Pension Age is 55 inclusive: a SIPP-only 55-year-old draws
+    from the SIPP in the first year and meets spending."""
+    inp = UKSimulationInput(
+        current_age=55,
+        max_age=57,
+        annual_spending=20000,
+        sipp_balance=500000,
+        state_pension_annual=0,
+        state_pension_start_age=67,
+        return_source="gaussian",
+        expected_return=0.04,
+        return_volatility=0.0,
+        inflation_rate=0.0,
+        n_simulations=100,
+        random_seed=1,
+        include_mortality=False,
+    )
+    result = run_uk_simulation(inp)
+    assert result.year_breakdown[0].sipp_withdrawal > 20000
+    assert result.success_rate == 1.0
+    assert result.sipp_locked_shortfall_rate == 0.0
