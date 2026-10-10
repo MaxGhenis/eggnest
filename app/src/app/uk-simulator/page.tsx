@@ -9,6 +9,7 @@ import {
   type UKSimulationInput,
   type UKSimulationResult,
 } from "../../lib/api-uk";
+import { BenefitsCheck } from "../../components/uk/BenefitsCheck";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { colors, chartColors } from "../../lib/design-tokens";
 import {
@@ -249,6 +250,9 @@ export default function UKSimulatorPage() {
                 cohorts={result?.percentile_path_start_years}
                 withZeroLine
               />
+              {result?.pension_credit && (
+                <BenefitsCheck screen={result.pension_credit} maxAge={input.max_age} />
+              )}
               <PercentileFanChart
                 title="HMRC tax by year"
                 description="Median + 25/75 + 5/95 percentiles"

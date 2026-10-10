@@ -1,0 +1,173 @@
+{
+  "source": "Pensions Act 1995 c.26, Sch 4 Pt I para 1, legislation.gov.uk revised text (up to date to 29 Sep 2026)",
+  "attainment": "age rows: attained at the start of the day that is spa_years+spa_months after birth (month-end clamp); date rows: at the start of the stated day",
+  "overrides": {
+    "1960-07-31": "2026-11-30",
+    "1960-12-31": "2027-09-30",
+    "1961-01-31": "2027-11-30"
+  },
+  "schedule": [
+    {
+      "born_on_or_after": null,
+      "born_on_or_before": "1950-04-05",
+      "sex": "female",
+      "spa_years": 60,
+      "spa_months": 0,
+      "para": "1(2)"
+    },
+    {
+      "born_on_or_after": null,
+      "born_on_or_before": "1953-12-05",
+      "sex": "male",
+      "spa_years": 65,
+      "spa_months": 0,
+      "para": "1(1)"
+    },
+    {
+      "born_on_or_after": "1950-04-06",
+      "born_on_or_before": "1953-04-05",
+      "sex": "female",
+      "first_spa_date": "2010-05-06",
+      "step_months": 2,
+      "para": "1(3) table 1"
+    },
+    {
+      "born_on_or_after": "1953-04-06",
+      "born_on_or_before": "1953-12-05",
+      "sex": "female",
+      "first_spa_date": "2016-07-06",
+      "step_months": 4,
+      "para": "1(3) table 1"
+    },
+    {
+      "born_on_or_after": "1953-12-06",
+      "born_on_or_before": "1954-10-05",
+      "sex": "any",
+      "first_spa_date": "2019-03-06",
+      "step_months": 2,
+      "para": "1(5) table 2"
+    },
+    {
+      "born_on_or_after": "1954-10-06",
+      "born_on_or_before": "1960-04-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 0,
+      "para": "1(6)"
+    },
+    {
+      "born_on_or_after": "1960-04-06",
+      "born_on_or_before": "1960-05-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 1,
+      "para": "1(7) table 3"
+    },
+    {
+      "born_on_or_after": "1960-05-06",
+      "born_on_or_before": "1960-06-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 2,
+      "para": "1(7) table 3"
+    },
+    {
+      "born_on_or_after": "1960-06-06",
+      "born_on_or_before": "1960-07-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 3,
+      "para": "1(7) table 3"
+    },
+    {
+      "born_on_or_after": "1960-07-06",
+      "born_on_or_before": "1960-08-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 4,
+      "para": "1(7) table 3; 1(7A)(a)"
+    },
+    {
+      "born_on_or_after": "1960-08-06",
+      "born_on_or_before": "1960-09-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 5,
+      "para": "1(7) table 3"
+    },
+    {
+      "born_on_or_after": "1960-09-06",
+      "born_on_or_before": "1960-10-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 6,
+      "para": "1(7) table 3"
+    },
+    {
+      "born_on_or_after": "1960-10-06",
+      "born_on_or_before": "1960-11-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 7,
+      "para": "1(7) table 3"
+    },
+    {
+      "born_on_or_after": "1960-11-06",
+      "born_on_or_before": "1960-12-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 8,
+      "para": "1(7) table 3"
+    },
+    {
+      "born_on_or_after": "1960-12-06",
+      "born_on_or_before": "1961-01-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 9,
+      "para": "1(7) table 3; 1(7A)(b)"
+    },
+    {
+      "born_on_or_after": "1961-01-06",
+      "born_on_or_before": "1961-02-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 10,
+      "para": "1(7) table 3; 1(7A)(c)"
+    },
+    {
+      "born_on_or_after": "1961-02-06",
+      "born_on_or_before": "1961-03-05",
+      "sex": "any",
+      "spa_years": 66,
+      "spa_months": 11,
+      "para": "1(7) table 3"
+    },
+    {
+      "born_on_or_after": "1961-03-06",
+      "born_on_or_before": "1977-04-05",
+      "sex": "any",
+      "spa_years": 67,
+      "spa_months": 0,
+      "para": "1(8)"
+    },
+    {
+      "born_on_or_after": "1977-04-06",
+      "born_on_or_before": "1978-04-05",
+      "sex": "any",
+      "first_spa_date": "2044-05-06",
+      "step_months": 2,
+      "para": "1(9) table 4"
+    },
+    {
+      "born_on_or_after": "1978-04-06",
+      "born_on_or_before": null,
+      "sex": "any",
+      "spa_years": 68,
+      "spa_months": 0,
+      "para": "1(10)"
+    }
+  ],
+  "url": "https://www.legislation.gov.uk/ukpga/1995/26/schedule/4/part/I",
+  "checked": "2026-09-29"
+}
