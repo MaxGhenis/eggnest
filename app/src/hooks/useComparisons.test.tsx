@@ -77,7 +77,7 @@ const simulationResult: SimulationResult = {
   median_depletion_year: null,
   total_withdrawn_median: 1000000,
   total_taxes_median: 100000,
-  percentile_paths: {},
+  percentile_paths: { p5: [], p25: [], p50: [], p75: [], p95: [] },
   year_breakdown: [],
   initial_withdrawal_rate: 0.04,
   prob_10_year_failure: 0.01,

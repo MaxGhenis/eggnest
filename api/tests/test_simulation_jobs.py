@@ -1,13 +1,20 @@
 """Tests for background simulation job endpoints."""
 
 import time
+from datetime import UTC, datetime, timedelta
 from threading import Lock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from eggnest.core.us_retirement import OUTPUT_KEY, build_us_retirement_scenario
 from eggnest.models import SimulationInput
-from eggnest.simulation_jobs import CoreJobManager, run_core_job_to_store
+from eggnest.simulation_jobs import (
+    CoreJobManager,
+    SimulationJobManager,
+    run_core_job_to_store,
+    run_simulation_job_to_store,
+)
 from main import app
 
 client = TestClient(app)
@@ -181,3 +188,218 @@ def test_core_job_can_run_with_external_runner():
     assert data.status == "succeeded"
     assert data.result is not None
     assert data.result.outputs[OUTPUT_KEY]["success_rate"] == 1.0
+
+
+def _iso(moment: datetime) -> str:
+    return moment.isoformat().replace("+00:00", "Z")
+
+
+def _finished_snapshot(job_id: str, finished_at: datetime) -> dict:
+    stamp = _iso(finished_at)
+    return {
+        "job_id": job_id,
+        "status": "succeeded",
+        "created_at": stamp,
+        "updated_at": stamp,
+        "completed_at": stamp,
+    }
+
+
+def _manager_with_external_runner(
+    kind: str, store, ttl_seconds: int, max_records, sweep_interval: float = 0.0
+):
+    manager_cls = CoreJobManager if kind == "core" else SimulationJobManager
+    manager = manager_cls(
+        max_workers=1,
+        ttl_seconds=ttl_seconds,
+        max_records=max_records,
+        snapshot_store=store,
+        snapshot_prefix=f"{kind}:",
+        snapshot_sweep_interval_seconds=sweep_interval,
+    )
+    if kind == "core":
+        manager.set_external_runner(
+            lambda job_id, scenario: run_core_job_to_store(
+                job_id, scenario, store, snapshot_prefix="core:"
+            )
+        )
+    else:
+        manager.set_external_runner(
+            lambda job_id, params: run_simulation_job_to_store(
+                job_id, params, store, snapshot_prefix="simulation:"
+            )
+        )
+    return manager
+
+
+def _submit(kind: str, manager):
+    if kind == "core":
+        return manager.submit(build_us_retirement_scenario(small_input()))
+    return manager.submit(small_input())
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_expired_shared_snapshots_are_removed_below_local_capacity(kind):
+    """Jobs run by an external runner (or another container) never enter
+    this manager's local registry, so the registry stays under capacity; the
+    shared store must still expire their snapshots after the TTL."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(
+        kind, store, ttl_seconds=60, max_records=100
+    )
+    now = datetime.now(UTC)
+    for i in range(6):
+        store.put(
+            f"{kind}:expired-{i}",
+            _finished_snapshot(f"expired-{i}", now - timedelta(minutes=5)),
+        )
+    store.put(f"{kind}:fresh", _finished_snapshot("fresh", now))
+    store.put("other-prefix:expired", _finished_snapshot("x", now - timedelta(hours=1)))
+
+    created = _submit(kind, manager)
+
+    keys = {key for key, _ in store.items()}
+    assert not any(key.startswith(f"{kind}:expired-") for key in keys)
+    assert f"{kind}:fresh" in keys
+    assert f"{kind}:{created.job_id}" in keys
+    # Other managers' snapshots are left alone.
+    assert "other-prefix:expired" in keys
+    # Reads also sweep: expire the fresh one and read the new job.
+    store.put(f"{kind}:fresh", _finished_snapshot("fresh", now - timedelta(minutes=5)))
+    assert manager.get(created.job_id) is not None
+    assert f"{kind}:fresh" not in {key for key, _ in store.items()}
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_capacity_trim_counts_only_unexpired_snapshots(kind):
+    """Expired snapshots removed by the TTL sweep must not also count toward
+    the capacity trim, or unexpired results are deleted early."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=60, max_records=3)
+    now = datetime.now(UTC)
+    for i in range(2):
+        store.put(
+            f"{kind}:expired-{i}",
+            _finished_snapshot(f"expired-{i}", now - timedelta(minutes=5)),
+        )
+    for i in range(3):
+        store.put(
+            f"{kind}:fresh-{i}",
+            _finished_snapshot(f"fresh-{i}", now - timedelta(seconds=10 - i)),
+        )
+
+    manager.get("missing")
+
+    keys = sorted(key for key, _ in store.items())
+    assert keys == [f"{kind}:fresh-0", f"{kind}:fresh-1", f"{kind}:fresh-2"]
+
+
+def _snapshot(job_id: str, status: str, updated: datetime, finished=None) -> dict:
+    data = {
+        "job_id": job_id,
+        "status": status,
+        "created_at": _iso(updated),
+        "updated_at": _iso(updated),
+    }
+    if finished is not None:
+        data["completed_at"] = _iso(finished)
+    return data
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_in_flight_snapshots_survive_and_stale_ones_expire(kind):
+    """A running job's snapshot stays while it keeps updating; one whose
+    worker died (no update for longer than the TTL) is expired, as the local
+    registry already does."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=60, max_records=3)
+    now = datetime.now(UTC)
+    store.put(f"{kind}:running", _snapshot("running", "running", now))
+    store.put(f"{kind}:queued", _snapshot("queued", "queued", now))
+    store.put(f"{kind}:dead", _snapshot("dead", "running", now - timedelta(minutes=5)))
+
+    manager.get("missing")
+
+    keys = {key for key, _ in store.items()}
+    assert keys == {f"{kind}:running", f"{kind}:queued"}
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_only_finished_snapshots_count_toward_capacity(kind):
+    """Many in-flight jobs must not evict a result a client is about to
+    read: the capacity trim counts and removes finished snapshots only."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=60, max_records=3)
+    now = datetime.now(UTC)
+    for i in range(5):
+        store.put(f"{kind}:running-{i}", _snapshot(f"running-{i}", "running", now))
+    for i in range(4):
+        moment = now - timedelta(seconds=10 - i)
+        store.put(
+            f"{kind}:done-{i}", _snapshot(f"done-{i}", "succeeded", moment, moment)
+        )
+
+    manager.get("missing")
+
+    keys = {key for key, _ in store.items()}
+    assert {f"{kind}:running-{i}" for i in range(5)} <= keys
+    # Four finished against a limit of three: only the oldest goes.
+    assert {key for key in keys if "done" in key} == {
+        f"{kind}:done-1",
+        f"{kind}:done-2",
+        f"{kind}:done-3",
+    }
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_unreadable_timestamps_do_not_fail_requests(kind):
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=60, max_records=3)
+    store.put(f"{kind}:bad", {"status": "succeeded", "completed_at": "not a date"})
+    store.put(f"{kind}:none", {"status": "running"})
+    store.put(f"{kind}:junk", "not a snapshot")
+
+    assert manager.get("missing") is None
+    assert len(store.items()) == 3
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_shared_store_sweep_is_throttled(kind):
+    """Polls arrive every 1-3 s; the full-store sweep runs at most once per
+    interval per manager."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(
+        kind, store, ttl_seconds=60, max_records=3, sweep_interval=60.0
+    )
+    old = datetime.now(UTC) - timedelta(minutes=5)
+    store.put(f"{kind}:a", _snapshot("a", "succeeded", old, old))
+    manager.get("missing")
+    assert store.items() == []
+
+    store.put(f"{kind}:b", _snapshot("b", "succeeded", old, old))
+    manager.get("missing")  # within the interval: no second sweep
+    assert [key for key, _ in store.items()] == [f"{kind}:b"]
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_jobs_handed_to_a_worker_leave_no_local_record(kind):
+    """With an external runner the worker reports through the shared store;
+    a local copy would answer "queued" forever once the snapshot expired."""
+    store = MemorySnapshotStore()
+    manager_cls = CoreJobManager if kind == "core" else SimulationJobManager
+    manager = manager_cls(
+        max_workers=1,
+        ttl_seconds=3600,
+        max_records=100,
+        snapshot_store=store,
+        snapshot_prefix=f"{kind}:",
+    )
+    manager.set_external_runner(lambda job_id, payload: None)  # never reports
+    if kind == "core":
+        created = manager.submit(build_us_retirement_scenario(small_input()))
+    else:
+        created = manager.submit(small_input())
+
+    assert manager.get(created.job_id).status == "queued"  # from the store
+    store.delete(f"{kind}:{created.job_id}")
+    assert manager.get(created.job_id) is None

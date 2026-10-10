@@ -4,14 +4,21 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-api:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: api
+    env:
+      # Match the Modal image (api/modal_app.py).
+      UV_PYTHON: '3.11'
 
     steps:
       - uses: actions/checkout@v4
@@ -23,17 +30,38 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: api/uv.lock
 
+      # uv sync gives `uv run` one project venv built from uv.lock with all
+      # extras (the dev extra carries pytest, Hypothesis and pytest-xdist).
       - name: Install dependencies
-        run: uv pip install -e ".[dev]" --system
+        run: uv sync --all-extras --frozen
 
       - name: Run linting
         run: |
           uv run ruff check .
           uv run black --check .
 
+      - name: Show runner resources
+        run: nproc && free -h
+
+      # PolicyEngine memory accumulates over a pytest session and one full
+      # run can exhaust the 16GB runner. Running the suite as three sequential
+      # shards resets memory between shards while keeping two xdist workers
+      # inside each.
       - name: Run tests
-        run: uv run pytest tests/ -v --tb=short
+        run: |
+          (while true; do free -m | awk '/Mem:/{printf "[mem] used=%dMiB avail=%dMiB\n",$3,$7}'; sleep 20; done) &
+          MEMMON=$!
+          FILES=( $(ls tests/test_*.py | sort) )
+          TOTAL=${#FILES[@]}
+          THIRD=$(( (TOTAL + 2) / 3 ))
+          uv run pytest "${FILES[@]:0:THIRD}" -n 2 --dist loadfile --tb=short
+          uv run pytest "${FILES[@]:THIRD:THIRD}" -n 2 --dist loadfile --tb=short
+          uv run pytest "${FILES[@]:$((2 * THIRD))}" -n 2 --dist loadfile --tb=short
+          kill $MEMMON
 
   test-app:
     runs-on: ubuntu-latest
