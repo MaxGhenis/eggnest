@@ -25,6 +25,11 @@ from eggnest.models import (
 from eggnest.simulation import MonteCarloSimulator
 
 
+# Shared-store sweeps list the whole store (every job's snapshot), so each
+# manager sweeps at most this often rather than on every 1-3 s poll.
+SNAPSHOT_SWEEP_INTERVAL_SECONDS = 60.0
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -85,6 +90,7 @@ class SimulationJobManager:
         max_records: int,
         snapshot_store: JobSnapshotStore | None = None,
         snapshot_prefix: str = "simulation:",
+        snapshot_sweep_interval_seconds: float = SNAPSHOT_SWEEP_INTERVAL_SECONDS,
     ):
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
@@ -94,6 +100,8 @@ class SimulationJobManager:
         self._max_records = max_records
         self._snapshot_store = snapshot_store
         self._snapshot_prefix = snapshot_prefix
+        self._snapshot_sweep_interval = snapshot_sweep_interval_seconds
+        self._last_snapshot_sweep: datetime | None = None
         self._external_runner: Callable[[str, SimulationInput], None] | None = None
         self._jobs: dict[str, _JobRecord] = {}
         self._lock = Lock()
@@ -278,37 +286,20 @@ class SimulationJobManager:
     def _cleanup_snapshots(self, now: datetime) -> None:
         if self._snapshot_store is None:
             return
-        entries = [
-            (key, value)
-            for key, value in self._snapshot_store.items()
-            if key.startswith(self._snapshot_prefix)
-        ]
-        removable = []
-        finished = []
-        for key, value in entries:
-            status = value.get("status")
-            if status not in {"succeeded", "failed"}:
-                continue
-            completed_at = value.get("completed_at") or value.get("updated_at")
-            if not completed_at:
-                continue
-            completed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
-            if (now - completed).total_seconds() > self._ttl_seconds:
-                removable.append(key)
-            else:
-                finished.append((key, value))
-
-        for key in removable:
-            self._snapshot_store.delete(key)
-
-        remaining = len(entries) - len(removable)
-        if remaining <= self._max_records:
+        if (
+            self._last_snapshot_sweep is not None
+            and (now - self._last_snapshot_sweep).total_seconds()
+            < self._snapshot_sweep_interval
+        ):
             return
-
-        finished.sort(key=lambda item: item[1].get("updated_at", ""))
-        excess = remaining - self._max_records
-        for key, _ in finished[:excess]:
-            self._snapshot_store.delete(key)
+        self._last_snapshot_sweep = now
+        _sweep_snapshots(
+            self._snapshot_store,
+            self._snapshot_prefix,
+            now=now,
+            ttl_seconds=self._ttl_seconds,
+            max_records=self._max_records,
+        )
 
 
 @dataclass
@@ -357,6 +348,7 @@ class CoreJobManager:
         max_records: int,
         snapshot_store: JobSnapshotStore | None = None,
         snapshot_prefix: str = "core:",
+        snapshot_sweep_interval_seconds: float = SNAPSHOT_SWEEP_INTERVAL_SECONDS,
     ):
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
@@ -366,6 +358,8 @@ class CoreJobManager:
         self._max_records = max_records
         self._snapshot_store = snapshot_store
         self._snapshot_prefix = snapshot_prefix
+        self._snapshot_sweep_interval = snapshot_sweep_interval_seconds
+        self._last_snapshot_sweep: datetime | None = None
         self._external_runner: Callable[[str, EngineScenario], None] | None = None
         self._jobs: dict[str, _CoreJobRecord] = {}
         self._lock = Lock()
@@ -575,37 +569,72 @@ class CoreJobManager:
     def _cleanup_snapshots(self, now: datetime) -> None:
         if self._snapshot_store is None:
             return
-        entries = [
-            (key, value)
-            for key, value in self._snapshot_store.items()
-            if key.startswith(self._snapshot_prefix)
-        ]
-        removable = []
-        finished = []
-        for key, value in entries:
-            status = value.get("status")
-            if status not in {"succeeded", "failed"}:
-                continue
-            completed_at = value.get("completed_at") or value.get("updated_at")
-            if not completed_at:
-                continue
-            completed = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
-            if (now - completed).total_seconds() > self._ttl_seconds:
-                removable.append(key)
-            else:
-                finished.append((key, value))
-
-        for key in removable:
-            self._snapshot_store.delete(key)
-
-        remaining = len(entries) - len(removable)
-        if remaining <= self._max_records:
+        if (
+            self._last_snapshot_sweep is not None
+            and (now - self._last_snapshot_sweep).total_seconds()
+            < self._snapshot_sweep_interval
+        ):
             return
+        self._last_snapshot_sweep = now
+        _sweep_snapshots(
+            self._snapshot_store,
+            self._snapshot_prefix,
+            now=now,
+            ttl_seconds=self._ttl_seconds,
+            max_records=self._max_records,
+        )
 
-        finished.sort(key=lambda item: item[1].get("updated_at", ""))
-        excess = remaining - self._max_records
-        for key, _ in finished[:excess]:
-            self._snapshot_store.delete(key)
+
+def _parse_timestamp(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _sweep_snapshots(
+    store: JobSnapshotStore,
+    prefix: str,
+    *,
+    now: datetime,
+    ttl_seconds: float,
+    max_records: int,
+) -> None:
+    """Expire and trim one manager's snapshots in the shared store.
+
+    Finished snapshots expire ``ttl_seconds`` after completion. Unfinished
+    ones expire ``ttl_seconds`` after their last update, as the local
+    registry does: a worker that dies (timeout, out of memory) never
+    finishes its snapshot. Only finished snapshots count toward
+    ``max_records``, so stuck or running jobs cannot push out results a
+    client is about to read. Entries without a readable timestamp are left
+    alone rather than failing the request that triggered the sweep.
+    """
+    finished = []
+    for key, value in store.items():
+        if not key.startswith(prefix) or not isinstance(value, dict):
+            continue
+        done = value.get("status") in {"succeeded", "failed"}
+        reference = _parse_timestamp(
+            (value.get("completed_at") or value.get("updated_at"))
+            if done
+            else value.get("updated_at")
+        )
+        if reference is None:
+            continue
+        if (now - reference).total_seconds() > ttl_seconds:
+            store.delete(key)
+        elif done:
+            finished.append((reference, key))
+
+    excess = len(finished) - max_records
+    if excess > 0:
+        finished.sort()
+        for _, key in finished[:excess]:
+            store.delete(key)
 
 
 def _merge_snapshot(
