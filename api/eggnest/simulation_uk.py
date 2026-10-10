@@ -29,6 +29,7 @@ mortality; mortality only decides which years count toward ``success_rate``.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import date
@@ -57,6 +58,8 @@ from .state_pension_age import SCHEDULE_URL as SPA_SCHEDULE_URL
 from .tax_uk import UKYearInputs, UKYearResults, get_uk_tax_calculator
 
 UKTaxCalculator = Callable[[UKYearInputs], UKYearResults]
+
+logger = logging.getLogger(__name__)
 
 # Minimum Pension Age — earliest age at which SIPP funds can be accessed.
 # Currently 55 in the UK, rising to 57 from April 2028. We use 55 as a simple
@@ -765,11 +768,17 @@ def _pension_credit_sample(n_sims: int) -> np.ndarray:
     return np.unique(np.linspace(0, n_sims - 1, count).round().astype(int))
 
 
-def _pension_credit_year(flows: UKYearFlows, sample: np.ndarray) -> _PensionCreditYear:
+def _pension_credit_year(
+    flows: UKYearFlows, sample: np.ndarray, state_pension_entitlement: float
+) -> _PensionCreditYear:
     """The income and capital State Pension Credit would count.
 
-    Income (SPC Act 2002 ss.15-16; SI 2002/1792): State Pension and pension
-    drawdown in full, tax-free cash included (s.16(1)(f)); earnings less
+    Income (SPC Act 2002 ss.15-16; SI 2002/1792): State Pension in full,
+    including a State Pension not yet claimed, which reg 18(1) treats as
+    possessed once the person reaches the qualifying age (only those years
+    are screened); pension drawdown in full, tax-free cash included
+    (s.16(1)(f); DWP's DMG 85456 and 85476 count regular drawdown as
+    income); earnings less
     half of pension contributions (reg 17A(4A)) and a £5 weekly disregard
     (Sch VI para 5(a)); all less the income tax and NI payable (reg 17(10)).
     Actual dividends and interest on savings are disregarded (Sch IV para
@@ -784,7 +793,7 @@ def _pension_credit_year(flows: UKYearFlows, sample: np.ndarray) -> _PensionCred
         0.0,
     )
     counted = (
-        flows.state_pension[sample]
+        np.maximum(flows.state_pension[sample], state_pension_entitlement)
         + flows.withdrawal_sipp[sample]
         + earnings
         - flows.total_tax[sample]
@@ -857,7 +866,8 @@ def _pension_credit_screen(
             weekly_income=np.concatenate([year.weekly_income for year, _ in screened]),
             capital=np.concatenate([year.capital for year, _ in screened]),
         )
-    except (RuntimeError, KeyError, ValueError):
+    except (RuntimeError, KeyError, ValueError) as exc:
+        logger.warning("Pension Credit screen skipped: %s", exc)
         return None
 
     alive = np.array([year.alive for year, _ in screened])
@@ -884,7 +894,7 @@ def _pension_credit_screen(
             for row, flags in zip(amounts, indicated, strict=True)
         ],
         first_age_indicated=(
-            int(round(float(np.median(first_ages[ever])))) if ever.any() else None
+            int(np.floor(np.median(first_ages[ever]) + 0.5)) if ever.any() else None
         ),
         citations=age_citations
         + [
@@ -994,7 +1004,11 @@ def run_uk_simulation_with_progress(
         inputs, rng, tax_calculator or get_uk_tax_calculator(), today
     ):
         year_idx = flows.year_index
-        pension_credit_years.append(_pension_credit_year(flows, pension_credit_sample))
+        pension_credit_years.append(
+            _pension_credit_year(
+                flows, pension_credit_sample, inputs.state_pension_annual
+            )
+        )
         year_breakdown.append(breakdown)
         portfolio_over_time[:, year_idx] = flows.portfolio_end
         tax_over_time[:, year_idx] = flows.total_tax

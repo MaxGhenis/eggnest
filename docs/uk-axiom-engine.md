@@ -78,8 +78,10 @@ from the qualifying age (pro rata in the year it is reached), the screen
 counts income as State Pension Credit does and asks the engine for the
 guarantee credit:
 
-- **Counted:** State Pension and pension drawdown in full, tax-free cash
-  included (SPC Act s.16(1)(f)); earnings less half of pension
+- **Counted:** State Pension in full, including a deferred one from the
+  qualifying age (reg 18(1)); pension drawdown in full, tax-free cash
+  included (SPC Act s.16(1)(f), with DWP's DMG 85456 and 85476 treating
+  regular drawdown as income); earnings less half of pension
   contributions (reg 17A(4A)) and £5 a week (Sch VI para 5(a)); less the
   income tax and NI payable (reg 17(10)); plus reg 15(6) deemed income on
   ISA and GIA balances at the start of the year.
@@ -89,6 +91,10 @@ guarantee credit:
 - **Not modeled:** notional income from an undrawn pension pot (reg 18),
   savings credit, housing costs, couples. The screen can overstate
   entitlement where a SIPP sits undrawn.
+
+Every simulated year is compared with today's minimum guarantee (reg 6
+in rulespec-uk has a single, current rate), using that year's nominal
+income and capital.
 
 The result reports the share of screened paths with credit indicated
 (overall and by age), the median credit where indicated, the median first

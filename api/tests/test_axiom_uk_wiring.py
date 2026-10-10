@@ -191,9 +191,17 @@ def test_no_employee_ni_on_earnings_after_state_pension_age():
     # Born 1 Jan 1959: State Pension age 66 on 1 Jan 2025, before this year.
     over = calculate_uk_tax(_tax_inputs(age=67, birth_date=date(1959, 1, 1)))
     assert over.employee_ni[0] == 0.0
-    # Without a birth date the engine's own NI stands.
-    unknown = calculate_uk_tax(_tax_inputs(age=67))
-    assert unknown.employee_ni[0] == pytest.approx(2_194.40, abs=0.01)
+    under = calculate_uk_tax(_tax_inputs(age=40, birth_date=date(1986, 1, 1)))
+    assert under.employee_ni[0] == pytest.approx(2_194.40, abs=0.01)
+
+
+def test_without_a_birth_date_age_holds_for_the_tax_year():
+    """Both tax backends take a person with no birth date to be ``age`` for
+    the whole tax year, so they agree on NI past State Pension age."""
+    inputs = _tax_inputs(age=67)  # born 6 Apr 1959: SPA 66 in April 2025
+    assert share_of_year_over_state_pension_age(inputs) == 1.0
+    assert calculate_uk_tax(inputs).employee_ni[0] == 0.0
+    assert share_of_year_over_state_pension_age(_tax_inputs(age=40)) == 0.0
 
 
 def test_employee_ni_prorated_in_the_year_state_pension_age_falls():
@@ -359,6 +367,31 @@ def test_pension_drawdown_counts_in_full_and_earnings_after_disregards(
     earnings = 10_000 - 0.5 * 1_000 - 5 * 52
     expected = (draw + earnings - flows.total_tax[0]) / 52
     assert fake_engine[0]["weekly_income"][0] == pytest.approx(expected)
+
+
+def test_unclaimed_state_pension_counts_from_qualifying_age(fake_engine):
+    """SI 2002/1792 reg 18(1): someone past the qualifying age who has not
+    claimed their State Pension is treated as having it. A full new State
+    Pension (£241.30 a week) deferred to 70 still rules out guarantee credit
+    (£238 a week) at 67-69."""
+    result = run_uk_simulation(
+        UKSimulationInput(
+            current_age=67,
+            max_age=72,
+            annual_spending=12_000,
+            isa_balance=5_000,
+            state_pension_annual=12_547.60,
+            state_pension_start_age=70,
+            return_source="gaussian",
+            return_volatility=0.0,
+            inflation_rate=0.0,
+            n_simulations=100,
+            include_mortality=False,
+        )
+    )
+    first_year = fake_engine[0]["weekly_income"].reshape(-1, 100)[0]
+    assert np.all(first_year >= 241.30 - 0.01)
+    assert result.pension_credit.share_of_paths_indicated == 0.0
 
 
 def test_screen_samples_at_most_500_paths(fake_engine):

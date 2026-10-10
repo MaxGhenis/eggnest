@@ -274,3 +274,63 @@ class TestEngineCitations:
         urls = {citation.url for citation in citations}
         assert any("ukpga/2007/3/section/35" in url for url in urls)
         assert len(citations) >= 5
+
+
+class TestStatePensionAgeInTax:
+    """SSCBA 1992 s.6(3) through the Axiom backend: employee NI stops on
+    earnings paid after State Pension age."""
+
+    def _ni(self, **overrides):
+        inputs = _inputs(year=2026, employment_income=np.array([30_000.0]), **overrides)
+        return axiom_uk.calculate_uk_tax_axiom(inputs).employee_ni[0]
+
+    def test_birth_date_decides_and_the_crossing_year_is_pro_rata(self):
+        from datetime import date
+
+        from eggnest.tax_uk import share_of_year_over_state_pension_age
+
+        full = self._ni(age=40)
+        assert full > 0
+        # Born 6 Oct 1960: State Pension age 66y7m, reached 6 May 2027,
+        # part-way through the year from the 66th birthday.
+        birth = date(1960, 10, 6)
+        crossing = _inputs(
+            age=66,
+            year=2026,
+            employment_income=np.array([30_000.0]),
+            birth_date=birth,
+        )
+        share = share_of_year_over_state_pension_age(crossing)
+        assert 0 < share < 1
+        assert self._ni(age=66, birth_date=birth) == pytest.approx(
+            full * (1 - share), abs=0.01
+        )
+        # Without the birth date the tax-year assumption gives a different
+        # (66y1m) State Pension age, so the supplied date must be used.
+        assert self._ni(age=66) != pytest.approx(full * (1 - share), abs=1.0)
+        assert self._ni(age=70, birth_date=date(1956, 1, 1)) == 0.0
+
+    def test_both_backends_agree_across_state_pension_age(self):
+        from datetime import date
+
+        for age, birth in [(40, None), (66, date(1960, 10, 6)), (70, None)]:
+            inputs = _inputs(
+                age=age,
+                year=2026,
+                employment_income=np.array([30_000.0]),
+                birth_date=birth,
+            )
+            assert axiom_uk.calculate_uk_tax_axiom(inputs).employee_ni[
+                0
+            ] == pytest.approx(calculate_uk_tax(inputs).employee_ni[0], abs=0.01)
+
+
+def test_full_new_state_pension_alone_gets_no_guarantee_credit():
+    """£241.30 a week (2026/27) is above the £238 minimum guarantee."""
+    screen = axiom_uk.pension_credit_screen(
+        year=2026,
+        weekly_income=np.array([241.30, 221.20]),
+        capital=np.zeros(2),
+    )
+    assert screen["annual_amount"][0] == 0.0
+    assert screen["annual_amount"][1] == pytest.approx((238.0 - 221.20) * 52)

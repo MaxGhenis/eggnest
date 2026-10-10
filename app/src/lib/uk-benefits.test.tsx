@@ -47,7 +47,7 @@ describe("summarizePensionCredit", () => {
     expect(summary.headline).toBe(
       "In 18% of 500 simulated paths, income as Pension Credit counts it falls " +
         "below the minimum guarantee (£238/week) in at least one year from your " +
-        "State Pension age (67), typically from age 68.",
+        "Pension Credit qualifying age (67), typically from age 68.",
     );
     expect(summary.detail).toMatch(/around £1k\/year/);
   });
@@ -86,7 +86,7 @@ describe("summarizePensionCredit", () => {
     );
     expect(summary.tone).toBe("not_screened");
     expect(summary.headline).toBe(
-      "Pension Credit starts at State Pension age, 66 years and 7 months for " +
+      "Pension Credit starts at its qualifying age, 66 years and 7 months for " +
         "you, which comes after this plan ends at 60, so it isn't screened.",
     );
     // No "£0/week" minimum guarantee claim.

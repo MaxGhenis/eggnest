@@ -27,8 +27,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass, replace
-from datetime import date
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
@@ -391,12 +390,6 @@ def _trace_citations(traces: list[dict]) -> list[Citation]:
     return _dedupe_citations(citations)
 
 
-def _tax_year_birth_date(inputs: UKYearInputs) -> date:
-    """With no birth date given, take the person to be ``age`` for the
-    whole tax year that starts in ``year``."""
-    return date(inputs.year - inputs.age, 4, 6)
-
-
 def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
     """UK tax for one simulated year via the Axiom rules engine.
 
@@ -612,11 +605,7 @@ def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
     # SSCBA 1992 s.8: primary Class 1 contributions on employment earnings,
     # weekly basis. s.6(3): none on earnings paid after pensionable age
     # (Pensions Act 1995 Sch 4), so the part of the year past it is exempt.
-    over_spa = share_of_year_over_state_pension_age(
-        inputs
-        if inputs.birth_date is not None
-        else replace(inputs, birth_date=_tax_year_birth_date(inputs))
-    )
+    over_spa = share_of_year_over_state_pension_age(inputs)
     if over_spa < 1.0 and bool(np.any(employment > 0)):
         s8 = _execute(
             "sscba_s8",

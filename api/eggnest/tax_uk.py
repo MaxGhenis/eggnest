@@ -157,28 +157,34 @@ def _engine_direct_tax(
     )
 
 
+def tax_year_birth_date(inputs: UKYearInputs) -> date:
+    """With no birth date given, take the person to be ``age`` for the
+    whole tax year that starts in ``year``."""
+    return date(inputs.year - inputs.age, 4, 6)
+
+
 def share_of_year_over_state_pension_age(inputs: UKYearInputs) -> float:
-    """Share of the simulated year after State Pension age, 0 when unknown.
+    """Share of the simulated year after State Pension age.
 
     policyengine-uk-compiled charges employee NI at every age; primary
     Class 1 contributions are not payable on earnings paid after State
     Pension age (SSCBA 1992 s.6(3)), so callers scale employee NI by one
-    minus this share.
+    minus this share. Without a birth date the person is taken to be
+    ``age`` for the whole tax year starting in ``year``.
     """
-    if inputs.birth_date is None:
-        return 0.0
+    birth_date = inputs.birth_date or tax_year_birth_date(inputs)
     from .state_pension_age import (
         anniversary,
         share_of_period_from,
         state_pension_age_date,
     )
 
-    start = anniversary(inputs.birth_date, inputs.age)
-    end = anniversary(inputs.birth_date, inputs.age + 1)
+    start = anniversary(birth_date, inputs.age)
+    end = anniversary(birth_date, inputs.age + 1)
     # Both sexes share one State Pension age for births from 6 December
     # 1953; anyone born earlier reached it, as a man or a woman, by
     # December 2018, before any simulated year.
-    reached = state_pension_age_date(inputs.birth_date, "female")
+    reached = state_pension_age_date(birth_date, "female")
     return share_of_period_from(start, end, reached)
 
 

@@ -126,8 +126,9 @@ export default function HomePage() {
             },
             {
               // UK simulator defaults (age 65, £500k, £30k real spending,
-              // 2,000 paths, seed 42), 2026-09-29: real p25 £0 and p75 £694k,
-              // a gap of 139% of the starting portfolio.
+              // seed 42) run with 2,000 paths (the page runs 800),
+              // 2026-09-29: real p25 £0 and p75 £694k, a gap of 139% of the
+              // starting portfolio.
               value: "40%+",
               label:
                 "gap between 25th and 75th percentile outcomes on the same starting portfolio",

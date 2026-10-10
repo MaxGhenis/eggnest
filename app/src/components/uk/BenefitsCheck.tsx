@@ -79,10 +79,12 @@ export function BenefitsCheck({
         SI 2002/1792 regs 6 and 15), not a benefits decision. It counts State
         Pension, pension drawdown (tax-free part included) and earnings, less
         tax, plus income deemed from ISA and GIA savings over £10,000; their
-        actual dividends and interest are not counted. Qualifying age follows
-        the Pensions Act 1995 State Pension age rules, taking your birthday to
-        be today. Not modeled: notional income from pension pots you have not
-        drawn, savings credit, and housing costs.
+        actual dividends and interest are not counted. A State Pension you
+        have deferred still counts. The qualifying age follows the Pensions
+        Act 1995 State Pension age rules, taking your birthday to be today,
+        and every year is compared with today&apos;s minimum guarantee. Not
+        modeled: notional income from pension pots you have not drawn,
+        savings credit, and housing costs.
       </p>
     </section>
   );

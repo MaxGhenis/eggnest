@@ -35,7 +35,7 @@ export function summarizePensionCredit(
     return {
       tone: "not_screened",
       headline:
-        `Pension Credit starts at State Pension age, ${qualifyingAge} for you, ` +
+        `Pension Credit starts at its qualifying age, ${qualifyingAge} for you, ` +
         `which comes after this plan ends at ${maxAge}, so it isn't screened.`,
       detail: null,
     };
@@ -50,7 +50,7 @@ export function summarizePensionCredit(
       headline:
         `In none of the ${paths} simulated paths screened does income, as ` +
         `Pension Credit counts it, fall below the minimum guarantee ` +
-        `(${weekly}/week) from your State Pension age (${qualifyingAge}).`,
+        `(${weekly}/week) from your Pension Credit qualifying age (${qualifyingAge}).`,
       detail: null,
     };
   }
@@ -65,7 +65,7 @@ export function summarizePensionCredit(
     headline:
       `In ${shareText} of ${paths} simulated paths, income as Pension Credit ` +
       `counts it falls below the minimum guarantee (${weekly}/week) in at ` +
-      `least one year from your State Pension age (${qualifyingAge})${from}.`,
+      `least one year from your Pension Credit qualifying age (${qualifyingAge})${from}.`,
     detail:
       `Where it does, the guarantee credit would be around ` +
       `${formatGBP(typical)}/year. Checking eligibility with the DWP could ` +
