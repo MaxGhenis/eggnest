@@ -44,10 +44,16 @@ def test_core_us_household_resources_returns_versioned_envelope():
     assert result.assumptions["state"] == "CA"
     assert any("not financial" in caveat for caveat in result.caveats)
     assert any(citation.id == "us:statutes/26/24" for citation in result.citations)
-    assert any(
-        citation.id == "us:statutes/26/24"
-        for citation in household_result.output_citations["benefits.child_tax_credit"]
-    )
+    # At $40,000 the CTC is split: the refundable part is a benefit and the
+    # non-refundable part lowers federal income tax. Both cite 26 USC 24.
+    for field in (
+        "benefits.refundable_ctc",
+        "non_refundable_credit_breakdown.non_refundable_ctc",
+    ):
+        assert any(
+            citation.id == "us:statutes/26/24"
+            for citation in household_result.output_citations[field]
+        )
     assert household_result.total_income == 40_000
     assert household_result.net_income == (
         household_result.total_income
