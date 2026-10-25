@@ -20,7 +20,7 @@ export default function MarketingLayout({
             Thesis
           </Link>
           <Link
-            href="/simulator"
+            href="/uk-simulator"
             className="rounded-full bg-gradient-golden px-5 py-2 text-sm font-semibold text-white shadow-[var(--shadow-md)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-lg)]"
           >
             Launch app
@@ -44,10 +44,16 @@ export default function MarketingLayout({
                 Product
               </h4>
               <Link
+                href="/uk-simulator"
+                className="block text-sm transition-colors hover:text-white"
+              >
+                UK simulator
+              </Link>
+              <Link
                 href="/simulator"
                 className="block text-sm transition-colors hover:text-white"
               >
-                Simulator
+                US simulator
               </Link>
               <Link
                 href="/thesis"
