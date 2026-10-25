@@ -45,8 +45,9 @@ class ModalDictJobSnapshotStore:
 
     def items(self) -> list[tuple[str, dict]]:
         # Modal's blocking Dict.items() is a plain generator; `async for` over
-        # it raises TypeError. The job managers sweep the store on every
-        # submit and poll, so this must work from FastAPI's sync threads.
+        # it raises TypeError. Submits and polls sweep the store (at most
+        # once a minute per job manager), so this must work from FastAPI's
+        # sync threads.
         return list(self._dict.items())
 
 

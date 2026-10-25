@@ -298,7 +298,10 @@ class SimulationJobManager:
                     if record.status in {"succeeded", "failed"}
                 ]
                 finished.sort(key=lambda record: record.updated_at)
-                excess = len(self._jobs) - self._max_records
+                # As in the shared store, only finished records count toward
+                # capacity: queued and running jobs can't push out a result a
+                # client is about to read.
+                excess = len(finished) - self._max_records
                 for record in finished[:excess]:
                     self._jobs.pop(record.job_id, None)
                     if self._snapshot_store is not None:
@@ -312,13 +315,16 @@ class SimulationJobManager:
     def _cleanup_snapshots(self, now: datetime) -> None:
         if self._snapshot_store is None:
             return
-        if (
-            self._last_snapshot_sweep is not None
-            and (now - self._last_snapshot_sweep).total_seconds()
-            < self._snapshot_sweep_interval
-        ):
-            return
-        self._last_snapshot_sweep = now
+        # Claim the sweep under the lock so concurrent requests run at most
+        # one sweep per interval; the sweep itself (remote I/O) runs unlocked.
+        with self._lock:
+            if (
+                self._last_snapshot_sweep is not None
+                and (now - self._last_snapshot_sweep).total_seconds()
+                < self._snapshot_sweep_interval
+            ):
+                return
+            self._last_snapshot_sweep = now
         _sweep_snapshots(
             self._snapshot_store,
             self._snapshot_prefix,
@@ -590,7 +596,10 @@ class CoreJobManager:
                     if record.status in {"succeeded", "failed"}
                 ]
                 finished.sort(key=lambda record: record.updated_at)
-                excess = len(self._jobs) - self._max_records
+                # As in the shared store, only finished records count toward
+                # capacity: queued and running jobs can't push out a result a
+                # client is about to read.
+                excess = len(finished) - self._max_records
                 for record in finished[:excess]:
                     self._jobs.pop(record.job_id, None)
                     if self._snapshot_store is not None:
@@ -604,13 +613,16 @@ class CoreJobManager:
     def _cleanup_snapshots(self, now: datetime) -> None:
         if self._snapshot_store is None:
             return
-        if (
-            self._last_snapshot_sweep is not None
-            and (now - self._last_snapshot_sweep).total_seconds()
-            < self._snapshot_sweep_interval
-        ):
-            return
-        self._last_snapshot_sweep = now
+        # Claim the sweep under the lock so concurrent requests run at most
+        # one sweep per interval; the sweep itself (remote I/O) runs unlocked.
+        with self._lock:
+            if (
+                self._last_snapshot_sweep is not None
+                and (now - self._last_snapshot_sweep).total_seconds()
+                < self._snapshot_sweep_interval
+            ):
+                return
+            self._last_snapshot_sweep = now
         _sweep_snapshots(
             self._snapshot_store,
             self._snapshot_prefix,
@@ -628,6 +640,19 @@ def _parse_timestamp(value: object) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _snapshot_reference(value: object) -> tuple[bool, datetime | None]:
+    """Whether a snapshot is finished, and the time its expiry counts from."""
+    if not isinstance(value, dict):
+        return False, None
+    done = value.get("status") in {"succeeded", "failed"}
+    reference = _parse_timestamp(
+        (value.get("completed_at") or value.get("updated_at"))
+        if done
+        else value.get("updated_at")
+    )
+    return done, reference
 
 
 def _sweep_snapshots(
@@ -650,19 +675,23 @@ def _sweep_snapshots(
     """
     finished = []
     for key, value in store.items():
-        if not key.startswith(prefix) or not isinstance(value, dict):
+        if not key.startswith(prefix):
             continue
-        done = value.get("status") in {"succeeded", "failed"}
-        reference = _parse_timestamp(
-            (value.get("completed_at") or value.get("updated_at"))
-            if done
-            else value.get("updated_at")
-        )
+        done, reference = _snapshot_reference(value)
         if reference is None:
             continue
         if (now - reference).total_seconds() > ttl_seconds:
-            store.delete(key)
-        elif done:
+            # A worker may have refreshed the snapshot since the listing, so
+            # re-read it and delete only if it is still expired. The store
+            # has no conditional delete, so this narrows the race to one
+            # read-then-delete rather than closing it.
+            done, reference = _snapshot_reference(store.get(key))
+            if reference is None:
+                continue
+            if (now - reference).total_seconds() > ttl_seconds:
+                store.delete(key)
+                continue
+        if done:
             finished.append((reference, key))
 
     excess = len(finished) - max_records

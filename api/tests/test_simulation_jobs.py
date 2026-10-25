@@ -379,3 +379,132 @@ def test_shared_store_sweep_is_throttled(kind):
     store.put(f"{kind}:b", _snapshot("b", "succeeded", old, old))
     manager.get("missing")  # within the interval: no second sweep
     assert [key for key, _ in store.items()] == [f"{kind}:b"]
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_snapshot_refreshed_during_a_sweep_survives(kind):
+    """A worker can refresh its snapshot after the sweep lists the store but
+    before it deletes; the sweep re-reads an expired entry first."""
+
+    class RefreshingStore(MemorySnapshotStore):
+        def items(self):
+            listed = super().items()
+            self.put(f"{kind}:slow", _snapshot("slow", "running", datetime.now(UTC)))
+            return listed
+
+    store = RefreshingStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=60, max_records=3)
+    stale = datetime.now(UTC) - timedelta(seconds=61)
+    store.put(f"{kind}:slow", _snapshot("slow", "running", stale))
+    store.put(f"{kind}:dead", _snapshot("dead", "running", stale))
+
+    manager.get("missing")
+
+    keys = {key for key, _ in store.items()}
+    assert keys == {f"{kind}:slow"}
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_concurrent_requests_share_one_sweep(kind):
+    """Pause one request between the throttle check and claiming the sweep,
+    and let a second request run meanwhile: the store is listed once."""
+    import inspect
+    import sys
+    import threading
+
+    class CountingStore(MemorySnapshotStore):
+        scans = 0
+
+        def items(self):
+            CountingStore.scans += 1
+            return super().items()
+
+    store = CountingStore()
+    manager = _manager_with_external_runner(
+        kind, store, ttl_seconds=60, max_records=3, sweep_interval=60.0
+    )
+    method = type(manager)._cleanup_snapshots
+    lines, start = inspect.getsourcelines(method)
+    claim_line = start + next(
+        i for i, line in enumerate(lines) if "self._last_snapshot_sweep = now" in line
+    )
+    other = threading.Thread(target=manager.get, args=("missing",))
+
+    def trace(frame, event, arg):
+        if (
+            frame.f_code is method.__code__
+            and event == "line"
+            and frame.f_lineno == claim_line
+            and not other.is_alive()
+            and other.ident is None
+        ):
+            other.start()
+            # Fixed code holds the lock here, so the other request waits.
+            other.join(timeout=0.5)
+        return trace
+
+    sys.settrace(trace)
+    try:
+        manager.get("missing")
+    finally:
+        sys.settrace(None)
+    other.join(timeout=10)
+
+    assert not other.is_alive()
+    assert CountingStore.scans == 1
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_local_capacity_counts_only_finished_records(kind):
+    """Queued and running jobs in this container's registry must not evict
+    the newest finished results (or their shared snapshots)."""
+    from eggnest.simulation_jobs import _CoreJobRecord, _JobRecord
+
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=600, max_records=3)
+    now = datetime.now(UTC)
+
+    def record(job_id: str, status: str, moment: datetime):
+        stamp = _iso(moment)
+        done = stamp if status == "succeeded" else None
+        if kind == "core":
+            return _CoreJobRecord(
+                job_id=job_id,
+                scenario=build_us_retirement_scenario(small_input()),
+                status=status,
+                progress=1.0 if done else 0.0,
+                current_year=None,
+                total_years=None,
+                message=None,
+                year_summary=None,
+                result=None,
+                error=None,
+                created_at=stamp,
+                updated_at=stamp,
+                completed_at=done,
+            )
+        return _JobRecord(
+            job_id=job_id,
+            params=small_input(),
+            status=status,
+            current_year=0,
+            total_years=1,
+            progress=1.0 if done else 0.0,
+            message=None,
+            year_summary=None,
+            result=None,
+            error=None,
+            created_at=stamp,
+            updated_at=stamp,
+            completed_at=done,
+        )
+
+    for i in range(4):
+        manager._jobs[f"running-{i}"] = record(f"running-{i}", "running", now)
+    manager._jobs["done"] = record("done", "succeeded", now - timedelta(seconds=1))
+    store.put(f"{kind}:done", _snapshot("done", "succeeded", now, now))
+
+    manager.get("missing")
+
+    assert set(manager._jobs) == {f"running-{i}" for i in range(4)} | {"done"}
+    assert store.get(f"{kind}:done") is not None
