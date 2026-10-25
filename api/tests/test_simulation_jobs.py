@@ -519,17 +519,24 @@ def test_local_capacity_counts_only_finished_records(kind):
 @pytest.mark.parametrize("kind", ["core", "simulation"])
 def test_local_trim_keeps_unfinished_and_the_newest_finished(kind):
     """Exhaustively over small registries: a trim keeps every unfinished
-    record and exactly the newest ``max_records`` finished ones, with their
-    shared snapshots, whatever the mix (e.g. cap 3 with 2 running and 2
-    finished keeps all four)."""
+    record and exactly the newest ``max_records`` finished ones, and deletes
+    the trimmed records' shared snapshots itself, whatever the mix (e.g. cap
+    3 with 2 running and 2 finished keeps all four)."""
     now = datetime.now(UTC)
     for max_records in range(1, 5):
         for n_running in range(6):
             for n_finished in range(7):
                 store = MemorySnapshotStore()
                 manager = _manager_with_external_runner(
-                    kind, store, ttl_seconds=600, max_records=max_records
+                    kind,
+                    store,
+                    ttl_seconds=600,
+                    max_records=max_records,
+                    sweep_interval=3600.0,
                 )
+                # Hold off the shared-store sweep, which would also trim the
+                # snapshots, so only the local trim's own deletions count.
+                manager._last_snapshot_sweep = now
                 for i in range(n_running):
                     job_id = f"running-{i}"
                     manager._jobs[job_id] = _local_record(kind, job_id, "running", now)
