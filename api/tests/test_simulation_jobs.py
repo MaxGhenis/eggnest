@@ -478,57 +478,90 @@ def test_concurrent_requests_share_one_sweep(kind):
     assert CountingStore.scans == 1
 
 
+def _local_record(kind: str, job_id: str, status: str, moment: datetime):
+    """A record in a manager's local registry, as submit() would create it."""
+    from eggnest.simulation_jobs import _CoreJobRecord, _JobRecord
+
+    stamp = _iso(moment)
+    done = stamp if status in {"succeeded", "failed"} else None
+    common = {
+        "job_id": job_id,
+        "status": status,
+        "progress": 1.0 if done else 0.0,
+        "message": None,
+        "year_summary": None,
+        "result": None,
+        "error": None,
+        "created_at": stamp,
+        "updated_at": stamp,
+        "completed_at": done,
+    }
+    if kind == "core":
+        return _CoreJobRecord(
+            scenario=build_us_retirement_scenario(small_input()),
+            current_year=None,
+            total_years=None,
+            **common,
+        )
+    return _JobRecord(params=small_input(), current_year=0, total_years=1, **common)
+
+
 @pytest.mark.parametrize("kind", ["core", "simulation"])
 def test_local_capacity_counts_only_finished_records(kind):
     """Queued and running jobs in this container's registry must not evict
     the newest finished results (or their shared snapshots)."""
-    from eggnest.simulation_jobs import _CoreJobRecord, _JobRecord
-
     store = MemorySnapshotStore()
     manager = _manager_with_external_runner(kind, store, ttl_seconds=600, max_records=3)
     now = datetime.now(UTC)
 
-    def record(job_id: str, status: str, moment: datetime):
-        stamp = _iso(moment)
-        done = stamp if status == "succeeded" else None
-        if kind == "core":
-            return _CoreJobRecord(
-                job_id=job_id,
-                scenario=build_us_retirement_scenario(small_input()),
-                status=status,
-                progress=1.0 if done else 0.0,
-                current_year=None,
-                total_years=None,
-                message=None,
-                year_summary=None,
-                result=None,
-                error=None,
-                created_at=stamp,
-                updated_at=stamp,
-                completed_at=done,
-            )
-        return _JobRecord(
-            job_id=job_id,
-            params=small_input(),
-            status=status,
-            current_year=0,
-            total_years=1,
-            progress=1.0 if done else 0.0,
-            message=None,
-            year_summary=None,
-            result=None,
-            error=None,
-            created_at=stamp,
-            updated_at=stamp,
-            completed_at=done,
-        )
-
     for i in range(4):
-        manager._jobs[f"running-{i}"] = record(f"running-{i}", "running", now)
-    manager._jobs["done"] = record("done", "succeeded", now - timedelta(seconds=1))
+        manager._jobs[f"running-{i}"] = _local_record(
+            kind, f"running-{i}", "running", now
+        )
+    done_at = now - timedelta(seconds=1)
+    manager._jobs["done"] = _local_record(kind, "done", "succeeded", done_at)
     store.put(f"{kind}:done", _snapshot("done", "succeeded", now, now))
 
     manager.get("missing")
 
     assert set(manager._jobs) == {f"running-{i}" for i in range(4)} | {"done"}
     assert store.get(f"{kind}:done") is not None
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_local_trim_keeps_unfinished_and_the_newest_finished(kind):
+    """Exhaustively over small registries: a trim keeps every unfinished
+    record and exactly the newest ``max_records`` finished ones, with their
+    shared snapshots, whatever the mix (e.g. cap 3 with 2 running and 2
+    finished keeps all four)."""
+    now = datetime.now(UTC)
+    for max_records in range(1, 5):
+        for n_running in range(6):
+            for n_finished in range(7):
+                store = MemorySnapshotStore()
+                manager = _manager_with_external_runner(
+                    kind, store, ttl_seconds=600, max_records=max_records
+                )
+                for i in range(n_running):
+                    job_id = f"running-{i}"
+                    manager._jobs[job_id] = _local_record(kind, job_id, "running", now)
+                for i in range(n_finished):
+                    job_id = f"done-{i}"
+                    moment = now - timedelta(seconds=n_finished - i)
+                    status = "failed" if i % 2 else "succeeded"
+                    manager._jobs[job_id] = _local_record(kind, job_id, status, moment)
+                    store.put(
+                        f"{kind}:{job_id}",
+                        _snapshot(job_id, status, moment, moment),
+                    )
+
+                manager.get("missing")
+
+                kept = range(max(n_finished - max_records, 0), n_finished)
+                newest = {f"done-{i}" for i in kept}
+                running = {f"running-{i}" for i in range(n_running)}
+                case = (max_records, n_running, n_finished)
+                assert set(manager._jobs) == running | newest, case
+                assert {key for key, _ in store.items()} == {
+                    f"{kind}:{job_id}" for job_id in newest
+                }, case
