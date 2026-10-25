@@ -40,6 +40,14 @@ export function formatPct1(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+/** formatShare to one decimal: a non-zero share never reads "0.0%" and a
+ *  share short of all paths never reads "100.0%". */
+export function formatShare1(value: number): string {
+  if (value > 0 && value < 0.0005) return "<0.1%";
+  if (value < 1 && value >= 0.9995) return ">99.9%";
+  return formatPct1(value);
+}
+
 /** A ten-year measure needs more than ten simulated years to mean anything. */
 export function hasTenYearHorizon(result: UKSimulationResult): boolean {
   return (result.percentile_paths?.p50?.length ?? 0) > 10;
@@ -84,7 +92,7 @@ export function summarizeUKOutcome(
     metrics: [
       {
         label: unmet ? "Shortfall within 10 years" : "10-year depletion",
-        value: tenYear ? formatPct1(result.prob_10_year_failure) : "—",
+        value: tenYear ? formatShare1(result.prob_10_year_failure) : "—",
         detail: tenYear
           ? unmet
             ? "Chance spending first falls short"
@@ -97,19 +105,19 @@ export function summarizeUKOutcome(
         detail: "Ignoring mortality",
       },
       {
-        label: "First-year withdrawal",
+        label: "Spending rate",
         value: `${result.initial_withdrawal_rate.toFixed(1)}%`,
-        detail: "Of starting portfolio",
+        detail: "Annual spending ÷ starting portfolio",
       },
       {
         label: "Lifetime tax",
         value: formatGBP(lifetimeTax),
-        detail: "Sum of yearly medians · income tax & NI",
+        detail: `Income tax & NI · sum of yearly medians to age ${input.max_age}, in cash terms`,
       },
     ],
     sippLockedNote:
       locked > 0
-        ? `${locked < 0.1 ? formatPct1(locked) : formatShare(locked)} of paths fall short ` +
+        ? `${locked < 0.1 ? formatShare1(locked) : formatShare(locked)} of paths fall short ` +
           `before age ${UK_MINIMUM_PENSION_AGE} while money is still in the SIPP, ` +
           `which can't be drawn until then.`
         : null,

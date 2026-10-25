@@ -14,13 +14,14 @@ cd api
 uv sync --all-extras  # dev extra: pytest, pytest-xdist, Hypothesis
 uv run uvicorn main:app --reload --port 8000
 
-# Run tests
-uv run pytest tests/ -n 4 --dist loadfile
+# Run tests (the three US simulator files peak near 9 GB per test on
+# policyengine-us 2.x, so CI runs them one at a time; see ci.yml)
+uv run pytest tests/ -n 4 --dist loadfile --ignore=tests/test_simulation.py --ignore=tests/test_simulation_correctness.py --ignore=tests/test_simulation_holdings.py
 uv run pytest tests/test_simulation.py -v  # Single test file
 HYPOTHESIS_PROFILE=thorough uv run pytest tests/test_household_net_income.py  # 400 examples per property
 
-# After changing uv.lock, regenerate the Modal image requirements (CI checks this)
-uv export --frozen --no-dev --no-emit-project --no-hashes --no-header -o requirements-modal.txt
+# The Modal image installs its own package list (api/modal_app.py); keep it
+# in step with pyproject.toml
 
 # Linting
 uv run black .

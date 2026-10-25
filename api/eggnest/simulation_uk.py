@@ -553,7 +553,8 @@ def _iterate_years(
             state.tfc_used = state.tfc_used + tax_free_cash
             direct_tax = income_tax + employee_ni
             tax = UKYearResults(
-                net_income=non_wrapper_income + sipp_draw - tax_free_cash - direct_tax,
+                # Gross income here includes the whole draw, tax-free cash too.
+                net_income=non_wrapper_income + sipp_draw - direct_tax,
                 total_tax=direct_tax,
                 income_tax=income_tax,
                 employee_ni=employee_ni,

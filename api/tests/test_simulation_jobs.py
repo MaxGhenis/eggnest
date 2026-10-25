@@ -60,6 +60,28 @@ def small_input() -> SimulationInput:
     )
 
 
+# Jobs run a real PolicyEngine simulation, so polls wait on wall-clock time
+# rather than a poll count a loaded host can exhaust before the job ends.
+POLL_TIMEOUT_SECONDS = 120.0
+
+
+def _poll_until_finished(read, status=lambda data: data["status"]):
+    deadline = time.monotonic() + POLL_TIMEOUT_SECONDS
+    data = read()
+    while status(data) not in {"succeeded", "failed"}:
+        if time.monotonic() > deadline:
+            break
+        time.sleep(0.05)
+        data = read()
+    return data
+
+
+def _get_json(path: str) -> dict:
+    response = client.get(path)
+    assert response.status_code == 200
+    return response.json()
+
+
 def test_simulation_job_runs_to_completion():
     response = client.post("/simulate/jobs", json=small_input().model_dump())
 
@@ -69,14 +91,7 @@ def test_simulation_job_runs_to_completion():
     assert created["total_years"] == 1
 
     job_id = created["job_id"]
-    data = created
-    for _ in range(100):
-        poll = client.get(f"/simulate/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["status"] in {"succeeded", "failed"}:
-            break
-        time.sleep(0.05)
+    data = _poll_until_finished(lambda: _get_json(f"/simulate/jobs/{job_id}"))
 
     assert data["status"] == "succeeded"
     assert data["progress"] == 1
@@ -103,14 +118,7 @@ def test_core_job_returns_stable_envelope():
     assert created["total_years"] == 1
 
     job_id = created["job_id"]
-    data = created
-    for _ in range(100):
-        poll = client.get(f"/core/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["status"] in {"succeeded", "failed"}:
-            break
-        time.sleep(0.05)
+    data = _poll_until_finished(lambda: _get_json(f"/core/jobs/{job_id}"))
 
     assert data["status"] == "succeeded"
     assert data["progress"] == 1
@@ -149,14 +157,13 @@ def test_core_job_status_can_be_read_from_shared_store():
     assert data.job_id == created.job_id
     assert data.status in {"queued", "running"}
 
-    for _ in range(100):
+    def read():
         data = reader.get(created.job_id)
         assert data is not None
-        if data.status in {"succeeded", "failed"}:
-            break
-        time.sleep(0.05)
+        return data
 
-    assert data is not None
+    data = _poll_until_finished(read, status=lambda data: data.status)
+
     assert data.status == "succeeded"
     assert data.result is not None
     assert data.result.outputs[OUTPUT_KEY]["success_rate"] == 1.0
@@ -379,3 +386,170 @@ def test_shared_store_sweep_is_throttled(kind):
     store.put(f"{kind}:b", _snapshot("b", "succeeded", old, old))
     manager.get("missing")  # within the interval: no second sweep
     assert [key for key, _ in store.items()] == [f"{kind}:b"]
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_snapshot_refreshed_during_a_sweep_survives(kind):
+    """A worker can refresh its snapshot after the sweep lists the store but
+    before it deletes; the sweep re-reads an expired entry first."""
+
+    class RefreshingStore(MemorySnapshotStore):
+        def items(self):
+            listed = super().items()
+            self.put(f"{kind}:slow", _snapshot("slow", "running", datetime.now(UTC)))
+            return listed
+
+    store = RefreshingStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=60, max_records=3)
+    stale = datetime.now(UTC) - timedelta(seconds=61)
+    store.put(f"{kind}:slow", _snapshot("slow", "running", stale))
+    store.put(f"{kind}:dead", _snapshot("dead", "running", stale))
+
+    manager.get("missing")
+
+    keys = {key for key, _ in store.items()}
+    assert keys == {f"{kind}:slow"}
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_concurrent_requests_share_one_sweep(kind):
+    """Pause one request between the throttle check and claiming the sweep,
+    and let a second request run meanwhile: the store is listed once."""
+    import inspect
+    import sys
+    import threading
+
+    class CountingStore(MemorySnapshotStore):
+        scans = 0
+
+        def items(self):
+            CountingStore.scans += 1
+            return super().items()
+
+    store = CountingStore()
+    manager = _manager_with_external_runner(
+        kind, store, ttl_seconds=60, max_records=3, sweep_interval=60.0
+    )
+    method = type(manager)._cleanup_snapshots
+    lines, start = inspect.getsourcelines(method)
+    claim_line = start + next(
+        i for i, line in enumerate(lines) if "self._last_snapshot_sweep = now" in line
+    )
+    other = threading.Thread(target=manager.get, args=("missing",))
+    lock_held_at_claim = []
+
+    def trace(frame, event, arg):
+        if (
+            frame.f_code is method.__code__
+            and event == "line"
+            and frame.f_lineno == claim_line
+            and not other.is_alive()
+            and other.ident is None
+        ):
+            # Deterministic whatever the scheduling: the claim is made under
+            # the manager's lock.
+            lock_held_at_claim.append(manager._lock.locked())
+            other.start()
+            # Fixed code holds the lock here, so the other request waits.
+            other.join(timeout=0.5)
+        return trace
+
+    sys.settrace(trace)
+    try:
+        manager.get("missing")
+    finally:
+        sys.settrace(None)
+    other.join(timeout=10)
+
+    assert lock_held_at_claim == [True]
+    assert not other.is_alive()
+    assert CountingStore.scans == 1
+
+
+def _local_record(kind: str, job_id: str, status: str, moment: datetime):
+    """A record in a manager's local registry, as submit() would create it."""
+    from eggnest.simulation_jobs import _CoreJobRecord, _JobRecord
+
+    stamp = _iso(moment)
+    done = stamp if status in {"succeeded", "failed"} else None
+    common = {
+        "job_id": job_id,
+        "status": status,
+        "progress": 1.0 if done else 0.0,
+        "message": None,
+        "year_summary": None,
+        "result": None,
+        "error": None,
+        "created_at": stamp,
+        "updated_at": stamp,
+        "completed_at": done,
+    }
+    if kind == "core":
+        return _CoreJobRecord(
+            scenario=build_us_retirement_scenario(small_input()),
+            current_year=None,
+            total_years=None,
+            **common,
+        )
+    return _JobRecord(params=small_input(), current_year=0, total_years=1, **common)
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_local_capacity_counts_only_finished_records(kind):
+    """Queued and running jobs in this container's registry must not evict
+    the newest finished results (or their shared snapshots)."""
+    store = MemorySnapshotStore()
+    manager = _manager_with_external_runner(kind, store, ttl_seconds=600, max_records=3)
+    now = datetime.now(UTC)
+
+    for i in range(4):
+        manager._jobs[f"running-{i}"] = _local_record(
+            kind, f"running-{i}", "running", now
+        )
+    done_at = now - timedelta(seconds=1)
+    manager._jobs["done"] = _local_record(kind, "done", "succeeded", done_at)
+    store.put(f"{kind}:done", _snapshot("done", "succeeded", now, now))
+
+    manager.get("missing")
+
+    assert set(manager._jobs) == {f"running-{i}" for i in range(4)} | {"done"}
+    assert store.get(f"{kind}:done") is not None
+
+
+@pytest.mark.parametrize("kind", ["core", "simulation"])
+def test_local_trim_keeps_unfinished_and_the_newest_finished(kind):
+    """Exhaustively over small registries: a trim keeps every unfinished
+    record and exactly the newest ``max_records`` finished ones, with their
+    shared snapshots, whatever the mix (e.g. cap 3 with 2 running and 2
+    finished keeps all four)."""
+    now = datetime.now(UTC)
+    for max_records in range(1, 5):
+        for n_running in range(6):
+            for n_finished in range(7):
+                store = MemorySnapshotStore()
+                manager = _manager_with_external_runner(
+                    kind, store, ttl_seconds=600, max_records=max_records
+                )
+                for i in range(n_running):
+                    job_id = f"running-{i}"
+                    manager._jobs[job_id] = _local_record(kind, job_id, "running", now)
+                for i in range(n_finished):
+                    job_id = f"done-{i}"
+                    moment = now - timedelta(seconds=n_finished - i)
+                    status = "failed" if i % 2 else "succeeded"
+                    manager._jobs[job_id] = _local_record(kind, job_id, status, moment)
+                    store.put(
+                        f"{kind}:{job_id}",
+                        _snapshot(job_id, status, moment, moment),
+                    )
+
+                manager.get("missing")
+
+                kept = range(max(n_finished - max_records, 0), n_finished)
+                newest = {f"done-{i}" for i in kept}
+                running = {f"running-{i}" for i in range(n_running)}
+                case = (max_records, n_running, n_finished)
+                assert set(manager._jobs) == running | newest, case
+                assert {key for key, _ in store.items()} == {
+                    f"{kind}:{job_id}" for job_id in newest
+                }, case

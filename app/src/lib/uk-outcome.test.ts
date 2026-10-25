@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { UKSimulationInput, UKSimulationResult, UKYearBreakdown } from "./api-uk";
 import {
   formatShare,
+  formatShare1,
   hasTenYearHorizon,
   scoresUnmetSpending,
   summarizeUKOutcome,
@@ -96,12 +97,18 @@ describe("summarizeUKOutcome", () => {
       value: "88%",
       detail: "Ignoring mortality",
     });
-    expect(firstYear.value).toBe("8.6%");
+    // The API's initial_withdrawal_rate is spending over the starting
+    // portfolio, so it is labelled as that rather than as a withdrawal.
+    expect(firstYear).toEqual({
+      label: "Spending rate",
+      value: "8.6%",
+      detail: "Annual spending ÷ starting portfolio",
+    });
     // 26 years x £2,000 of yearly median tax.
     expect(tax).toEqual({
       label: "Lifetime tax",
       value: "£52k",
-      detail: "Sum of yearly medians · income tax & NI",
+      detail: "Income tax & NI · sum of yearly medians to age 90, in cash terms",
     });
   });
 
@@ -133,6 +140,11 @@ describe("summarizeUKOutcome", () => {
       summarizeUKOutcome(input, resultWithYears(26, { sipp_locked_shortfall_rate: 0.004 }))
         .sippLockedNote,
     ).toMatch(/^0\.4% of paths/);
+    // One path in 50,000 (the API's maximum) still reads as some paths.
+    expect(
+      summarizeUKOutcome(input, resultWithYears(26, { sipp_locked_shortfall_rate: 1 / 50_000 }))
+        .sippLockedNote,
+    ).toMatch(/^<0\.1% of paths/);
   });
 
   it("keeps the depletion wording for an API that predates unmet spending", () => {
@@ -148,7 +160,7 @@ describe("summarizeUKOutcome", () => {
     expect(summary.metrics.map((metric) => metric.label)).toEqual([
       "10-year depletion",
       "Lasts to age 90",
-      "First-year withdrawal",
+      "Spending rate",
       "Lifetime tax",
     ]);
     expect(summary.sippLockedNote).toBeNull();
@@ -161,6 +173,23 @@ describe("summarizeUKOutcome", () => {
     );
     expect(nearlyAll.headline.value).toBe(">99%");
     expect(nearlyAll.metrics[1].value).toBe("<1%");
+    const rareShortfall = summarizeUKOutcome(
+      input,
+      resultWithYears(26, { prob_10_year_failure: 1 / 50_000 }),
+    );
+    expect(rareShortfall.metrics[0].value).toBe("<0.1%");
+  });
+});
+
+describe("formatShare1", () => {
+  it("keeps one decimal except at the extremes", () => {
+    expect(formatShare1(0)).toBe("0.0%");
+    expect(formatShare1(0.0004)).toBe("<0.1%");
+    expect(formatShare1(0.0005)).toBe("0.1%");
+    expect(formatShare1(0.043)).toBe("4.3%");
+    expect(formatShare1(0.9994)).toBe("99.9%");
+    expect(formatShare1(0.9995)).toBe(">99.9%");
+    expect(formatShare1(1)).toBe("100.0%");
   });
 });
 
