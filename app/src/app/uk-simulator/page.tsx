@@ -453,7 +453,7 @@ function InputsPanel({
         />
         {totalPortfolio > 0 && input.annual_spending > 0 && (
           <div className="-mt-2 text-xs text-[var(--color-text-light)]">
-            Initial withdrawal rate:{" "}
+            Spending ÷ portfolio:{" "}
             <span
               className={`font-semibold ${withdrawalRate > 4.5 ? "text-[var(--color-warning)]" : "text-[var(--color-success)]"}`}
             >
