@@ -55,7 +55,12 @@ from .state_pension_age import (
     whole_months_between,
 )
 from .state_pension_age import SCHEDULE_URL as SPA_SCHEDULE_URL
-from .tax_uk import UKYearInputs, UKYearResults, get_uk_tax_calculator
+from .tax_uk import (
+    UKYearInputs,
+    UKYearResults,
+    get_uk_tax_calculator,
+    uk_tax_engine_name,
+)
 
 UKTaxCalculator = Callable[[UKYearInputs], UKYearResults]
 
@@ -872,7 +877,8 @@ def _pension_credit_screen(
 
     alive = np.array([year.alive for year, _ in screened])
     share = np.array([share for _, share in screened])[:, None]
-    amounts = screen["annual_amount"].reshape(len(screened), n_paths) * share * alive
+    full_year = screen["annual_amount"].reshape(len(screened), n_paths)
+    amounts = full_year * share * alive
     indicated = amounts >= 0.01
     ever = indicated.any(axis=0)
     first_ages = np.array([year.age for year, _ in screened])[indicated.argmax(axis=0)]
@@ -893,6 +899,9 @@ def _pension_credit_screen(
             round(float(np.median(row[flags])), 2) if flags.any() else 0.0
             for row, flags in zip(amounts, indicated, strict=True)
         ],
+        median_annual_amount=(
+            round(float(np.median(full_year[indicated])), 2) if ever.any() else 0.0
+        ),
         first_age_indicated=(
             int(np.floor(np.median(first_ages[ever]) + 0.5)) if ever.any() else None
         ),
@@ -912,6 +921,7 @@ def _assemble_result(
     tax_over_time: np.ndarray,
     earnings_over_time: np.ndarray,
     start_years: np.ndarray | None,
+    tax_engine: str = "policyengine-uk-compiled",
     pension_credit=None,
 ) -> UKSimulationResult:
     final_portfolio = final_state.gia + final_state.isa + final_state.sipp
@@ -951,6 +961,7 @@ def _assemble_result(
             "current_age": inputs.current_age,
             "max_age": inputs.max_age,
             "random_seed": inputs.random_seed,
+            "tax_engine": tax_engine,
         },
         success_rate=float(np.mean(final_state.failure_year == -1)),
         strict_horizon_success_rate=float(
@@ -1000,9 +1011,8 @@ def run_uk_simulation_with_progress(
     pension_credit_sample = _pension_credit_sample(n_sims)
     pension_credit_years: list[_PensionCreditYear] = []
 
-    for breakdown, state, flows, sy in _iterate_years(
-        inputs, rng, tax_calculator or get_uk_tax_calculator(), today
-    ):
+    calculator = tax_calculator or get_uk_tax_calculator()
+    for breakdown, state, flows, sy in _iterate_years(inputs, rng, calculator, today):
         year_idx = flows.year_index
         pension_credit_years.append(
             _pension_credit_year(
@@ -1030,6 +1040,7 @@ def run_uk_simulation_with_progress(
         tax_over_time,
         earnings_over_time,
         start_years,
+        tax_engine=uk_tax_engine_name(calculator),
         pension_credit=_pension_credit_screen(
             pension_credit_years,
             assumed_birth_date(inputs.current_age, today),

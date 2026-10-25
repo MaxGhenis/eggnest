@@ -98,6 +98,19 @@ describe("summarizePensionCredit", () => {
       summarizePensionCredit(screened({ share_of_paths_indicated: 0.004 }), 90).headline,
     ).toMatch(/^In 0\.4% of 500/);
   });
+
+  it("never rounds a share short of every path to 100%", () => {
+    expect(
+      summarizePensionCredit(screened({ share_of_paths_indicated: 499 / 500 }), 90).headline,
+    ).toMatch(/^In >99% of 500/);
+  });
+
+  it("quotes the path-year median credit when the API reports it", () => {
+    const summary = summarizePensionCredit(screened({ median_annual_amount: 2_600 }), 90);
+    expect(summary.detail).toMatch(/around £3k\/year/);
+    // Without it, the median of the per-age medians (£1,100) is used.
+    expect(summarizePensionCredit(screened(), 90).detail).toMatch(/around £1k\/year/);
+  });
 });
 
 describe("citationLabel", () => {

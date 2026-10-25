@@ -17,7 +17,11 @@ from eggnest.simulation_uk import (
     UNMET_TOLERANCE,
     run_uk_simulation,
 )
-from eggnest.tax_uk import LATEST_PARAMETER_YEAR
+from eggnest.tax_uk import (
+    AXIOM_UK_TAX_ENGINE,
+    LATEST_PARAMETER_YEAR,
+    POLICYENGINE_UK_TAX_ENGINE,
+)
 
 from .schemas import (
     SCENARIO_SCHEMA_VERSION,
@@ -75,23 +79,37 @@ def build_uk_retirement_result(
         citations = [
             Citation(id=ref.id, url=ref.url) for ref in result.pension_credit.citations
         ]
+    tax_engine = result.metadata.get("tax_engine", POLICYENGINE_UK_TAX_ENGINE)
+    axiom_tax = tax_engine == AXIOM_UK_TAX_ENGINE
+    # The Axiom engine runs the tax, the Pension Credit screen, or both.
+    axiom_versions = {}
+    if axiom_tax or result.pension_credit is not None:
+        from eggnest import axiom_uk
+
+        axiom_versions = axiom_uk.versions()
+    tax_engine_versions = (
+        dict(axiom_versions)
+        if axiom_tax
+        else {
+            POLICYENGINE_UK_TAX_ENGINE: package_version("policyengine-uk-compiled"),
+            **axiom_versions,
+        }
+    )
     return EngineResult(
         scenario_schema_version=scenario.schema_version,
         engine=ENGINE_ID,
         country=ENGINE_COUNTRY,
-        assumptions=_assumptions(inputs),
+        assumptions=_assumptions(inputs, axiom_tax=axiom_tax),
         outputs={OUTPUT_KEY: result.model_dump()},
         citations=citations,
-        sources=_sources(),
-        caveats=_caveats(inputs),
+        sources=_sources(axiom_tax=axiom_tax, axiom_versions=axiom_versions),
+        caveats=_caveats(inputs, axiom_tax=axiom_tax),
         reproducibility=Reproducibility(
             engine_version=ENGINE_VERSION,
             model_version=__version__,
             random_seed=inputs.random_seed,
-            parameter_year=LATEST_PARAMETER_YEAR,
-            tax_engine_versions={
-                "policyengine-uk-compiled": package_version("policyengine-uk-compiled")
-            },
+            parameter_year=None if axiom_tax else LATEST_PARAMETER_YEAR,
+            tax_engine_versions=tax_engine_versions,
         ),
     )
 
@@ -115,7 +133,7 @@ def _normalize_scenario(
     return scenario, inputs
 
 
-def _assumptions(inputs: UKSimulationInput) -> dict[str, Any]:
+def _assumptions(inputs: UKSimulationInput, *, axiom_tax: bool) -> dict[str, Any]:
     return {
         "currency": "GBP",
         "spending_mode": inputs.spending_mode,
@@ -123,8 +141,13 @@ def _assumptions(inputs: UKSimulationInput) -> dict[str, Any]:
         "equity_weight": inputs.equity_weight,
         "earnings_model": inputs.earnings_model,
         "include_mortality": inputs.include_mortality,
+        "tax_engine": AXIOM_UK_TAX_ENGINE if axiom_tax else POLICYENGINE_UK_TAX_ENGINE,
         "tax_parameter_year_policy": (
-            f"Years after {LATEST_PARAMETER_YEAR} use the latest available "
+            "Each tax year uses the rulespec-uk parameter versions in effect "
+            "at its start (the latest encoded version for later years), with "
+            "the cited runtime values in eggnest/data/axiom_uk_parameters.yaml."
+            if axiom_tax
+            else f"Years after {LATEST_PARAMETER_YEAR} use the latest available "
             "PolicyEngine UK compiled parameters."
         ),
         "account_rules": {
@@ -143,17 +166,39 @@ def _assumptions(inputs: UKSimulationInput) -> dict[str, Any]:
     }
 
 
-def _sources() -> list[ModelSource]:
-    return [
-        ModelSource(
-            name="PolicyEngine UK compiled",
-            url="https://github.com/PolicyEngine/policyengine-uk-compiled",
-            version=package_version("policyengine-uk-compiled"),
-            notes=(
-                "Computes UK income tax (including dividend tax) and employee "
-                "National Insurance for each person."
+def _sources(*, axiom_tax: bool, axiom_versions: dict[str, str]) -> list[ModelSource]:
+    tax_notes = (
+        "Computes UK income tax (including dividend tax) and employee "
+        "National Insurance for each person."
+    )
+    sources = []
+    if not axiom_tax:
+        sources.append(
+            ModelSource(
+                name="PolicyEngine UK compiled",
+                url="https://github.com/PolicyEngine/policyengine-uk-compiled",
+                version=package_version("policyengine-uk-compiled"),
+                notes=tax_notes,
+            )
+        )
+    if axiom_versions:
+        uses = [tax_notes] if axiom_tax else []
+        uses.append("Screens Pension Credit guarantee credit (pension_credit).")
+        sources += [
+            ModelSource(
+                name="Axiom rules engine",
+                url="https://github.com/TheAxiomFoundation/axiom-rules-engine",
+                version=axiom_versions.get("axiom-rules-engine"),
+                notes=" ".join(uses),
             ),
-        ),
+            ModelSource(
+                name="rulespec-uk",
+                url="https://github.com/TheAxiomFoundation/rulespec-uk",
+                version=axiom_versions.get("rulespec-uk"),
+                notes="Statute encodings the Axiom rules engine executes.",
+            ),
+        ]
+    return sources + [
         ModelSource(
             name="JST Macrohistory Database",
             url="https://www.macrohistory.net/database/",
@@ -172,11 +217,15 @@ def _sources() -> list[ModelSource]:
     ]
 
 
-def _caveats(inputs: UKSimulationInput) -> list[str]:
+def _caveats(inputs: UKSimulationInput, *, axiom_tax: bool = False) -> list[str]:
     caveats = [
         "Educational calculator output only; not financial, tax, or legal advice.",
         "Single-person UK simulator; couples, annuities, and means-tested benefits are not yet modeled.",
-        "Future tax years beyond available PolicyEngine UK parameters use the latest available parameter year.",
+        (
+            "Future tax years beyond the encoded rulespec-uk parameter versions use the latest encoded version."
+            if axiom_tax
+            else "Future tax years beyond available PolicyEngine UK parameters use the latest available parameter year."
+        ),
         "Net income is income less income tax and employee National Insurance; benefits such as Pension Credit and Universal Credit are not added.",
         "Neither the State Pension nor earnings is uprated with inflation: the State Pension stays at its input amount and earnings follow the chosen earnings model.",
         "GIA sales are modeled without Capital Gains Tax, and pension contributions without tax relief.",
@@ -184,7 +233,7 @@ def _caveats(inputs: UKSimulationInput) -> list[str]:
         "SIPP money cannot be drawn before the minimum pension age; spending it cannot cover counts as unmet (sipp_locked_shortfall_rate).",
     ]
     caveats.append(
-        "pension_credit, when present, is a guarantee credit screen (State Pension Credit Act 2002 s.2; SI 2002/1792 regs 6 and 15(6)) of up to 500 simulated paths, not a benefits decision; it omits notional income from undrawn pension pots (reg 18), savings credit and housing costs, and is never added to spendable income."
+        "pension_credit, when present, is a guarantee credit screen (State Pension Credit Act 2002 s.2; SI 2002/1792 regs 6 and 15(6)) of up to 500 simulated paths, not a benefits decision. It counts the State Pension from the qualifying age even when its claim is deferred (reg 18(1)) and compares every simulated year with today's minimum guarantee, using that year's nominal income and capital. It omits notional income from undrawn pension pots (reg 18), savings credit and housing costs, and is never added to spendable income."
     )
     if inputs.include_mortality:
         caveats.append(

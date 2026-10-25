@@ -1,7 +1,7 @@
 /** Copy for the UK simulator's Pension Credit (guarantee credit) screen. */
 
 import type { UKPensionCreditScreen } from "./api-uk";
-import { formatGBP, formatPct, formatPct1 } from "./uk-outcome";
+import { formatGBP, formatPct1, formatShare } from "./uk-outcome";
 
 export type PensionCreditTone = "indicated" | "clear" | "not_screened";
 
@@ -55,9 +55,11 @@ export function summarizePensionCredit(
     };
   }
 
+  // Older APIs lack the path-year median; fall back to the per-age medians.
   const amounts = screen.median_annual_amount_by_age.filter((amount) => amount > 0);
-  const typical = amounts.length ? median(amounts) : 0;
-  const shareText = share < 0.1 ? formatPct1(share) : formatPct(share);
+  const typical = screen.median_annual_amount ?? (amounts.length ? median(amounts) : 0);
+  // At most 500 paths are screened, so a non-zero share is at least 0.2%.
+  const shareText = share < 0.1 ? formatPct1(share) : formatShare(share);
   const from =
     screen.first_age_indicated != null ? `, typically from age ${screen.first_age_indicated}` : "";
   return {

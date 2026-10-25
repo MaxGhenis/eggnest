@@ -266,6 +266,14 @@ class UKPensionCreditScreen(BaseModel):
             "age (0 when none), pro rata in the year the qualifying age falls."
         ),
     )
+    median_annual_amount: float = Field(
+        default=0.0,
+        description=(
+            "Median guarantee credit across every path-year with credit "
+            "indicated, at its full-year rate (the qualifying year is not "
+            "pro rata here); 0 when none."
+        ),
+    )
     first_age_indicated: int | None = Field(
         default=None,
         description="Median first age with credit among indicated paths.",
@@ -324,7 +332,8 @@ class UKSimulationResult(BaseModel):
     pension_credit: UKPensionCreditScreen | None = Field(
         default=None,
         description=(
-            "Guarantee credit screening along the median path, computed from "
-            "statute encodings via the Axiom rules engine when available."
+            "Guarantee credit screening for up to 500 evenly spaced simulated "
+            "paths, computed from statute encodings via the Axiom rules "
+            "engine when it is configured; null otherwise."
         ),
     )

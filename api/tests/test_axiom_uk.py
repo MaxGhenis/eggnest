@@ -334,3 +334,30 @@ def test_full_new_state_pension_alone_gets_no_guarantee_credit():
     )
     assert screen["annual_amount"][0] == 0.0
     assert screen["annual_amount"][1] == pytest.approx((238.0 - 221.20) * 52)
+
+
+def test_axiom_tax_run_reports_its_engine(monkeypatch):
+    """With EGGNEST_UK_TAX_ENGINE=axiom the envelope names the Axiom engine
+    and the rulespec-uk revision, not PolicyEngine."""
+    from eggnest.core.uk_retirement import run_uk_retirement
+    from eggnest.models_uk import UKSimulationInput
+
+    monkeypatch.setenv("EGGNEST_UK_TAX_ENGINE", "axiom")
+    envelope = run_uk_retirement(
+        UKSimulationInput(
+            current_age=70,
+            max_age=70,
+            annual_spending=8_000,
+            state_pension_annual=6_000,
+            isa_balance=20_000,
+            n_simulations=100,
+            include_mortality=False,
+        )
+    )
+    assert envelope.outputs["uk_simulation_result"]["metadata"]["tax_engine"] == (
+        "axiom-rules-engine"
+    )
+    versions = envelope.reproducibility.tax_engine_versions
+    assert versions["axiom-rules-engine"].startswith("0.2.")
+    assert len(versions["rulespec-uk"]) == 40  # a git commit
+    assert "policyengine-uk-compiled" not in versions

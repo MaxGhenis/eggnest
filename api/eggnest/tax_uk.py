@@ -219,6 +219,19 @@ def calculate_uk_tax(inputs: UKYearInputs) -> UKYearResults:
     )
 
 
+POLICYENGINE_UK_TAX_ENGINE = "policyengine-uk-compiled"
+AXIOM_UK_TAX_ENGINE = "axiom-rules-engine"
+
+
+def uk_tax_engine_name(calculator) -> str:
+    """Which backend a UK tax calculator is, for result metadata."""
+    if calculator is calculate_uk_tax:
+        return POLICYENGINE_UK_TAX_ENGINE
+    if getattr(calculator, "__module__", None) == "eggnest.axiom_uk":
+        return AXIOM_UK_TAX_ENGINE
+    return getattr(calculator, "__name__", "custom")
+
+
 def get_uk_tax_calculator():
     """Resolve the UK tax backend from EGGNEST_UK_TAX_ENGINE.
 

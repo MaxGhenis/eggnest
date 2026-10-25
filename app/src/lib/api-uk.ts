@@ -102,6 +102,9 @@ export interface UKPensionCreditScreen {
   ages: number[];
   share_indicated_by_age: number[];
   median_annual_amount_by_age: number[];
+  /** Median credit over every indicated path-year, at a full-year rate.
+   *  Absent from APIs that predate it. */
+  median_annual_amount?: number;
   first_age_indicated: number | null;
   citations: UKCitationRef[];
 }

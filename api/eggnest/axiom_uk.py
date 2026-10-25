@@ -158,6 +158,33 @@ def available() -> bool:
     )
 
 
+def versions() -> dict[str, str]:
+    """The engine release and rulespec-uk revision in use, for result
+    metadata. Call only when available()."""
+    binary = engine_binary()
+    capabilities = _engine_capabilities(binary) if binary else None
+    found = {
+        "axiom-rules-engine": str((capabilities or {}).get("engine_version", "unknown"))
+    }
+    root = rulespec_uk_root()
+    revision = None
+    if root is not None:
+        try:
+            process = subprocess.run(
+                ["git", "-C", str(root), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            if process.returncode == 0:
+                revision = process.stdout.strip() or None
+        except (OSError, subprocess.TimeoutExpired):
+            revision = None
+    found["rulespec-uk"] = revision or "unknown"
+    return found
+
+
 @lru_cache(maxsize=1)
 def _statutory_inputs() -> dict:
     """Cited statutory values supplied as runtime inputs (see module doc)."""

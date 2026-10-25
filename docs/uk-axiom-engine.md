@@ -29,7 +29,11 @@ The adapter compiles each rule module once per process with
 `compile --program <root>/uk/<module> --rulespec-root <root>`.
 
 With the first two variables set, every UK simulation carries a Pension
-Credit screen, whichever tax backend is selected. `.github/workflows/ci.yml`
+Credit screen, whichever tax backend is selected. The result names the
+backend that computed the tax (`metadata.tax_engine`), and the core
+envelope's `assumptions.tax_engine`, `sources` and
+`reproducibility.tax_engine_versions` list the engines that ran, with the
+Axiom engine release and the rulespec-uk commit when Axiom was used. `.github/workflows/ci.yml`
 installs the pinned engine release (checking its SHA-256) and rulespec-uk
 commit and sets `EGGNEST_REQUIRE_AXIOM=1`, which makes `test_axiom_uk.py`
 fail rather than skip if the engine is missing.
@@ -97,8 +101,10 @@ in rulespec-uk has a single, current rate), using that year's nominal
 income and capital.
 
 The result reports the share of screened paths with credit indicated
-(overall and by age), the median credit where indicated, the median first
-age, and the qualifying age. A plan that ends before the qualifying age
+(overall and by age), the median credit by age where indicated, the
+median credit across every indicated path-year at its full-year rate
+(`median_annual_amount`, which the card quotes), the median first age,
+and the qualifying age. A plan that ends before the qualifying age
 returns `status: "under_qualifying_age"`. The screen is never added to
 spendable income or to success rates.
 

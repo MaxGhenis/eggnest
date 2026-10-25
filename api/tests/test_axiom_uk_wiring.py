@@ -262,6 +262,9 @@ def test_credit_is_pro_rata_in_the_qualifying_year(fake_engine):
     assert screen.median_annual_amount_by_age == pytest.approx(
         [round(full_year * share, 2), full_year], abs=0.01
     )
+    # The path-year median is a full-year rate, so the part year doesn't
+    # pull it down.
+    assert screen.median_annual_amount == pytest.approx(full_year, abs=0.01)
     assert screen.first_age_indicated == 66
 
 
@@ -276,6 +279,7 @@ def test_only_living_paths_count(fake_engine):
     assert screen.share_indicated_by_age == [0.5, 0.5]
     # The dead low-income path never counts as indicated.
     assert screen.share_of_paths_indicated == pytest.approx(1 / 3)
+    assert screen.median_annual_amount == pytest.approx((WEEKLY_GUARANTEE - 100) * 52)
 
 
 def test_savings_count_as_capital_not_their_income(fake_engine):
@@ -436,3 +440,72 @@ def test_qualifying_age_is_state_pension_age_for_recent_births():
         67,
         abs_tol=0.01,
     )
+
+
+# --- result metadata names the engines that ran -------------------------------
+
+FAKE_VERSIONS = {"axiom-rules-engine": "0.2.2", "rulespec-uk": "932390f"}
+
+
+def test_tax_backends_are_named():
+    from eggnest.tax_uk import uk_tax_engine_name
+
+    assert uk_tax_engine_name(calculate_uk_tax) == "policyengine-uk-compiled"
+    assert uk_tax_engine_name(axiom_uk.calculate_uk_tax_axiom) == "axiom-rules-engine"
+
+
+def _envelope_input():
+    return UKSimulationInput(
+        current_age=70,
+        max_age=70,
+        annual_spending=8_000,
+        state_pension_annual=6_000,
+        isa_balance=20_000,
+        n_simulations=100,
+        include_mortality=False,
+    )
+
+
+def test_envelope_names_policyengine_tax_and_the_axiom_screen(
+    fake_engine, monkeypatch
+):
+    monkeypatch.delenv("EGGNEST_UK_TAX_ENGINE", raising=False)
+    monkeypatch.setattr(axiom_uk, "versions", lambda: dict(FAKE_VERSIONS))
+    envelope = run_uk_retirement(_envelope_input())
+
+    result = envelope.outputs["uk_simulation_result"]
+    assert result["metadata"]["tax_engine"] == "policyengine-uk-compiled"
+    assert result["pension_credit"] is not None
+    versions = envelope.reproducibility.tax_engine_versions
+    assert set(versions) == {"policyengine-uk-compiled", *FAKE_VERSIONS}
+    assert envelope.reproducibility.parameter_year is not None
+    assert envelope.assumptions["tax_engine"] == "policyengine-uk-compiled"
+    axiom = next(s for s in envelope.sources if s.name == "Axiom rules engine")
+    assert axiom.version == "0.2.2"
+    assert "income tax" not in axiom.notes  # it only screens here
+    assert any(s.name == "PolicyEngine UK compiled" for s in envelope.sources)
+
+
+def test_envelope_names_axiom_when_it_computes_the_tax(monkeypatch):
+    from eggnest.core.uk_retirement import (
+        build_uk_retirement_result,
+        build_uk_retirement_scenario,
+    )
+
+    monkeypatch.setattr(axiom_uk, "available", lambda: False)  # no screen
+    monkeypatch.setattr(axiom_uk, "versions", lambda: dict(FAKE_VERSIONS))
+    inputs = _envelope_input()
+    result = run_uk_simulation(inputs)
+    result.metadata["tax_engine"] = "axiom-rules-engine"
+    envelope = build_uk_retirement_result(
+        build_uk_retirement_scenario(inputs), inputs, result
+    )
+
+    assert envelope.reproducibility.tax_engine_versions == FAKE_VERSIONS
+    assert envelope.reproducibility.parameter_year is None
+    assert envelope.assumptions["tax_engine"] == "axiom-rules-engine"
+    assert "rulespec-uk" in envelope.assumptions["tax_parameter_year_policy"]
+    names = [source.name for source in envelope.sources]
+    assert "PolicyEngine UK compiled" not in names
+    assert {"Axiom rules engine", "rulespec-uk"} <= set(names)
+    assert not any("PolicyEngine UK parameters" in c for c in envelope.caveats)
