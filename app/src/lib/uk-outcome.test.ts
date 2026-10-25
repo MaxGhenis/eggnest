@@ -102,7 +102,7 @@ describe("summarizeUKOutcome", () => {
     expect(firstYear).toEqual({
       label: "Spending rate",
       value: "8.6%",
-      detail: "First-year spending ÷ starting portfolio",
+      detail: "Annual spending ÷ starting portfolio",
     });
     // 26 years x £2,000 of yearly median tax.
     expect(tax).toEqual({
