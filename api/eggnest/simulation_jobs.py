@@ -301,7 +301,7 @@ class SimulationJobManager:
                 # As in the shared store, only finished records count toward
                 # capacity: queued and running jobs can't push out a result a
                 # client is about to read.
-                excess = len(finished) - self._max_records
+                excess = max(len(finished) - self._max_records, 0)
                 for record in finished[:excess]:
                     self._jobs.pop(record.job_id, None)
                     if self._snapshot_store is not None:
@@ -599,7 +599,7 @@ class CoreJobManager:
                 # As in the shared store, only finished records count toward
                 # capacity: queued and running jobs can't push out a result a
                 # client is about to read.
-                excess = len(finished) - self._max_records
+                excess = max(len(finished) - self._max_records, 0)
                 for record in finished[:excess]:
                     self._jobs.pop(record.job_id, None)
                     if self._snapshot_store is not None:
