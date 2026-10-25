@@ -1,5 +1,7 @@
 """Tests for asset allocation comparison API endpoint."""
 
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,6 +14,30 @@ from eggnest.models import (
 from main import app
 
 client = TestClient(app)
+
+
+class FakeSimulator:
+    """Fast deterministic simulator for endpoint contract tests."""
+
+    def __init__(self, params):
+        self.params = params
+
+    def run(self):
+        stock = self.params.stock_allocation
+        success_rate = min(0.99, 0.72 + stock * 0.2)
+        return SimpleNamespace(
+            success_rate=success_rate,
+            median_final_value=400_000 + stock * 100_000,
+            percentiles={
+                "p5": 75_000 + stock * 10_000,
+                "p95": 900_000 + stock * 50_000,
+            },
+        )
+
+
+@pytest.fixture(autouse=True)
+def fake_simulator(monkeypatch):
+    monkeypatch.setattr("main.MonteCarloSimulator", FakeSimulator)
 
 
 @pytest.fixture
@@ -92,11 +118,11 @@ class TestAllocationModels:
                     expected_return=0.07,
                 ),
             ],
-            optimal_for_success=1.0,
-            optimal_for_safety=0.4,
-            recommendation="",
+            highest_success_allocation=1.0,
+            lowest_volatility_allocation=0.4,
+            comparison_summary="",
         )
-        assert result.optimal_for_success == 1.0
+        assert result.highest_success_allocation == 1.0
 
 
 class TestAllocationEndpoint:
@@ -161,8 +187,8 @@ class TestAllocationEndpoint:
         assert 0 <= result["success_rate"] <= 1
         assert result["stock_allocation"] == 0.6
 
-    def test_compare_allocations_identifies_optimal(self, base_params):
-        """Test that optimal allocations are identified."""
+    def test_compare_allocations_identifies_highest_success(self, base_params):
+        """Test that notable comparison rows are identified."""
         response = client.post(
             "/compare-allocations",
             json={
@@ -174,12 +200,11 @@ class TestAllocationEndpoint:
 
         data = response.json()
 
-        # Should have optimal allocations identified
-        assert "optimal_for_success" in data
-        assert 0 <= data["optimal_for_success"] <= 1
+        assert "highest_success_allocation" in data
+        assert 0 <= data["highest_success_allocation"] <= 1
 
-        assert "optimal_for_safety" in data
-        assert 0 <= data["optimal_for_safety"] <= 1
+        assert "lowest_volatility_allocation" in data
+        assert 0 <= data["lowest_volatility_allocation"] <= 1
 
     def test_compare_allocations_volatility_ordering(self, base_params):
         """Test that higher stock allocations have higher volatility."""
@@ -267,11 +292,11 @@ class TestAllocationWithDifferentScenarios:
         assert response.status_code == 200
 
 
-class TestAllocationRecommendation:
-    """Test allocation recommendation logic."""
+class TestAllocationSummary:
+    """Test allocation comparison summary logic."""
 
-    def test_recommendation_provided(self, base_params):
-        """Test that a recommendation is provided."""
+    def test_summary_provided(self, base_params):
+        """Test that a factual summary is provided."""
         response = client.post(
             "/compare-allocations",
             json={
@@ -281,11 +306,11 @@ class TestAllocationRecommendation:
         assert response.status_code == 200
 
         data = response.json()
-        assert "recommendation" in data
-        assert len(data["recommendation"]) > 0
+        assert "comparison_summary" in data
+        assert len(data["comparison_summary"]) > 0
 
-    def test_recommendation_references_allocations(self, base_params):
-        """Test that recommendation mentions allocation percentages."""
+    def test_summary_references_allocations(self, base_params):
+        """Test that summary mentions allocation percentages."""
         response = client.post(
             "/compare-allocations",
             json={
@@ -296,6 +321,5 @@ class TestAllocationRecommendation:
         assert response.status_code == 200
 
         data = response.json()
-        recommendation = data["recommendation"]
-        # Recommendation should mention percentage or allocation
-        assert "%" in recommendation or "allocation" in recommendation.lower()
+        summary = data["comparison_summary"]
+        assert "%" in summary or "allocation" in summary.lower()

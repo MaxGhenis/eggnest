@@ -15,6 +15,8 @@ function result(overrides: Partial<HouseholdResult> = {}): HouseholdResult {
     tax_breakdown: {},
     marginal_tax_rate: 0,
     effective_tax_rate: 0,
+    citations: [],
+    output_citations: {},
     ...overrides,
   };
 }

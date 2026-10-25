@@ -4,23 +4,28 @@ Syncs scenarios between local YAML files and Supabase.
 Enables AI agents to explore and edit financial scenarios as files.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
-from supabase import Client
 
 from .auth import get_authenticated_client, get_current_user_id, is_logged_in
 from .models import AnnuityInput, SpouseInput
+
+if TYPE_CHECKING:
+    from supabase import Client
 
 logger = logging.getLogger(__name__)
 
 # Default directory for scenarios
 DEFAULT_SCENARIOS_DIR = Path.home() / ".eggnest" / "scenarios"
+SIMULATIONS_TABLE = "simulations"
 
 
 @dataclass
@@ -32,7 +37,7 @@ class SyncConfig:
     scenarios_dir: Path
 
     @classmethod
-    def from_env(cls, scenarios_dir: Path | None = None) -> "SyncConfig":
+    def from_env(cls, scenarios_dir: Path | None = None) -> SyncConfig:
         """Create config from environment variables."""
         url = os.environ.get("EGGNEST_SUPABASE_URL", "")
         key = os.environ.get("EGGNEST_SUPABASE_ANON_KEY", "")
@@ -185,7 +190,7 @@ class EggNestSync:
             raise ValueError("Could not get user ID")
 
         # Fetch scenarios
-        query = client.table("saved_simulations").select("*").eq("user_id", user_id)
+        query = client.table(SIMULATIONS_TABLE).select("*").eq("user_id", user_id)
         if scenario_id:
             query = query.eq("id", scenario_id)
 
@@ -257,12 +262,12 @@ class EggNestSync:
                 if scenario_id:
                     record["id"] = scenario_id
                     # Update existing
-                    client.table("saved_simulations").update(record).eq(
+                    client.table(SIMULATIONS_TABLE).update(record).eq(
                         "id", scenario_id
                     ).execute()
                 else:
                     # Insert new
-                    result = client.table("saved_simulations").insert(record).execute()
+                    result = client.table(SIMULATIONS_TABLE).insert(record).execute()
                     if result.data:
                         # Save the new ID
                         new_id = result.data[0]["id"]
@@ -304,7 +309,7 @@ class EggNestSync:
             return []
 
         result = (
-            client.table("saved_simulations")
+            client.table(SIMULATIONS_TABLE)
             .select("id, name, created_at, updated_at")
             .eq("user_id", user_id)
             .execute()

@@ -53,6 +53,8 @@ class TestRunWithProgress:
             assert "total_years" in event
             assert event["year"] >= 0
             assert event["year"] <= event["total_years"]
+            assert float(event["year"]).is_integer()
+            assert "progress" in event
 
     def test_progress_increases_over_time(self, basic_params):
         """Year should increase (or stay same) with each progress event."""
@@ -65,6 +67,40 @@ class TestRunWithProgress:
         # Years should be non-decreasing
         for i in range(1, len(years)):
             assert years[i] >= years[i - 1]
+
+    def test_fractional_internal_progress_uses_integer_display_year(self, basic_params):
+        """Sub-year progress should not leak decimals into the display year."""
+        simulator = MonteCarloSimulator(basic_params)
+        events = list(simulator.run_with_progress())
+
+        tax_events = [
+            e
+            for e in events
+            if e.get("type") == "progress"
+            and e.get("message") == "Calculating PolicyEngine taxes"
+        ]
+
+        assert tax_events
+        assert tax_events[0]["year"] == 1
+        assert tax_events[0]["progress"] > 0
+        assert all(float(event["year"]).is_integer() for event in tax_events)
+
+    def test_year_complete_progress_includes_partial_result(self, basic_params):
+        """Completed-year progress should include a small preview payload."""
+        simulator = MonteCarloSimulator(basic_params)
+        events = list(simulator.run_with_progress())
+
+        previews = [
+            e.get("year_summary")
+            for e in events
+            if e.get("type") == "progress" and e.get("year_summary")
+        ]
+
+        assert previews
+        assert previews[0]["year"] == 1
+        assert previews[0]["median_portfolio"] >= 0
+        assert "p25_portfolio" in previews[0]
+        assert "p75_portfolio" in previews[0]
 
     def test_complete_event_has_valid_result(self, basic_params):
         """Complete event should contain valid simulation result data."""

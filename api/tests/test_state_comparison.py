@@ -1,5 +1,7 @@
 """Tests for state comparison functionality."""
 
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,6 +14,34 @@ from eggnest.models import (
 from main import app
 
 client = TestClient(app)
+
+STATE_TAXES = {
+    "CA": 90_000,
+    "TX": 55_000,
+    "FL": 58_000,
+    "NV": 60_000,
+}
+
+
+class FakeSimulator:
+    """Fast deterministic simulator for endpoint contract tests."""
+
+    def __init__(self, params):
+        self.params = params
+
+    def run(self):
+        taxes = STATE_TAXES.get(self.params.state, 70_000)
+        return SimpleNamespace(
+            success_rate=0.9,
+            median_final_value=1_200_000 - taxes,
+            total_taxes_median=taxes,
+            total_withdrawn_median=500_000,
+        )
+
+
+@pytest.fixture(autouse=True)
+def fake_simulator(monkeypatch):
+    monkeypatch.setattr("main.MonteCarloSimulator", FakeSimulator)
 
 
 @pytest.fixture

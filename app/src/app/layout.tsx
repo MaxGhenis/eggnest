@@ -2,11 +2,26 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://eggnest.co"),
   title: "EggNest - Financial planning simulator",
   description:
     "Monte Carlo financial simulation with real tax calculations. See your actual probability of success, not just guesses.",
   icons: {
     icon: "/favicon.svg",
+  },
+  openGraph: {
+    siteName: "EggNest",
+    type: "website",
+    url: "https://eggnest.co",
+    title: "EggNest - Financial planning simulator",
+    description:
+      "Monte Carlo financial simulation with real tax calculations via PolicyEngine.",
+  },
+  twitter: {
+    card: "summary",
+    title: "EggNest - Financial planning simulator",
+    description:
+      "Monte Carlo financial simulation with real tax calculations via PolicyEngine.",
   },
 };
 

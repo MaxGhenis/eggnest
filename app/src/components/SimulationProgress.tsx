@@ -1,12 +1,34 @@
 "use client";
 
+import type { YearProgressSummary } from "../lib/api";
+
 interface SimulationProgressProps {
   currentYear: number;
   totalYears: number;
+  progress?: number;
+  message?: string | null;
+  yearSummary?: YearProgressSummary | null;
 }
 
-export function SimulationProgress({ currentYear, totalYears }: SimulationProgressProps) {
-  const percentage = totalYears > 0 ? Math.round((currentYear / totalYears) * 100) : 0;
+const compactCurrency = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+export function SimulationProgress({
+  currentYear,
+  totalYears,
+  progress,
+  message,
+  yearSummary,
+}: SimulationProgressProps) {
+  const progressFraction = progress ?? (totalYears > 0 ? currentYear / totalYears : 0);
+  const percentage = Math.round(Math.max(0, Math.min(1, progressFraction)) * 100);
+  const displayYear = Number.isInteger(currentYear)
+    ? currentYear
+    : Math.min(totalYears, Math.floor(currentYear) + 1);
 
   return (
     <div className="mx-auto max-w-md space-y-4 py-4">
@@ -15,7 +37,7 @@ export function SimulationProgress({ currentYear, totalYears }: SimulationProgre
           Running simulation
         </div>
         <div className="text-sm text-[var(--color-text-muted)]">
-          Calculating taxes with PolicyEngine...
+          {message || "Calculating taxes with PolicyEngine..."}
         </div>
       </div>
       <div className="space-y-2">
@@ -33,13 +55,44 @@ export function SimulationProgress({ currentYear, totalYears }: SimulationProgre
         </div>
         <div className="flex items-center justify-between text-xs">
           <span className="text-[var(--color-text-light)]">
-            Year {currentYear} of {totalYears}
+            Year {displayYear} of {totalYears}
           </span>
           <span className="font-bold tabular-nums text-[var(--color-primary)]">
             {percentage}%
           </span>
         </div>
       </div>
+      {yearSummary && (
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border-light)] bg-[var(--color-primary-50)] px-4 py-3 text-sm shadow-[var(--shadow-sm)]">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="font-semibold text-[var(--color-text)]">
+              Year {yearSummary.year} result
+            </span>
+            <span className="text-xs font-medium text-[var(--color-text-muted)]">
+              Age {yearSummary.age}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">
+                Median portfolio
+              </div>
+              <div className="font-bold tabular-nums text-[var(--color-primary)]">
+                {compactCurrency.format(yearSummary.median_portfolio)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--color-text-light)]">
+                Middle range
+              </div>
+              <div className="font-bold tabular-nums text-[var(--color-text)]">
+                {compactCurrency.format(yearSummary.p25_portfolio)} -{" "}
+                {compactCurrency.format(yearSummary.p75_portfolio)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

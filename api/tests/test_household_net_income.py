@@ -28,19 +28,30 @@ import copy
 
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from policyengine_us import Simulation
 
 from eggnest.constants import STATE_FIPS
+from eggnest.core.us_household_resources import (
+    OUTPUT_KEY,
+    run_us_household_resources,
+)
 from eggnest.household import (
     CENT,
     FLOAT32_RELATIVE_ROUNDING,
     HouseholdCalculator,
     _itemize,
+    _primary_earner_index,
     _rounding,
+    compare_earnings_grid,
 )
-from eggnest.models import HouseholdInput, HouseholdResult, PersonInput
+from eggnest.models import (
+    EarningsGridInput,
+    HouseholdInput,
+    HouseholdResult,
+    PersonInput,
+)
 
 REFERENCE_VARIABLES = [
     "household_net_income",
@@ -57,6 +68,9 @@ REFERENCE_VARIABLES = [
     "income_tax",
     "income_tax_before_refundable_credits",
     "income_tax_refundable_credits",
+    "income_tax_capped_non_refundable_credits",
+    "income_tax_unavailable_non_refundable_credits",
+    "non_refundable_ctc",
     "eitc",
     "refundable_ctc",
 ]
@@ -224,6 +238,45 @@ def assert_net_income_identity(
         "income_tax_refundable_credits"
     ] == pytest.approx(ref["income_tax"], abs=DOLLAR)
 
+    # 6. Non-refundable credits: the amount used is PolicyEngine's, and the
+    # itemized credits, less the part that exceeds the tax they can offset,
+    # add up to it.
+    assert result.non_refundable_tax_credits == pytest.approx(
+        ref["income_tax_capped_non_refundable_credits"], abs=DOLLAR
+    )
+    assert result.non_refundable_tax_credits == pytest.approx(
+        sum(result.non_refundable_credit_breakdown.values()), abs=1e-6
+    )
+    assert result.non_refundable_credit_breakdown.get(
+        "unavailable_non_refundable_credits", 0.0
+    ) == pytest.approx(
+        -ref["income_tax_unavailable_non_refundable_credits"], abs=DOLLAR
+    )
+    assert all(
+        value > 0
+        for key, value in result.non_refundable_credit_breakdown.items()
+        if key != "unavailable_non_refundable_credits"
+    )
+
+    assert_citations_cover_result(result)
+
+
+def assert_citations_cover_result(result: HouseholdResult) -> None:
+    """Every itemized amount has a source, and the flat list has no duplicates."""
+    flat_ids = [citation.id for citation in result.citations]
+    assert len(flat_ids) == len(set(flat_ids))
+    for key in result.benefits:
+        assert result.output_citations[f"benefits.{key}"]
+    for key in result.non_refundable_credit_breakdown:
+        assert result.output_citations[f"non_refundable_credit_breakdown.{key}"]
+    for field in (
+        "federal_income_tax",
+        "state_income_tax",
+        "payroll_tax",
+        "net_income",
+    ):
+        assert result.output_citations[field]
+
 
 def _ohio_single_parent() -> tuple[HouseholdInput, dict]:
     """2026 Ohio single parent, $28,000 wages, children aged 4 and 8.
@@ -271,6 +324,141 @@ def _ohio_single_parent() -> tuple[HouseholdInput, dict]:
     return household, situation
 
 
+def _hand_built(
+    year: int, state: str, filing_status: str, people: dict[str, dict]
+) -> dict:
+    """A PolicyEngine situation written without HouseholdCalculator.
+
+    ``people`` maps a person id to PolicyEngine person variables for ``year``.
+    Everyone is in one tax unit, family, SPM unit and household; dependents
+    get their own marital unit.
+    """
+    members = list(people)
+    dependents = [pid for pid, v in people.items() if v.get("is_tax_unit_dependent")]
+    adults = [pid for pid in members if pid not in dependents]
+    marital_units = {"adults": {"members": adults}}
+    marital_units.update({pid: {"members": [pid]} for pid in dependents})
+    return {
+        "people": {
+            pid: {name: {year: value} for name, value in variables.items()}
+            for pid, variables in people.items()
+        },
+        "tax_units": {
+            "tax_unit": {"members": members, "filing_status": {year: filing_status}}
+        },
+        "families": {"family": {"members": members}},
+        "spm_units": {"spm_unit": {"members": members}},
+        "marital_units": marital_units,
+        "households": {"household": {"members": members, "state_code": {year: state}}},
+    }
+
+
+# Households whose PolicyEngine situation is written out by hand, so the
+# input mapping (which EggNest field becomes which PolicyEngine variable, the
+# tax unit roles and the filing status) is checked independently of
+# HouseholdCalculator._build_situation.
+HAND_BUILT_CASES = {
+    "CA single, $75k wages": (
+        HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[
+                PersonInput(age=35, employment_income=75_000, is_tax_unit_head=True)
+            ],
+        ),
+        _hand_built(
+            2025,
+            "CA",
+            "SINGLE",
+            {
+                "head": {
+                    "age": 35,
+                    "employment_income": 75_000,
+                    "is_tax_unit_head": True,
+                }
+            },
+        ),
+    ),
+    "NY retiree, $9k Social Security": (
+        HouseholdInput(
+            state="NY",
+            year=2025,
+            people=[PersonInput(age=70, social_security=9_000, is_tax_unit_head=True)],
+        ),
+        _hand_built(
+            2025,
+            "NY",
+            "SINGLE",
+            {
+                "head": {
+                    "age": 70,
+                    "social_security_retirement": 9_000,
+                    "is_tax_unit_head": True,
+                }
+            },
+        ),
+    ),
+    "GA couple with every income type and a child": (
+        HouseholdInput(
+            state="GA",
+            year=2025,
+            people=[
+                PersonInput(
+                    age=45,
+                    self_employment_income=40_000,
+                    investment_income=5_000,
+                    is_tax_unit_head=True,
+                ),
+                PersonInput(
+                    age=66,
+                    employment_income=12_000,
+                    social_security=18_000,
+                    pension_income=20_000,
+                    capital_gains=10_000,
+                    is_tax_unit_spouse=True,
+                ),
+                PersonInput(age=10),
+            ],
+        ),
+        _hand_built(
+            2025,
+            "GA",
+            "JOINT",
+            {
+                "head": {
+                    "age": 45,
+                    "self_employment_income": 40_000,
+                    "dividend_income": 5_000,
+                    "is_tax_unit_head": True,
+                },
+                "spouse": {
+                    "age": 66,
+                    "employment_income": 12_000,
+                    "social_security_retirement": 18_000,
+                    "taxable_pension_income": 20_000,
+                    "long_term_capital_gains": 10_000,
+                    "is_tax_unit_spouse": True,
+                },
+                "child": {"age": 10, "is_tax_unit_dependent": True},
+            },
+        ),
+    ),
+}
+
+
+class TestHandBuiltSituations:
+    """Net income matches PolicyEngine-US for situations EggNest did not build."""
+
+    @pytest.mark.parametrize("case", sorted(HAND_BUILT_CASES))
+    def test_net_income_matches_hand_built_situation(self, case):
+        household, situation = HAND_BUILT_CASES[case]
+        ref = _reference(situation, household.year)
+
+        result = HouseholdCalculator().calculate(household)
+
+        assert_net_income_identity(household, result, ref)
+
+
 class TestCreditsCountedOnce:
     """Refundable credits must not reduce tax and also be added as benefits."""
 
@@ -301,6 +489,31 @@ class TestCreditsCountedOnce:
         assert result.federal_income_tax == pytest.approx(
             ref["income_tax"] + ref["income_tax_refundable_credits"], abs=DOLLAR
         )
+
+    def test_ohio_single_parent_cites_each_credit_under_its_key(self):
+        household, situation = _ohio_single_parent()
+        ref = _reference(situation, household.year)
+        # Guard: the non-refundable part of the CTC is in play too.
+        assert ref["non_refundable_ctc"] > 0
+
+        result = HouseholdCalculator().calculate(household)
+
+        def cited(field: str) -> set[str]:
+            return {citation.id for citation in result.output_citations[field]}
+
+        assert result.non_refundable_credit_breakdown[
+            "non_refundable_ctc"
+        ] == pytest.approx(ref["non_refundable_ctc"], abs=DOLLAR)
+        assert "us:statutes/26/24" in cited("benefits.refundable_ctc")
+        assert "us:statutes/26/24" in cited(
+            "non_refundable_credit_breakdown.non_refundable_ctc"
+        )
+        # The non-refundable CTC lowers federal income tax, so that row cites it.
+        assert "us:statutes/26/24" in cited("federal_income_tax")
+        assert "us:statutes/26/32" in cited("benefits.eitc")
+        # The old keys, which mixed the whole CTC into benefits, are gone.
+        assert "child_tax_credit" not in result.benefits
+        assert "benefits.child_tax_credit" not in result.output_citations
 
 
 class TestStateElections:
@@ -590,6 +803,50 @@ def households(draw) -> HouseholdInput:
 class TestNetIncomeProperties:
     """For any household, EggNest's rows reconcile with PolicyEngine-US."""
 
+    # Pinned cases the random draws are not guaranteed to reach.
+    @example(
+        # Alaska: the Permanent Fund Dividend is market income PolicyEngine
+        # adds on its own (the first counterexample Hypothesis found).
+        household=HouseholdInput(
+            state="AK", year=2024, people=[PersonInput(age=18, is_tax_unit_head=True)]
+        )
+    )
+    @example(
+        # California wages: state payroll tax (SDI) and state use tax.
+        household=HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[
+                PersonInput(age=35, employment_income=75_000, is_tax_unit_head=True)
+            ],
+        )
+    )
+    @example(
+        # Low-income California parent: state refundable credits (CalEITC,
+        # Young Child Tax Credit).
+        household=HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[
+                PersonInput(age=30, employment_income=12_000, is_tax_unit_head=True),
+                PersonInput(age=3),
+            ],
+        )
+    )
+    @example(
+        # Retiree living on Social Security: SSI and nutrition benefits.
+        household=HouseholdInput(
+            state="NY",
+            year=2025,
+            people=[PersonInput(age=70, social_security=9_000, is_tax_unit_head=True)],
+        )
+    )
+    @example(
+        # No income at all.
+        household=HouseholdInput(
+            state="TX", year=2026, people=[PersonInput(age=40, is_tax_unit_head=True)]
+        )
+    )
     @given(household=households())
     def test_net_income_equals_policyengine_net_income(self, household):
         calc = HouseholdCalculator()
@@ -629,3 +886,60 @@ class TestNetIncomeProperties:
             + comparison.benefit_change,
             abs=1e-6,
         )
+
+
+class TestAgentSurfacesAgree:
+    """The earnings grid and the core envelope report what calculate() reports."""
+
+    @light
+    @given(household=households())
+    def test_earnings_grid_step_matches_marginal_tax_rate(self, household):
+        # A two-row grid from the primary earner's wages to $1,000 more
+        # measures the same change in net income as the marginal tax rate.
+        earner = _primary_earner_index(household)
+        wages = household.people[earner].employment_income
+        grid = compare_earnings_grid(
+            EarningsGridInput(
+                base_input=household,
+                person_index=earner,
+                income_min=wages,
+                income_max=wages + 1_000,
+                step=1_000,
+            )
+        )
+        result = HouseholdCalculator().calculate(household)
+
+        base_row, raised_row = grid.rows
+        assert base_row.net_income == pytest.approx(result.net_income, abs=1e-6)
+        assert base_row.total_taxes == pytest.approx(result.total_taxes, abs=1e-6)
+        assert base_row.total_benefits == pytest.approx(result.total_benefits, abs=1e-6)
+        assert base_row.benefits == pytest.approx(result.benefits, abs=1e-6)
+        assert raised_row.effective_marginal_rate == pytest.approx(
+            result.marginal_tax_rate, abs=1e-6
+        )
+        for row in grid.rows:
+            assert row.net_income == pytest.approx(
+                row.total_income - row.total_taxes + row.total_benefits, abs=1e-6
+            )
+        for key in {key for row in grid.rows for key in row.benefits}:
+            assert grid.output_citations[f"benefits.{key}"]
+        grid_ids = {citation.id for citation in grid.citations}
+        if result.tax_breakdown["self_employment_tax"] > 0:
+            assert "us:statutes/26/1401" in grid_ids
+        # The grid cites the non-refundable credits its rows net out.
+        assert {
+            citation.id
+            for key in result.non_refundable_credit_breakdown
+            for citation in result.output_citations[
+                f"non_refundable_credit_breakdown.{key}"
+            ]
+        } <= grid_ids
+
+    @light
+    @given(household=households())
+    def test_core_envelope_carries_the_calculator_result(self, household):
+        result = HouseholdCalculator().calculate(household)
+        envelope = run_us_household_resources(household)
+
+        assert envelope.outputs[OUTPUT_KEY] == result.model_dump()
+        assert envelope.citations == result.citations
