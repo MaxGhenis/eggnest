@@ -81,9 +81,13 @@ def build_uk_retirement_result(
         ]
     tax_engine = result.metadata.get("tax_engine", POLICYENGINE_UK_TAX_ENGINE)
     axiom_tax = tax_engine == AXIOM_UK_TAX_ENGINE
-    # The Axiom engine runs the tax, the Pension Credit screen, or both.
+    # The Axiom engine runs the tax, the Pension Credit screen, or both. A
+    # screen that ends before the qualifying age calls no engine.
+    axiom_screen = (
+        result.pension_credit is not None and result.pension_credit.status == "screened"
+    )
     axiom_versions = {}
-    if axiom_tax or result.pension_credit is not None:
+    if axiom_tax or axiom_screen:
         from eggnest import axiom_uk
 
         axiom_versions = axiom_uk.versions()
@@ -102,7 +106,11 @@ def build_uk_retirement_result(
         assumptions=_assumptions(inputs, axiom_tax=axiom_tax),
         outputs={OUTPUT_KEY: result.model_dump()},
         citations=citations,
-        sources=_sources(axiom_tax=axiom_tax, axiom_versions=axiom_versions),
+        sources=_sources(
+            axiom_tax=axiom_tax,
+            axiom_screen=axiom_screen,
+            axiom_versions=axiom_versions,
+        ),
         caveats=_caveats(inputs, axiom_tax=axiom_tax),
         reproducibility=Reproducibility(
             engine_version=ENGINE_VERSION,
@@ -166,7 +174,9 @@ def _assumptions(inputs: UKSimulationInput, *, axiom_tax: bool) -> dict[str, Any
     }
 
 
-def _sources(*, axiom_tax: bool, axiom_versions: dict[str, str]) -> list[ModelSource]:
+def _sources(
+    *, axiom_tax: bool, axiom_screen: bool, axiom_versions: dict[str, str]
+) -> list[ModelSource]:
     tax_notes = (
         "Computes UK income tax (including dividend tax) and employee "
         "National Insurance for each person."
@@ -183,7 +193,8 @@ def _sources(*, axiom_tax: bool, axiom_versions: dict[str, str]) -> list[ModelSo
         )
     if axiom_versions:
         uses = [tax_notes] if axiom_tax else []
-        uses.append("Screens Pension Credit guarantee credit (pension_credit).")
+        if axiom_screen:
+            uses.append("Screens Pension Credit guarantee credit (pension_credit).")
         sources += [
             ModelSource(
                 name="Axiom rules engine",

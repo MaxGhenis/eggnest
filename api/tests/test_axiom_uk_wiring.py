@@ -507,3 +507,22 @@ def test_envelope_names_axiom_when_it_computes_the_tax(monkeypatch):
     assert "PolicyEngine UK compiled" not in names
     assert {"Axiom rules engine", "rulespec-uk"} <= set(names)
     assert not any("PolicyEngine UK parameters" in c for c in envelope.caveats)
+    axiom = next(s for s in envelope.sources if s.name == "Axiom rules engine")
+    assert "income tax" in axiom.notes
+    assert "Pension Credit" not in axiom.notes  # no screen ran
+
+
+def test_envelope_names_no_screen_before_the_qualifying_age(fake_engine, monkeypatch):
+    monkeypatch.delenv("EGGNEST_UK_TAX_ENGINE", raising=False)
+    monkeypatch.setattr(axiom_uk, "versions", lambda: dict(FAKE_VERSIONS))
+    inputs = _envelope_input().model_copy(update={"current_age": 40, "max_age": 40})
+    envelope = run_uk_retirement(inputs)
+
+    result = envelope.outputs["uk_simulation_result"]
+    assert result["pension_credit"]["status"] == "under_qualifying_age"
+    assert fake_engine == []
+    assert set(envelope.reproducibility.tax_engine_versions) == {
+        "policyengine-uk-compiled"
+    }
+    names = {source.name for source in envelope.sources}
+    assert not names & {"Axiom rules engine", "rulespec-uk"}
