@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .models import ProgramOutput, ProgramSpec
+from .models_uk import UKSimulationResult
 
 PROGRAMS: list[ProgramSpec] = [
     ProgramSpec(
@@ -100,7 +101,8 @@ PROGRAMS: list[ProgramSpec] = [
                 label="Modeled success rate",
                 kind="scalar",
                 unit="rate",
-                description="Share of paths that avoid depletion before death or horizon.",
+                # One definition: the result model's own field description.
+                description=UKSimulationResult.model_fields["success_rate"].description,
             ),
             ProgramOutput(
                 name="median_final_wealth",

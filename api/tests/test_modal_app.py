@@ -1,7 +1,7 @@
 """Tests for the Modal job snapshot store adapter in modal_app.py.
 
-The job managers sweep the shared store on every submit and poll, so the
-adapter's items() runs on the request path. modal is not a test dependency,
+Submits and polls sweep the shared store (at most once a minute per job
+manager), so the adapter's items() runs on the request path. modal is not a test dependency,
 so the module is imported with modal stubbed out and the Dict replaced by a
 stand-in for Modal's blocking interface.
 """
