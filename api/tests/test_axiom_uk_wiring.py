@@ -466,9 +466,7 @@ def _envelope_input():
     )
 
 
-def test_envelope_names_policyengine_tax_and_the_axiom_screen(
-    fake_engine, monkeypatch
-):
+def test_envelope_names_policyengine_tax_and_the_axiom_screen(fake_engine, monkeypatch):
     monkeypatch.delenv("EGGNEST_UK_TAX_ENGINE", raising=False)
     monkeypatch.setattr(axiom_uk, "versions", lambda: dict(FAKE_VERSIONS))
     envelope = run_uk_retirement(_envelope_input())
