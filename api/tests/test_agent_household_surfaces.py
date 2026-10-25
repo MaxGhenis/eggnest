@@ -35,6 +35,29 @@ def test_program_catalog_exposes_household_resources():
     assert household.primary_output == "household_resources_result.net_income"
 
 
+def test_program_outputs_name_fields_of_their_engine_results():
+    """Agents read the outputs `GET /programs` names, so each must be a field
+    of the result its engine returns, under that engine's output key."""
+    from eggnest.core import uk_retirement, us_household_resources, us_retirement
+    from eggnest.models import HouseholdResult, SimulationResult
+    from eggnest.models_uk import UKSimulationResult
+
+    results = {
+        "us_household_resources": (us_household_resources.OUTPUT_KEY, HouseholdResult),
+        "us_retirement": (us_retirement.OUTPUT_KEY, SimulationResult),
+        "uk_retirement": (uk_retirement.OUTPUT_KEY, UKSimulationResult),
+    }
+    programs = list_programs()
+    assert {program.engine for program in programs} == set(results)
+    for program in programs:
+        output_key, model = results[program.engine]
+        key, _, primary = program.primary_output.partition(".")
+        assert key == output_key, program.id
+        names = [output.name for output in program.outputs]
+        assert primary in names, program.id
+        assert set(names) <= set(model.model_fields), (program.id, names)
+
+
 def test_programs_endpoint_exposes_catalog():
     response = client.get("/programs?jurisdiction=us")
 
