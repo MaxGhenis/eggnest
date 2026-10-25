@@ -60,6 +60,28 @@ def small_input() -> SimulationInput:
     )
 
 
+# Jobs run a real PolicyEngine simulation, so polls wait on wall-clock time
+# rather than a poll count a loaded host can exhaust before the job ends.
+POLL_TIMEOUT_SECONDS = 120.0
+
+
+def _poll_until_finished(read, status=lambda data: data["status"]):
+    deadline = time.monotonic() + POLL_TIMEOUT_SECONDS
+    data = read()
+    while status(data) not in {"succeeded", "failed"}:
+        if time.monotonic() > deadline:
+            break
+        time.sleep(0.05)
+        data = read()
+    return data
+
+
+def _get_json(path: str) -> dict:
+    response = client.get(path)
+    assert response.status_code == 200
+    return response.json()
+
+
 def test_simulation_job_runs_to_completion():
     response = client.post("/simulate/jobs", json=small_input().model_dump())
 
@@ -69,14 +91,7 @@ def test_simulation_job_runs_to_completion():
     assert created["total_years"] == 1
 
     job_id = created["job_id"]
-    data = created
-    for _ in range(100):
-        poll = client.get(f"/simulate/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["status"] in {"succeeded", "failed"}:
-            break
-        time.sleep(0.05)
+    data = _poll_until_finished(lambda: _get_json(f"/simulate/jobs/{job_id}"))
 
     assert data["status"] == "succeeded"
     assert data["progress"] == 1
@@ -103,14 +118,7 @@ def test_core_job_returns_stable_envelope():
     assert created["total_years"] == 1
 
     job_id = created["job_id"]
-    data = created
-    for _ in range(100):
-        poll = client.get(f"/core/jobs/{job_id}")
-        assert poll.status_code == 200
-        data = poll.json()
-        if data["status"] in {"succeeded", "failed"}:
-            break
-        time.sleep(0.05)
+    data = _poll_until_finished(lambda: _get_json(f"/core/jobs/{job_id}"))
 
     assert data["status"] == "succeeded"
     assert data["progress"] == 1
@@ -149,14 +157,13 @@ def test_core_job_status_can_be_read_from_shared_store():
     assert data.job_id == created.job_id
     assert data.status in {"queued", "running"}
 
-    for _ in range(100):
+    def read():
         data = reader.get(created.job_id)
         assert data is not None
-        if data.status in {"succeeded", "failed"}:
-            break
-        time.sleep(0.05)
+        return data
 
-    assert data is not None
+    data = _poll_until_finished(read, status=lambda data: data.status)
+
     assert data.status == "succeeded"
     assert data.result is not None
     assert data.result.outputs[OUTPUT_KEY]["success_rate"] == 1.0
@@ -453,6 +460,7 @@ def test_concurrent_requests_share_one_sweep(kind):
         i for i, line in enumerate(lines) if "self._last_snapshot_sweep = now" in line
     )
     other = threading.Thread(target=manager.get, args=("missing",))
+    lock_held_at_claim = []
 
     def trace(frame, event, arg):
         if (
@@ -462,6 +470,9 @@ def test_concurrent_requests_share_one_sweep(kind):
             and not other.is_alive()
             and other.ident is None
         ):
+            # Deterministic whatever the scheduling: the claim is made under
+            # the manager's lock.
+            lock_held_at_claim.append(manager._lock.locked())
             other.start()
             # Fixed code holds the lock here, so the other request waits.
             other.join(timeout=0.5)
@@ -474,6 +485,7 @@ def test_concurrent_requests_share_one_sweep(kind):
         sys.settrace(None)
     other.join(timeout=10)
 
+    assert lock_held_at_claim == [True]
     assert not other.is_alive()
     assert CountingStore.scans == 1
 
