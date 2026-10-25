@@ -107,7 +107,7 @@ export function summarizeUKOutcome(
       {
         label: "Spending rate",
         value: `${result.initial_withdrawal_rate.toFixed(1)}%`,
-        detail: "First-year spending ÷ starting portfolio",
+        detail: "Annual spending ÷ starting portfolio",
       },
       {
         label: "Lifetime tax",
