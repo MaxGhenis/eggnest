@@ -93,7 +93,10 @@ PROGRAMS: list[ProgramSpec] = [
                 label="Median final portfolio value",
                 kind="scalar",
                 unit="USD",
-                description="Median portfolio value at the end of the modeled horizon.",
+                description=(
+                    "Median portfolio value at the end of the modeled horizon, "
+                    "in cash terms (the engine is nominal)."
+                ),
             ),
         ],
         caveats=["Educational calculator output only; not financial advice."],
@@ -121,7 +124,20 @@ PROGRAMS: list[ProgramSpec] = [
                 label="Median final portfolio value",
                 kind="scalar",
                 unit="GBP",
-                description="Median portfolio value at the end of the modeled horizon.",
+                description=(
+                    "Median portfolio value at the end of the modeled horizon, "
+                    "in cash terms."
+                ),
+            ),
+            ProgramOutput(
+                name="median_final_value_real",
+                label="Median final portfolio value in today's money",
+                kind="scalar",
+                unit="GBP",
+                description=(
+                    "median_final_value deflated by each simulated year's median "
+                    "inflation, compounded; the UK simulator page shows this figure."
+                ),
             ),
         ],
         caveats=["Educational calculator output only; not financial advice."],

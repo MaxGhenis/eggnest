@@ -361,3 +361,10 @@ def test_axiom_tax_run_reports_its_engine(monkeypatch):
     assert versions["axiom-rules-engine"].startswith("0.2.")
     assert len(versions["rulespec-uk"]) == 40  # a git commit
     assert "policyengine-uk-compiled" not in versions
+    # At 70 the screen runs too, so the engine is named for both uses.
+    assert envelope.outputs["uk_simulation_result"]["pension_credit"]["status"] == (
+        "screened"
+    )
+    axiom = next(s for s in envelope.sources if s.name == "Axiom rules engine")
+    assert "income tax" in axiom.notes
+    assert "Pension Credit" in axiom.notes
