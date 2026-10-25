@@ -44,12 +44,11 @@ class ModalDictJobSnapshotStore:
         self._dict.pop(key, None)
 
     def items(self) -> list[tuple[str, dict]]:
-        import asyncio
-
-        async def collect():
-            return [(key, value) async for key, value in self._dict.items()]
-
-        return asyncio.run(collect())
+        # Modal's blocking Dict.items() is a plain generator; `async for` over
+        # it raises TypeError. Submits and polls sweep the store (at most
+        # once a minute per job manager), so this must work from FastAPI's
+        # sync threads.
+        return list(self._dict.items())
 
 
 def _prepare_imports() -> None:
