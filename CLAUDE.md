@@ -54,6 +54,8 @@ eggnest/
 │       ├── simulation_uk.py # UK Monte Carlo simulator
 │       ├── tax.py           # PolicyEngine-US integration
 │       ├── tax_uk.py        # PolicyEngine UK compiled integration
+│       ├── axiom_uk.py      # UK tax and Pension Credit via the Axiom rules engine
+│       ├── drawdown_uk.py   # One-year UK drawdown calculator
 │       ├── mortality.py     # SSA mortality tables
 │       └── models.py        # Pydantic request/response models
 ├── app/                     # Next.js frontend (unified)
@@ -92,7 +94,7 @@ eggnest/
 
 ### API Endpoints
 - `GET /programs` - List agent-callable programs, primary outputs, caveats, and CLI entry points
-- `POST /core/simulate` - Run a versioned core scenario envelope (`us_household_resources`, `us_retirement`, `uk_retirement`)
+- `POST /core/simulate` - Run a versioned core scenario envelope (`us_household_resources`, `us_retirement`, `uk_retirement`, `uk_drawdown_year`)
 - `POST /simulate` - Run US simulation, returns legacy result shape via the core engine
 - `POST /simulate/stream` - SSE streaming with progress events
 - `GET /mortality/{gender}` - Mortality rates and survival curves
