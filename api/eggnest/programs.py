@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .models import ProgramOutput, ProgramSpec
 from .models_uk import UKSimulationResult
+from .models_uk_drawdown import UKDrawdownYearResult
 
 PROGRAMS: list[ProgramSpec] = [
     ProgramSpec(
@@ -141,6 +142,59 @@ PROGRAMS: list[ProgramSpec] = [
             ),
         ],
         caveats=["Educational calculator output only; not financial advice."],
+    ),
+    ProgramSpec(
+        id="uk_drawdown_year",
+        display_name="UK drawdown year",
+        country="GBR",
+        jurisdiction="uk",
+        scope=(
+            "What drawing a chosen amount from a pension pot, ISA, GIA or cash "
+            "costs one person in income tax, National Insurance and Pension "
+            "Credit over the 2026/27 tax year, across every draw that pot allows."
+        ),
+        engine="uk_drawdown_year",
+        cli=(
+            "eggnest core run scenario.yaml --engine uk_drawdown_year "
+            "--output-format envelope"
+        ),
+        primary_output="uk_drawdown_year_result.money_to_spend",
+        outputs=[
+            ProgramOutput(
+                name="money_to_spend",
+                label="Money to spend",
+                kind="scalar",
+                unit="GBP/year",
+                description=UKDrawdownYearResult.model_fields[
+                    "at_chosen_draw"
+                ].annotation.model_fields["money_to_spend"].description,
+            ),
+            ProgramOutput(
+                name="pension_credit",
+                label="Pension Credit",
+                kind="scalar",
+                unit="GBP/year",
+                description=(
+                    "Guarantee credit for one person, with an undrawn pot counted "
+                    "at the annuity income it could buy."
+                ),
+            ),
+            ProgramOutput(
+                name="next_1000",
+                label="Where the next £1,000 goes",
+                kind="object",
+                unit="share",
+                description=(
+                    "Shares of the next £1,000 of draw kept, paid in tax and lost "
+                    "in Pension Credit; they add to 1."
+                ),
+            ),
+        ],
+        caveats=[
+            "Needs the Axiom rules engine and a rulespec-uk checkout.",
+            "One person living alone; Savings Credit, Housing Benefit and Council Tax Reduction are not modeled.",
+            "Scottish taxpayers are not covered.",
+        ],
     ),
 ]
 

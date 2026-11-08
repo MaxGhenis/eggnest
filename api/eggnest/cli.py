@@ -24,6 +24,8 @@ from .auth import (
 from .comparisons import compare_historical_cohorts, compare_withdrawal_strategies
 from .core.router import run_core_scenario
 from .core.schemas import EngineResult, EngineScenario
+from .core.uk_drawdown_year import OUTPUT_KEY as UK_DRAWDOWN_OUTPUT_KEY
+from .core.uk_drawdown_year import build_uk_drawdown_year_scenario
 from .core.uk_retirement import (
     OUTPUT_KEY as UK_OUTPUT_KEY,
 )
@@ -46,6 +48,7 @@ from .models import (
     WithdrawalStrategyComparisonInput,
 )
 from .models_uk import UKSimulationInput
+from .models_uk_drawdown import UKDrawdownYearInput
 from .programs import list_programs
 from .sync import DEFAULT_SCENARIOS_DIR, get_sync_client
 
@@ -109,6 +112,8 @@ def _output_key_for_engine(engine: str) -> str:
         return UK_OUTPUT_KEY
     if engine == "us_household_resources":
         return HOUSEHOLD_OUTPUT_KEY
+    if engine == "uk_drawdown_year":
+        return UK_DRAWDOWN_OUTPUT_KEY
     raise ValueError(f"Unsupported engine: {engine}")
 
 
@@ -219,6 +224,10 @@ def _build_core_scenario(
     elif resolved_engine == "us_household_resources":
         scenario = build_us_household_resources_scenario(
             HouseholdInput.model_validate(data)
+        )
+    elif resolved_engine == "uk_drawdown_year":
+        scenario = build_uk_drawdown_year_scenario(
+            UKDrawdownYearInput.model_validate(data)
         )
     else:
         raise ValueError(f"Unsupported engine: {resolved_engine}")
@@ -486,7 +495,14 @@ def core() -> None:
 @click.argument(
     "kind",
     type=click.Choice(
-        ["scenario", "result", "us-input", "uk-input", "household-input"]
+        [
+            "scenario",
+            "result",
+            "us-input",
+            "uk-input",
+            "uk-drawdown-input",
+            "household-input",
+        ]
     ),
     default="scenario",
 )
@@ -497,6 +513,7 @@ def core_schema(kind: str) -> None:
         "result": EngineResult,
         "us-input": SimulationInput,
         "uk-input": UKSimulationInput,
+        "uk-drawdown-input": UKDrawdownYearInput,
         "household-input": HouseholdInput,
     }[kind]
     _write_json_payload(model.model_json_schema())
@@ -507,7 +524,13 @@ def core_schema(kind: str) -> None:
 @click.option(
     "--engine",
     type=click.Choice(
-        ["auto", "us_retirement", "uk_retirement", "us_household_resources"]
+        [
+            "auto",
+            "us_retirement",
+            "uk_retirement",
+            "us_household_resources",
+            "uk_drawdown_year",
+        ]
     ),
     default="auto",
     show_default=True,
