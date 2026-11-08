@@ -62,7 +62,8 @@ export interface UKYearBreakdown {
   contributions?: number;
   /** Median spending the accounts could not cover this year. */
   unmet_spending?: number;
-  /** Share of paths alive this year with more than £1 of unmet spending. */
+  /** Share of all simulated paths that are alive this year and have more
+   *  than £1 of unmet spending. */
   shortfall_share?: number;
   /** Share of paths alive this year short of money while their SIPP, not yet
    *  drawable, still held some. */

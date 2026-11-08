@@ -170,7 +170,7 @@ def _caveats(inputs: UKSimulationInput) -> list[str]:
         "Single-person UK simulator; couples, annuities, and means-tested benefits are not yet modeled.",
         "Future tax years beyond available PolicyEngine UK parameters use the latest available parameter year.",
         "Net income is income less income tax and employee National Insurance; benefits such as Pension Credit and Universal Credit are not added.",
-        "The State Pension and earnings inputs are held flat in cash terms; they are not uprated with inflation.",
+        "Neither the State Pension nor earnings is uprated with inflation: the State Pension stays at its input amount and earnings follow the chosen earnings model.",
         "GIA sales are modeled without Capital Gains Tax, and pension contributions without tax relief.",
         "Employee National Insurance is charged on earnings at every age, including past State Pension age.",
         "SIPP money cannot be drawn before the minimum pension age; spending it cannot cover counts as unmet (sipp_locked_shortfall_rate).",

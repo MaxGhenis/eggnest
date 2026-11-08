@@ -29,7 +29,7 @@ const DEFAULT_INPUT: UKSimulationInput = {
   gia_balance: 50000,
   annual_spending: 30000,
   spending_mode: "real",
-  state_pension_annual: 11502,
+  state_pension_annual: 12547.6,
   state_pension_start_age: 67,
   employment_income: 0,
   retirement_age: 67,
@@ -454,7 +454,7 @@ function InputsPanel({
         )}
         <RangeField
           label="State Pension (annual)"
-          hint="Full new = £11,502"
+          hint="Full new 2026/27 = £12,548 (£241.30/week)"
           value={input.state_pension_annual ?? 0}
           onChange={(v) => updateField("state_pension_annual", v)}
           min={0}

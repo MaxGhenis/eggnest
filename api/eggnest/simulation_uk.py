@@ -548,13 +548,13 @@ def _iterate_years(
                 base_tax,
                 tax_for.sipp_draw_evaluator(tfc_available),
             )
-            sipp_draw = np.minimum(sipp_draw, state.sipp)
             tax_free_cash = _tax_free_cash(sipp_draw, tfc_available)
             state.sipp = state.sipp - sipp_draw
             state.tfc_used = state.tfc_used + tax_free_cash
             direct_tax = income_tax + employee_ni
             tax = UKYearResults(
-                net_income=non_wrapper_income + sipp_draw - tax_free_cash - direct_tax,
+                # Gross income here includes the whole draw, tax-free cash too.
+                net_income=non_wrapper_income + sipp_draw - direct_tax,
                 total_tax=direct_tax,
                 income_tax=income_tax,
                 employee_ni=employee_ni,
