@@ -165,9 +165,9 @@ PROGRAMS: list[ProgramSpec] = [
                 label="Money to spend",
                 kind="scalar",
                 unit="GBP/year",
-                description=UKDrawdownYearResult.model_fields[
-                    "at_chosen_draw"
-                ].annotation.model_fields["money_to_spend"].description,
+                description=UKDrawdownYearResult.model_fields["at_chosen_draw"]
+                .annotation.model_fields["money_to_spend"]
+                .description,
             ),
             ProgramOutput(
                 name="pension_credit",

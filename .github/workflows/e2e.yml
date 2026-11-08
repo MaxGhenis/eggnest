@@ -12,7 +12,9 @@ concurrency:
 jobs:
   e2e:
     timeout-minutes: 20
-    runs-on: ubuntu-latest
+    # Playwright 1.57 refuses to install its browser on ubuntu-26.04, which
+    # ubuntu-latest now resolves to.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: app
