@@ -132,13 +132,18 @@ def _assumptions(inputs: HouseholdInput) -> dict[str, Any]:
         ),
         "net_income_definition": (
             "total_income - total_taxes + total_benefits, equal to PolicyEngine-US "
-            "household_net_income with health benefits and health costs excluded."
+            "household_net_income with health benefits and health costs excluded, "
+            "except that it keeps Wisconsin's retirement income exclusion, which "
+            "household_net_income misses."
         ),
         "tax_credit_accounting": (
             "Taxes are reported before refundable credits: federal income tax "
             "after non-refundable credits, and state income tax before state "
-            "refundable credits. Refundable credits are counted once, in total "
-            "benefits."
+            "refundable credits. Where PolicyEngine-US state_income_tax applies "
+            "an election that wins, such as Wisconsin's retirement income "
+            "exclusion, the state row is that tax floored at zero, and state "
+            "refundable credits count only as far as it is negative. Refundable "
+            "credits are counted once, in total benefits."
         ),
         "marginal_tax_rate_definition": (
             "1 - (change in net income) / $1,000 of additional wages for the "
