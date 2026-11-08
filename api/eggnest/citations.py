@@ -158,6 +158,16 @@ HOUSEHOLD_CITATIONS = {
     ),
 }
 
+# The state_income_tax row is state_income_tax_before_refundable_credits, or
+# PolicyEngine-US state_income_tax floored at zero where that variable applies
+# an election the before-refundable figure ignores (Wisconsin's retirement
+# income exclusion). The row cites both.
+_STATE_INCOME_TAX_ELECTIONS = _policyengine_variable(
+    "state_income_tax",
+    "State income tax after refundable credits, which applies elections such "
+    "as Wisconsin's retirement income exclusion",
+)
+
 # Taxes cited for every household, whatever their amount.
 TAX_CITATION_KEYS = (
     "federal_income_tax",
@@ -201,7 +211,9 @@ def household_resource_output_citations(
     credit_keys = _non_refundable_credit_keys(result)
 
     federal_citations = _citations_for_keys(["federal_income_tax", *credit_keys])
-    state_citations = _citations_for_keys(["state_income_tax"])
+    state_citations = _dedupe_citations(
+        [*_citations_for_keys(["state_income_tax"]), _STATE_INCOME_TAX_ELECTIONS]
+    )
     payroll_citations = _citations_for_keys(_payroll_keys(result))
     other_tax_citations = _citations_for_keys(_other_tax_keys(result))
     tax_citations = _dedupe_citations(

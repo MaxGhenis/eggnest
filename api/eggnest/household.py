@@ -32,6 +32,7 @@ from eggnest.citations import (
     household_resource_output_citations,
 )
 from eggnest.constants import FILING_STATUS_PE_SITUATION, STATE_FIPS
+from eggnest.earnings_grid import earnings_grid_values
 from eggnest.models import (
     EarningsGridCliff,
     EarningsGridComparisonResult,
@@ -563,7 +564,7 @@ def compare_earnings_grid(
     summarizes the resource curve for agents.
     """
     calc = HouseholdCalculator()
-    incomes = _grid_values(
+    incomes = earnings_grid_values(
         grid_input.income_min,
         grid_input.income_max,
         grid_input.step,
@@ -663,17 +664,6 @@ def _with_person_employment_income(
         update={"employment_income": employment_income}
     )
     return household.model_copy(update={"people": people})
-
-
-def _grid_values(income_min: float, income_max: float, step: float) -> list[float]:
-    values = []
-    current = income_min
-    while current <= income_max + 1e-9:
-        values.append(round(current, 2))
-        current += step
-    if values[-1] != income_max:
-        values.append(round(income_max, 2))
-    return values
 
 
 def _union_of_nonzero(dicts) -> dict[str, float]:

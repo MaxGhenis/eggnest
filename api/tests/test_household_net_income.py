@@ -892,6 +892,17 @@ class TestAgentSurfacesAgree:
     """The earnings grid and the core envelope report what calculate() reports."""
 
     @light
+    @example(
+        # 3096.14 + 1000 is 4096.139999999999 in floating point, which the
+        # grid used to turn into a second $4,096.14 row.
+        household=HouseholdInput(
+            state="CA",
+            year=2025,
+            people=[
+                PersonInput(age=40, employment_income=3096.14, is_tax_unit_head=True)
+            ],
+        )
+    )
     @given(household=households())
     def test_earnings_grid_step_matches_marginal_tax_rate(self, household):
         # A two-row grid from the primary earner's wages to $1,000 more

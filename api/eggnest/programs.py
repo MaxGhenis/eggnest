@@ -26,7 +26,9 @@ PROGRAMS: list[ProgramSpec] = [
                 unit="USD/year",
                 description=(
                     "Gross income minus modeled taxes plus modeled benefits; equals "
-                    "PolicyEngine-US household_net_income without health coverage."
+                    "PolicyEngine-US household_net_income without health coverage, "
+                    "except that it keeps Wisconsin's retirement income exclusion, "
+                    "which household_net_income misses."
                 ),
             ),
             ProgramOutput(
