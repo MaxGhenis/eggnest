@@ -37,6 +37,16 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
+      # The Modal image installs requirements-modal.txt, so it must be the
+      # runtime part of uv.lock that these tests run against. (`uv export`
+      # leaves out extras such as dev unless asked.) The check compares
+      # pin lines only, since uv's "# via" comments can change between uv
+      # versions.
+      - name: Check Modal requirements match uv.lock
+        run: |
+          uv export --frozen --no-dev --no-emit-project --no-hashes --no-header -o /tmp/requirements-modal.txt
+          diff -u <(grep -v '^ *#' requirements-modal.txt) <(grep -v '^ *#' /tmp/requirements-modal.txt)
+
       - name: Run linting
         run: |
           uv run ruff check .
@@ -79,15 +89,20 @@ jobs:
 
       # PolicyEngine memory accumulates over a pytest session and one full
       # run exhausts the 16GB runner (see the [mem] probe history). The
-      # US simulator files are the heavy ones: on policyengine-us 2.15.16 a
-      # single test there peaks near 9GB, so two xdist workers holding two
-      # of them overflow the runner. They each run alone, one process per
-      # file; the rest run as two sequential shards (memory resets between
-      # shards) with two xdist workers inside each.
+      # US simulator files are the heavy ones. On run 40183064222
+      # (policyengine-us 2.15.16), the runner's used memory peaked at 9,659,
+      # 7,243 and 12,460 MiB while test_simulation.py,
+      # test_simulation_correctness.py and test_simulation_holdings.py each
+      # ran alone, from 1,045 to 1,465 MiB idle, on a runner with 15,989 MiB.
+      # Adding those up, either pair with the holdings file would exceed the
+      # runner and the other pair would nearly fill it. So each runs alone,
+      # one process per file; the rest run as two sequential shards (memory
+      # resets between shards) with two xdist workers inside each.
       - name: Run tests
         run: |
           (while true; do free -m | awk '/Mem:/{printf "[mem] used=%dMiB avail=%dMiB\n",$3,$7}'; sleep 20; done) &
           MEMMON=$!
+          trap 'kill $MEMMON 2>/dev/null || true' EXIT
           HEAVY=( tests/test_simulation.py tests/test_simulation_correctness.py tests/test_simulation_holdings.py )
           FILES=( $(ls tests/test_*.py | sort | grep -vxF -f <(printf '%s\n' "${HEAVY[@]}")) )
           TOTAL=${#FILES[@]}
@@ -97,7 +112,57 @@ jobs:
           for file in "${HEAVY[@]}"; do
             uv run pytest "$file" --tb=short
           done
-          kill $MEMMON
+
+  # test-api runs on Python 3.14, but the Modal image (api/modal_app.py) runs
+  # 3.11. Install the same lock on 3.11, import the app and run the household,
+  # UK and job-store tests there. test-api installs the Axiom engine and runs
+  # the Axiom tests; this job does not install it, as the Modal image does not.
+  # The image installs no extras, so this job imports the app before it
+  # installs the dev extra, and optional imports such as supabase's take the
+  # same branch they take in the image.
+  test-api-py311:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: api
+    env:
+      UV_PYTHON: '3.11'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: api/uv.lock
+
+      - name: Install runtime dependencies (no extras, like the image)
+        run: uv sync --frozen
+
+      - name: Import the app
+        run: uv run --frozen python -c "import main"
+
+      - name: Install the dev extra for the tests
+        run: uv sync --frozen --extra dev
+
+      - name: Run household, UK and job-store tests
+        run: >-
+          uv run --frozen pytest tests/test_household_net_income.py
+          tests/test_household_calculator.py
+          tests/test_core_us_household_resources.py
+          tests/test_agent_household_surfaces.py
+          tests/test_simulation_uk.py
+          tests/test_core_uk_retirement.py
+          tests/test_modal_app.py
+          tests/test_simulation_jobs.py
+          -n 2 --dist loadfile --tb=short
 
   test-app:
     runs-on: ubuntu-latest
