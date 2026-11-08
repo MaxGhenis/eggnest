@@ -14,8 +14,11 @@ The expected figures are calculated by hand from the statutory rates:
 
 from __future__ import annotations
 
+import importlib.util
+import json
 import os
 from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -269,3 +272,31 @@ class TestAgainstCompiledEngine:
             )
         ).income_tax[0]
         assert tax == pytest.approx(7_286.0 + 154.0 + 92.0, abs=0.01)
+
+
+class TestFrontendFixture:
+    """The frontend's tests read recorded runs, which must match the engine."""
+
+    @staticmethod
+    def recorder():
+        path = Path(__file__).parents[1] / "scripts" / "record_uk_drawdown_fixture.py"
+        spec = importlib.util.spec_from_file_location("record_fixture", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_recorded_runs_match_the_engine(self):
+        recorder = self.recorder()
+        recorded = json.loads(recorder.FIXTURE.read_text())
+        assert set(recorded) == set(recorder.SCENARIOS)
+        for name, run in recorder.record().items():
+            saved = recorded[name]
+            assert saved["inputs"] == run["inputs"], name
+            fresh = run["envelope"]["outputs"]["uk_drawdown_year_result"]
+            old = saved["envelope"]["outputs"]["uk_drawdown_year_result"]
+            for field in ("sweep", "at_chosen_draw", "with_no_draw", "markers"):
+                assert fresh[field] == old[field], f"{name}: {field}"
+            assert [b["draw_from"] for b in fresh["bands"]] == [
+                b["draw_from"] for b in old["bands"]
+            ], name
+            assert run["envelope"]["caveats"] == saved["envelope"]["caveats"], name

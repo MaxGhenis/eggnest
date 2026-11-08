@@ -610,6 +610,15 @@ class TestBandsAndMarkersOnWholeRuns:
         assert result.next_1000 is None
         assert result.pot_left == 0.0
 
+    def test_no_marker_for_covering_annuity_income_without_any_credit(self):
+        result = run(
+            person(
+                state_pension=12_547.60, sipp_balance=400_000.0, draw_amount=30_000.0
+            )
+        )
+        assert result.with_no_draw.pension_credit == 0.0
+        assert result.markers == []
+
     def test_markers_skip_someone_under_the_qualifying_age(self):
         result = run(person(birth_date=UNDER_QUALIFYING_AGE, sipp_balance=20_000.0))
         assert result.markers == []

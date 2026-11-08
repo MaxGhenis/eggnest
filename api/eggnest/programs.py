@@ -192,8 +192,8 @@ PROGRAMS: list[ProgramSpec] = [
         ],
         caveats=[
             "Needs the Axiom rules engine and a rulespec-uk checkout.",
-            "One person living alone; Savings Credit, Housing Benefit and Council Tax Reduction are not modeled.",
-            "Scottish taxpayers are not covered.",
+            "Covers one person living alone and leaves out Savings Credit, Housing Benefit and Council Tax Reduction.",
+            "Doesn't cover Scottish taxpayers.",
         ],
     ),
 ]

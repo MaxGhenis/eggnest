@@ -561,7 +561,11 @@ def _markers(
 
     if _is_regular_pot_draw(inputs) and evaluated.weekly_minimum_guarantee is not None:
         covered = float(evaluated.annual_annuity_income[0])
-        if 0.0 < covered <= float(draws[-1]):
+        # With no credit at that draw, there's no credit to start losing.
+        if (
+            0.0 < covered <= float(draws[-1])
+            and np.interp(covered, draws, credit) > 0.005
+        ):
             markers.append(
                 UKDrawdownMarker(kind="pot_income_covered", draw=_money(covered))
             )

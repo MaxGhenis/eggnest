@@ -171,23 +171,26 @@ def _sources(versions: dict[str, str]) -> list[ModelSource]:
 def caveats_for(inputs: UKDrawdownYearInput) -> list[str]:
     """What this result leaves out, specific to these inputs where it can be."""
     caveats = [
-        "Educational calculator output only; not financial, tax, or legal advice, and not a benefits decision.",
-        "One person living alone. Couples, additional amounts for severe disability or caring, and Savings Credit are not modeled.",
-        "Housing Benefit and Council Tax Reduction are not modeled. Guarantee Credit also clears the income and capital tests for both (SI 2006/214 reg 26; SI 2012/2885 Sch 1 para 13), so losing it can cost more than this result shows.",
-        "Scottish taxpayers are not covered: Scotland sets its own income tax rates and neither engine holds the 2026/27 Scottish bands.",
-        "Pension Credit is counted for every eligible week of the tax year; a claim that starts part way through pays less.",
-        "Money drawn is taken to be spent evenly through the year. Pension Credit can treat someone as still holding money they spent or gave away to get or increase it (SI 2002/1792 regs 18(6) and 21).",
-        "An undrawn pot is valued from the GAD table; DWP uses the figure the pension provider supplies, and whether withdrawals are regular or one-off is DWP's decision (DMG 85456-85457).",
-        "Tax on income counted for Pension Credit is the tax payable on it; no tax is deducted from income a pot is only deemed to produce.",
+        "We give educational estimates, not financial, tax or legal advice or a benefits decision.",
+        "We cover one person living alone, and leave out couples, additional amounts for severe disability or caring, and Savings Credit.",
+        "We leave out Housing Benefit and Council Tax Reduction. People on Guarantee Credit pass the income and capital tests for both automatically (SI 2006/214 reg 26; SI 2012/2885 Sch 1 para 13), so losing it can cost more than this result shows.",
+        "We don’t cover Scottish taxpayers, who pay the income tax rates the Scottish Parliament sets.",
+        "We count Pension Credit for every eligible week of the tax year; a claim that starts part way through pays less.",
+        "We assume you spend the money you draw evenly through the year. DWP can treat someone as still holding money they spent or gave away to get or increase Pension Credit (SI 2002/1792 regs 18(6) and 21).",
+        "We value an undrawn pot from the Government Actuary’s table, and DWP decision makers also weigh evidence from the pension provider (DMG 85470-85471). DWP decides whether withdrawals count as regular or one-off (DMG 85456-85457).",
+        "We count all of a regular withdrawal as income, tax-free part included (DMG 85456, 85476).",
+        "We take the tax payable on counted income off that income (SI 2002/1792 reg 17(10)) and take no tax off income DWP only assumes a pot produces.",
     ]
     if inputs.draw_source == "gia" or inputs.gia_balance > 0:
-        caveats.append("Capital Gains Tax on selling GIA holdings is not modeled.")
+        caveats.append(
+            "We leave out Capital Gains Tax on selling investments outside ISAs."
+        )
     if state_pension_age_date(inputs.birth_date, "female") < SAVINGS_CREDIT_CUTOFF:
         caveats.append(
             "Someone who reached State Pension age before 6 April 2016 can qualify for Savings Credit (State Pension Credit Act 2002 s.3), so Pension Credit here may be too low."
         )
     if inputs.region == "Northern Ireland":
         caveats.append(
-            "This applies Great Britain's Pension Credit regulations; Northern Ireland has its own (SR 2003 No. 28)."
+            "We apply Great Britain’s Pension Credit regulations; Northern Ireland has its own (SR 2003 No. 28)."
         )
     return caveats
