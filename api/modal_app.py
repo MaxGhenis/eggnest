@@ -7,22 +7,13 @@ HERE = Path(__file__).parent
 app = modal.App("eggnest-api")
 job_statuses = modal.Dict.from_name("eggnest-job-statuses", create_if_missing=True)
 
-# Create image with dependencies
+# Install the runtime dependencies pinned in uv.lock, the versions CI tests.
+# Regenerate requirements-modal.txt after changing uv.lock:
+#   uv export --frozen --no-dev --no-emit-project --no-hashes --no-header \
+#     -o requirements-modal.txt
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .pip_install(
-        "fastapi>=0.109.0",
-        "uvicorn[standard]>=0.27.0",
-        "pydantic>=2.5.0",
-        "pydantic-settings>=2.1.0",
-        "numpy>=1.24.0",
-        "numpy-financial>=1.0.0",
-        "pandas>=2.0.0",
-        "scipy>=1.10.0",
-        "httpx>=0.26.0",
-        "policyengine-us>=1.0.0",
-        "policyengine-uk-compiled>=0.20.0",
-    )
+    .pip_install_from_requirements(str(HERE / "requirements-modal.txt"))
     .add_local_dir(str(HERE / "eggnest"), "/root/eggnest")
     .add_local_file(str(HERE / "main.py"), "/root/main.py")
 )

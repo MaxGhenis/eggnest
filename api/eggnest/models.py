@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from eggnest.citations import Citation
 from eggnest.constants import STATE_FIPS
+from eggnest.earnings_grid import MAX_GRID_ROWS, earnings_grid_too_large
 
 # Account types for tax treatment
 AccountType = Literal[
@@ -764,9 +765,16 @@ class HouseholdInput(BaseModel):
 
 
 class HouseholdResult(BaseModel):
-    """Results from a household tax calculation."""
+    """Results from a household tax calculation.
 
-    # Taxes
+    ``net_income = total_income - total_taxes + total_benefits``, which equals
+    PolicyEngine-US ``household_net_income`` (health coverage excluded), except
+    that it keeps Wisconsin's retirement income exclusion, which
+    ``household_net_income`` misses. Taxes are before refundable credits;
+    refundable credits are counted once, in ``benefits``.
+    """
+
+    # Taxes, all before refundable credits
     federal_income_tax: float = Field(
         ...,
         description=(
@@ -774,27 +782,86 @@ class HouseholdResult(BaseModel):
             "credits; refundable credits are counted in benefits."
         ),
     )
-    state_income_tax: float = Field(..., description="State income tax liability")
-    payroll_tax: float = Field(default=0, description="FICA/payroll taxes")
-    total_taxes: float = Field(..., description="Total tax liability")
+    state_income_tax: float = Field(
+        ...,
+        description=(
+            "State income tax before refundable credits (or the tax on an "
+            "election path that forfeits them, such as Wisconsin's retirement "
+            "income exclusion)"
+        ),
+    )
+    payroll_tax: float = Field(
+        default=0,
+        description=(
+            "Employee payroll taxes (Social Security, Medicare, Additional "
+            "Medicare, state payroll) plus self-employment tax"
+        ),
+    )
+    other_taxes: float = Field(
+        default=0,
+        description=(
+            "Taxes other than federal income, state income and payroll taxes: "
+            "state use tax, local income and occupational taxes, and any flat "
+            "tax a PolicyEngine-US reform adds"
+        ),
+    )
+    total_taxes: float = Field(..., description="All taxes before refundable credits")
 
-    # Benefits
+    # Benefits, including refundable credits
     benefits: dict[str, float] = Field(
         default_factory=dict,
-        description="Cash benefits and refundable tax credits by program",
+        description=(
+            "Benefits and refundable tax credits by program, keyed by "
+            "PolicyEngine-US variable name"
+        ),
     )
-    total_benefits: float = Field(default=0, description="Total benefits received")
+    total_benefits: float = Field(
+        default=0, description="Total benefits, including refundable tax credits"
+    )
+    refundable_tax_credits: float = Field(
+        default=0,
+        description="Federal and state refundable tax credits (part of total_benefits)",
+    )
+    non_refundable_tax_credits: float = Field(
+        default=0,
+        description=(
+            "Federal non-refundable credits used (already subtracted in "
+            "federal_income_tax)"
+        ),
+    )
+    non_refundable_credit_breakdown: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Federal non-refundable credits by PolicyEngine-US variable name; "
+            "unavailable_non_refundable_credits (negative) is the part that "
+            "exceeds the tax the credits can offset. Sums to "
+            "non_refundable_tax_credits."
+        ),
+    )
 
     # Income summary
-    total_income: float = Field(..., description="Total gross income")
-    net_income: float = Field(..., description="Net income after taxes and benefits")
+    total_income: float = Field(
+        ..., description="Total gross income entered, including Social Security"
+    )
+    net_income: float = Field(
+        ..., description="total_income - total_taxes + total_benefits"
+    )
 
     # Tax details
     tax_breakdown: dict[str, float] = Field(
-        default_factory=dict, description="Detailed tax breakdown"
+        default_factory=dict, description="Taxes by type; sums to total_taxes"
     )
-    marginal_tax_rate: float = Field(default=0, description="Marginal tax rate")
-    effective_tax_rate: float = Field(default=0, description="Effective tax rate")
+    marginal_tax_rate: float = Field(
+        default=0,
+        description=(
+            "Share of $1,000 more wages for the primary earner (the non-dependent "
+            "person with the highest earnings) that does not reach net income "
+            "(taxes plus benefit and credit reductions)"
+        ),
+    )
+    effective_tax_rate: float = Field(
+        default=0, description="total_taxes / total_income"
+    )
     citations: list[Citation] = Field(
         default_factory=list,
         description="Deduplicated source links for the fields in this result",
@@ -874,11 +941,21 @@ class EarningsGridInput(BaseModel):
         ge=0,
         description="Index of the person whose employment income varies.",
     )
-    income_min: float = Field(default=0, ge=0, description="Lowest annual earnings.")
-    income_max: float = Field(
-        default=80_000, ge=0, description="Highest annual earnings."
+    income_min: float = Field(
+        default=0, ge=0, allow_inf_nan=False, description="Lowest annual earnings."
     )
-    step: float = Field(default=1_000, gt=0, description="Annual earnings increment.")
+    income_max: float = Field(
+        default=80_000,
+        ge=0,
+        allow_inf_nan=False,
+        description="Highest annual earnings.",
+    )
+    step: float = Field(
+        default=1_000,
+        gt=0,
+        allow_inf_nan=False,
+        description="Annual earnings increment.",
+    )
 
     @model_validator(mode="after")
     def validate_grid(self) -> "EarningsGridInput":
@@ -887,9 +964,9 @@ class EarningsGridInput(BaseModel):
             raise ValueError("person_index must refer to an existing household member")
         if self.income_max < self.income_min:
             raise ValueError("income_max must be greater than or equal to income_min")
-        n_rows = int((self.income_max - self.income_min) / self.step) + 1
-        if n_rows > 501:
-            raise ValueError("earnings grid cannot exceed 501 rows")
+        # Counts the grid's own levels, including an income_max the steps miss.
+        if earnings_grid_too_large(self.income_min, self.income_max, self.step):
+            raise ValueError(f"earnings grid cannot exceed {MAX_GRID_ROWS} rows")
         return self
 
 

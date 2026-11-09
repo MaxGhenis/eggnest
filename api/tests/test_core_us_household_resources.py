@@ -44,10 +44,16 @@ def test_core_us_household_resources_returns_versioned_envelope():
     assert result.assumptions["state"] == "CA"
     assert any("not financial" in caveat for caveat in result.caveats)
     assert any(citation.id == "us:statutes/26/24" for citation in result.citations)
-    assert any(
-        citation.id == "us:statutes/26/24"
-        for citation in household_result.output_citations["benefits.child_tax_credit"]
-    )
+    # At $40,000 the CTC is split: the refundable part is a benefit and the
+    # non-refundable part lowers federal income tax. Both cite 26 USC 24.
+    for field in (
+        "benefits.refundable_ctc",
+        "non_refundable_credit_breakdown.non_refundable_ctc",
+    ):
+        assert any(
+            citation.id == "us:statutes/26/24"
+            for citation in household_result.output_citations[field]
+        )
     assert household_result.total_income == 40_000
     assert household_result.net_income == (
         household_result.total_income
@@ -69,3 +75,16 @@ def test_core_simulate_endpoint_returns_household_envelope():
     assert any(citation["id"] == "us:statutes/26/24" for citation in data["citations"])
     assert data["outputs"][OUTPUT_KEY]["total_income"] == 40_000
     assert "output_citations" in data["outputs"][OUTPUT_KEY]
+
+
+def test_state_income_tax_cites_the_election_variable():
+    # The row is the tax before refundable credits, or PolicyEngine-US
+    # state_income_tax where an election such as Wisconsin's retirement income
+    # exclusion wins, so it cites both variables.
+    from eggnest.citations import household_resource_output_citations
+
+    ids = [c.id for c in household_resource_output_citations()["state_income_tax"]]
+    assert ids == [
+        "policyengine-us:variables/state_income_tax_before_refundable_credits",
+        "policyengine-us:variables/state_income_tax",
+    ]
