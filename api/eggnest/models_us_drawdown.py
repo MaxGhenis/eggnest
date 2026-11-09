@@ -207,6 +207,13 @@ class USDrawdownOutcome(BaseModel):
             "and health coverage aside."
         )
     )
+    benefits_by_program: dict[str, float] = Field(
+        description=(
+            "The benefits above by program, keyed by PolicyEngine-US variable. "
+            "Every outcome in a result lists the same programs: those that pay "
+            "something at some draw."
+        )
+    )
     taxable_social_security: float
     medicare_income: float = Field(
         description=(
@@ -273,10 +280,16 @@ class USRequiredMinimum(BaseModel):
     balance: float
     divisor: float
     amount: float
+    other_withdrawals: float = Field(
+        description="Traditional withdrawals entered besides the draw."
+    )
     withdrawn: float = Field(
         description="Traditional withdrawals at the chosen draw, conversions aside."
     )
     shortfall: float
+    excise_tax_rate: float = Field(
+        description="Share of a shortfall due as excise tax (26 USC 4974(a))."
+    )
     excise_tax_on_shortfall: float = Field(
         description="25% of the shortfall (26 USC 4974(a)); 10% if corrected in time."
     )
@@ -325,10 +338,6 @@ class USDrawdownYearResult(BaseModel):
     state_income_tax: USDrawdownFigure
     other_taxes: USDrawdownFigure
     benefits: USDrawdownFigure
-    benefits_by_program: dict[str, float] = Field(
-        description="Benefits at the chosen draw, by PolicyEngine-US variable."
-    )
-    benefits_by_program_with_no_draw: dict[str, float]
     coverage_at_chosen_draw: dict[str, bool] = Field(
         description=(
             "Health coverage PolicyEngine-US finds the household eligible for "

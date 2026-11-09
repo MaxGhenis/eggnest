@@ -230,6 +230,9 @@ class _Evaluated:
             state_income_tax=_money(self.state_income_tax[index]),
             other_taxes=_money(self.other_taxes[index]),
             benefits=_money(self.benefits[index]),
+            benefits_by_program={
+                name: _money(values[index]) for name, values in self.programs.items()
+            },
             taxable_social_security=_money(self.taxable_social_security[index]),
             medicare_income=_money(self.medicare_income[index]),
             later_medicare_surcharge=_money(self.later_medicare_surcharge[index]),
@@ -550,8 +553,10 @@ def _required_minimum(
         balance=_money(minimum.balance),
         divisor=minimum.divisor,
         amount=_money(minimum.amount),
+        other_withdrawals=_money(minimum.other_withdrawals),
         withdrawn=_money(withdrawn),
         shortfall=_money(shortfall),
+        excise_tax_rate=EXCISE_TAX_RATE,
         excise_tax_on_shortfall=_money(EXCISE_TAX_RATE * shortfall),
     )
 
@@ -692,8 +697,6 @@ def run_us_drawdown_year(
             engine=engine_label,
             citations=citations_for_keys(program_keys),
         ),
-        benefits_by_program=merged.programs_at(chosen),
-        benefits_by_program_with_no_draw=merged.programs_at(no_draw),
         coverage_at_chosen_draw=merged.coverage_at(chosen),
         coverage_with_no_draw=merged.coverage_at(no_draw),
         money_to_spend=_money(merged.money_to_spend[chosen]),

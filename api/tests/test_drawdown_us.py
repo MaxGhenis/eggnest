@@ -197,10 +197,30 @@ def _assert_invariants(inputs: USDrawdownYearInput, result) -> None:
     assert draws[0] == 0.0
     assert draws[-1] <= source_balance(inputs) + 0.005
     cash = cash_income(inputs)
+    programs = sweep[0].benefits_by_program.keys()
     for point in sweep:
         taxes = point.federal_income_tax + point.state_income_tax + point.other_taxes
         assert point.money_to_spend == pytest.approx(
             cash + point.draw - taxes + point.benefits, abs=0.02
+        )
+        # Every outcome lists the same programs, and they make up the benefits.
+        assert point.benefits_by_program.keys() == programs
+        assert sum(point.benefits_by_program.values()) == pytest.approx(
+            point.benefits, abs=0.005 * (len(programs) + 1)
+        )
+    for minimum in result.required_minimums:
+        draws_here = (
+            inputs.draw_source == "traditional" and inputs.draw_owner == minimum.person
+        )
+        assert minimum.withdrawn == pytest.approx(
+            minimum.other_withdrawals + (inputs.draw_amount if draws_here else 0.0),
+            abs=0.01,
+        )
+        assert minimum.shortfall == pytest.approx(
+            max(minimum.amount - minimum.withdrawn, 0.0), abs=0.01
+        )
+        assert minimum.excise_tax_on_shortfall == pytest.approx(
+            minimum.excise_tax_rate * minimum.shortfall, abs=0.01
         )
     if draws[-1] == 0.0:
         assert result.bands == [] and result.next_1000 is None
@@ -449,8 +469,8 @@ def test_ssi_falls_a_dollar_per_dollar_drawn():
         draw_amount=1_000.0,
     )
     result = _run(inputs)
-    assert result.benefits_by_program_with_no_draw["ssi"] == pytest.approx(8_168.0)
-    assert result.benefits_by_program["ssi"] == pytest.approx(7_168.0)
+    assert result.with_no_draw.benefits_by_program["ssi"] == pytest.approx(8_168.0)
+    assert result.at_chosen_draw.benefits_by_program["ssi"] == pytest.approx(7_168.0)
     assert result.next_1000.to_benefits == pytest.approx(1.0)
     assert result.next_1000.kept == pytest.approx(0.0, abs=1e-9)
     assert not [m for m in result.markers if m.program == "ssi"]
@@ -487,7 +507,9 @@ def test_required_minimum_is_marked_and_a_shortfall_is_costed():
     (minimum,) = result.required_minimums
     assert minimum.divisor == 24.6
     assert minimum.amount == pytest.approx(10_000.0)
+    assert minimum.other_withdrawals == 0.0
     assert minimum.shortfall == pytest.approx(6_000.0)
+    assert minimum.excise_tax_rate == 0.25
     assert minimum.excise_tax_on_shortfall == pytest.approx(1_500.0)
     marker = next(m for m in result.markers if m.kind == "required_minimum_reached")
     assert marker.draw == pytest.approx(10_000.0)
@@ -506,6 +528,7 @@ def test_other_withdrawals_count_toward_the_required_minimum():
     )
     result = _run(inputs)
     (minimum,) = result.required_minimums
+    assert minimum.other_withdrawals == pytest.approx(3_000.0)
     assert minimum.withdrawn == pytest.approx(7_000.0)
     marker = next(m for m in result.markers if m.kind == "required_minimum_reached")
     assert marker.draw == pytest.approx(7_000.0)

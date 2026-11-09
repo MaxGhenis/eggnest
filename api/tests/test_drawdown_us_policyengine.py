@@ -12,11 +12,15 @@
 - Each kind of draw reaches the programs the way ``us_year_engine`` says.
 - Benefit steps far smaller than a grid interval's width are placed to
   within 1/24 of the interval.
+- Each outcome's benefits by program add up to its benefits.
+- The frontend's recorded runs match what PolicyEngine-US now produces.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -240,6 +244,15 @@ def test_money_to_spend_ties_to_household_net_income(name):
     assert money == pytest.approx(expected, abs=DOLLAR)
 
 
+@pytest.mark.parametrize("name", list(IDENTITY_CASES))
+def test_benefits_by_program_add_up_to_benefits(name):
+    result = run_us_drawdown_year(IDENTITY_CASES[name], ENGINE)
+    for point in result.sweep:
+        assert sum(point.benefits_by_program.values()) == pytest.approx(
+            point.benefits, abs=DOLLAR
+        )
+
+
 def test_alaska_permanent_fund_dividend_counts_as_a_benefit():
     arrays = ENGINE.evaluate(IDENTITY_CASES["alaska_cash"], np.array([0.0]))
     assert arrays.programs["ak_permanent_fund_dividend"][0] > 0
@@ -349,7 +362,7 @@ def test_small_snap_steps_and_its_end_are_placed_to_a_few_dollars():
         traditional_balance=50_000.0,
     )
     result = run_us_drawdown_year(inputs, ENGINE)
-    assert result.benefits_by_program_with_no_draw["snap"] > 0
+    assert result.with_no_draw.benefits_by_program["snap"] > 0
     steps = [
         round(band.to_benefits * (band.draw_to - band.draw_from))
         for band in result.bands
@@ -392,3 +405,40 @@ def test_cli_prints_the_input_schema():
     assert printed.exit_code == 0, printed.output
     schema = json.loads(printed.output)
     assert {"state", "you", "draw_source", "draw_amount"} <= set(schema["properties"])
+
+
+class TestFrontendFixture:
+    """The frontend's tests read recorded runs, which must match the engine."""
+
+    @staticmethod
+    def recorder():
+        path = Path(__file__).parents[1] / "scripts" / "record_us_drawdown_fixture.py"
+        spec = importlib.util.spec_from_file_location("record_us_fixture", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_recorded_runs_match_the_engine(self):
+        recorder = self.recorder()
+        recorded = json.loads(recorder.FIXTURE.read_text())
+        assert set(recorded) == set(recorder.SCENARIOS)
+        for name, run in recorder.record().items():
+            saved = recorded[name]
+            assert saved["inputs"] == run["inputs"], name
+            fresh = run["envelope"]["outputs"][OUTPUT_KEY]
+            old = saved["envelope"]["outputs"][OUTPUT_KEY]
+            for field in (
+                "sweep",
+                "at_chosen_draw",
+                "with_no_draw",
+                "markers",
+                "required_minimums",
+                "medicare_surcharge",
+                "coverage_with_no_draw",
+                "coverage_at_chosen_draw",
+            ):
+                assert fresh[field] == old[field], f"{name}: {field}"
+            assert [b["draw_from"] for b in fresh["bands"]] == [
+                b["draw_from"] for b in old["bands"]
+            ], name
+            assert run["envelope"]["caveats"] == saved["envelope"]["caveats"], name
