@@ -696,6 +696,7 @@ def run_core_simulation_endpoint(scenario: EngineScenario):
     from eggnest.models import HouseholdInput, SimulationInput
     from eggnest.models_uk import UKSimulationInput
     from eggnest.models_uk_drawdown import UKDrawdownYearInput
+    from eggnest.models_us_drawdown import USDrawdownYearInput
 
     try:
         if scenario.engine == "us_retirement":
@@ -706,6 +707,8 @@ def run_core_simulation_endpoint(scenario: EngineScenario):
             parsed = HouseholdInput.model_validate(scenario.inputs)
         elif scenario.engine == "uk_drawdown_year":
             parsed = UKDrawdownYearInput.model_validate(scenario.inputs)
+        elif scenario.engine == "us_drawdown_year":
+            parsed = USDrawdownYearInput.model_validate(scenario.inputs)
         else:
             parsed = None
     except ValidationError as exc:
@@ -735,6 +738,7 @@ def create_core_job(scenario: EngineScenario):
     from eggnest.models import HouseholdInput, SimulationInput
     from eggnest.models_uk import UKSimulationInput
     from eggnest.models_uk_drawdown import UKDrawdownYearInput
+    from eggnest.models_us_drawdown import USDrawdownYearInput
 
     try:
         if scenario.engine == "us_retirement":
@@ -745,6 +749,8 @@ def create_core_job(scenario: EngineScenario):
             parsed = HouseholdInput.model_validate(scenario.inputs)
         elif scenario.engine == "uk_drawdown_year":
             parsed = UKDrawdownYearInput.model_validate(scenario.inputs)
+        elif scenario.engine == "us_drawdown_year":
+            parsed = USDrawdownYearInput.model_validate(scenario.inputs)
         else:
             parsed = None
     except ValidationError as exc:
