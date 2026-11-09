@@ -145,7 +145,7 @@ def _assumptions(
             "with health benefits and costs left out"
         ),
         "savings_tested": (
-            "balances on 1 January 2026; retirement accounts count toward "
+            "balances on January 1, 2026; retirement accounts count toward "
             "ssi_countable_resources (POMS SI 01120.210 B), and SNAP leaves "
             "them out"
         ),
@@ -193,7 +193,7 @@ def caveats_for(
         "We give educational estimates, not financial, tax or legal advice or a benefits decision.",
         "We cover one person filing single or a married couple filing jointly, everyone 65 or older by the end of 2026.",
         "We don’t ask where in your state you live, so local income taxes follow PolicyEngine-US’s defaults.",
-        "We count savings at their 1 January 2026 balances for the whole year, so spending them down doesn’t change what you qualify for here.",
+        "We count savings at their balances on January 1, 2026, for the whole year, so spending them down doesn’t change what you qualify for here.",
         "We count IRA and 401(k) balances as resources for SSI, and for the Medicaid and Medicare Savings Program tests that use SSI’s resource figure, because you can withdraw them (POMS SI 01120.210 B).",
         "We count every IRA and 401(k) withdrawal as income spread over the year, as PolicyEngine-US does for SNAP and SSI. SNAP leaves nonrecurring lump sums out of income and counts them as resources (7 CFR 273.9(c)(8)), so a single large withdrawal may count as savings instead.",
         "We take Social Security as the amount you enter, before Medicare premiums, and don’t apply the retirement earnings test.",
@@ -215,7 +215,7 @@ def caveats_for(
     minimums = result.required_minimums if result else []
     if minimums:
         caveats.append(
-            "We figure required minimum distributions from the Uniform Lifetime Table. In the first year one is due, it can wait until 1 April of the next year."
+            "We figure required minimum distributions from the Uniform Lifetime Table. In the first year one is due, it can wait until April 1 of the next year."
         )
         if inputs.spouse is not None and (
             abs(inputs.you.birth_year - inputs.spouse.birth_year) > _JOINT_TABLE_AGE_GAP

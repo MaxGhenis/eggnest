@@ -257,8 +257,8 @@ PROGRAMS: list[ProgramSpec] = [
         ],
         caveats=[
             "Covers one person filing single or a married couple filing jointly, everyone 65 or older by the end of 2026.",
-            "Counts savings at their 1 January 2026 balances and doesn't count the value of Medicaid or the Medicare Savings Programs.",
-            "Applies the latest Medicare income lines CMS has set to 2028 premiums.",
+            "Counts savings at their balances on January 1, 2026, and doesn't count the value of Medicaid or the Medicare Savings Programs.",
+            "Applies Medicare’s 2026 income lines and amounts to 2028 premiums.",
         ],
     ),
 ]

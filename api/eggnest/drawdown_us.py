@@ -17,7 +17,7 @@ changing, so band edges land on the dollar, and inside any interval where a
 benefit or tax jumps, so a cliff is placed to a few dollars.
 
 Money drawn counts as spent through the year and savings balances are those on
-1 January 2026, the figures SSI, Medicaid and SNAP test against.
+January 1, 2026, the figures SSI, Medicaid and SNAP test against.
 """
 
 from __future__ import annotations
