@@ -57,17 +57,20 @@ jobs:
 
       # PolicyEngine memory accumulates over a pytest session and one full
       # run exhausts the 16GB runner (see the [mem] probe history). The US
-      # simulator files are the heavy ones: on policyengine-us 2.15.16 a single
-      # test there peaks near 9GB, so two xdist workers holding two of them, or
-      # one of them beside the household property tests, overflow the runner.
-      # They each run alone, one process per file; the rest run as two
-      # sequential shards (memory resets between shards) with two xdist
-      # workers inside each. Same layout as uk-simulator-shipped (9d37f84).
+      # simulator files are the heavy ones. On run 42522911064
+      # (policyengine-us 2.15.16), the runner's used memory peaked at 8,538
+      # MiB while test_simulation.py ran alone and 10,658 MiB while
+      # test_simulation_holdings.py did. When one shard held both files
+      # beside the household property tests, it filled the runner and GitHub
+      # cancelled the step. So each runs alone, one process per file, and the
+      # rest run as two sequential shards (memory resets between shards) with
+      # two xdist workers inside each. Same layout as uk-simulator-shipped
+      # (9d37f84).
       - name: Run tests
         run: |
           (while true; do free -m | awk '/Mem:/{printf "[mem] used=%dMiB avail=%dMiB\n",$3,$7}'; sleep 20; done) &
           MEMMON=$!
-          trap 'kill $MEMMON' EXIT
+          trap 'kill $MEMMON 2>/dev/null || true' EXIT
           HEAVY=( tests/test_simulation.py tests/test_simulation_holdings.py )
           FILES=( $(ls tests/test_*.py | sort | grep -vxF -f <(printf '%s\n' "${HEAVY[@]}")) )
           TOTAL=${#FILES[@]}
