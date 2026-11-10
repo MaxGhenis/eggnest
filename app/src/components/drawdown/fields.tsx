@@ -5,14 +5,19 @@ import { useId, useState, type ReactNode } from "react";
 export const INPUT_CLASS =
   "w-full rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-[var(--color-bg-card)] px-3 py-2 text-base";
 
-/** Reads an amount typed with or without a currency sign or commas. */
+/** Reads an amount typed with or without a currency or percent sign or commas. */
 export function parseAmount(text: string): number {
-  const value = Number(text.replace(/[£$,\s]/g, ""));
+  const value = Number(text.replace(/[£$%,\s]/g, ""));
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function grouped(value: number): string {
   return value.toLocaleString("en-GB", { maximumFractionDigits: 2 });
+}
+
+/** The id of a field's hint, which the field names as its description. */
+export function hintId(fieldId: string): string {
+  return `${fieldId}-hint`;
 }
 
 export function Label({ htmlFor, text, hint }: { htmlFor: string; text: string; hint?: string }) {
@@ -21,7 +26,11 @@ export function Label({ htmlFor, text, hint }: { htmlFor: string; text: string; 
       <label htmlFor={htmlFor} className="block font-medium">
         {text}
       </label>
-      {hint && <p className="mb-1 text-sm text-[var(--color-text-muted)]">{hint}</p>}
+      {hint && (
+        <p id={hintId(htmlFor)} className="mb-1 text-sm text-[var(--color-text-muted)]">
+          {hint}
+        </p>
+      )}
     </>
   );
 }
@@ -60,6 +69,7 @@ export function NumberField({
           type="text"
           inputMode="decimal"
           autoComplete="off"
+          aria-describedby={hint ? hintId(id) : undefined}
           className={`${INPUT_CLASS} tabular-nums ${prefix ? "pl-7" : ""}`}
           value={draft ?? grouped(value)}
           onFocus={() => setDraft(value ? String(value) : "")}
@@ -97,8 +107,9 @@ export function Choice<T extends string | number>({
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
 }) {
+  const id = useId();
   return (
-    <fieldset>
+    <fieldset aria-describedby={hint ? hintId(id) : undefined}>
       <legend className="font-medium">{legend}</legend>
       <div className="mt-1 grid grid-cols-2 gap-1.5">
         {options.map((option) => (
@@ -116,7 +127,11 @@ export function Choice<T extends string | number>({
           </label>
         ))}
       </div>
-      {hint && <p className="mt-1 text-sm text-[var(--color-text-muted)]">{hint}</p>}
+      {hint && (
+        <p id={hintId(id)} className="mt-1 text-sm text-[var(--color-text-muted)]">
+          {hint}
+        </p>
+      )}
     </fieldset>
   );
 }

@@ -180,7 +180,7 @@ export function DrawdownChart<Row extends ChartRow>({
           width={width}
           height={totalHeight}
           role="img"
-          aria-label={`Money to spend by amount drawn, from ${money(noDraw.money_to_spend)} with no draw to ${money(rows[rows.length - 1].money_to_spend)} with a draw of ${money(top)}.`}
+          aria-label={`Money to spend at each amount you draw, from ${money(noDraw.money_to_spend)} with no draw to ${money(rows[rows.length - 1].money_to_spend)} with a draw of ${money(top)}.`}
         >
           {yTicks.map((tick) => (
             <g key={tick}>

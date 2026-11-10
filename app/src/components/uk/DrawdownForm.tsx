@@ -8,7 +8,7 @@ import type {
   UKDrawdownYearInput,
 } from "../../lib/api-uk-drawdown";
 import { LUMP_SUM_ALLOWANCE } from "../../lib/uk-drawdown";
-import { Choice, Group, INPUT_CLASS, Label, NumberField } from "../drawdown/fields";
+import { Choice, Group, INPUT_CLASS, Label, NumberField, hintId } from "../drawdown/fields";
 
 const SOURCES: { value: DrawSource; label: string }[] = [
   { value: "sipp", label: "Pension pot" },
@@ -101,6 +101,7 @@ export function DrawdownForm({
           />
           <select
             id={regionId}
+            aria-describedby={hintId(regionId)}
             className={`${INPUT_CLASS} mt-1`}
             value={inputs.region}
             onChange={(event) => onChange({ region: event.target.value as DrawRegion })}

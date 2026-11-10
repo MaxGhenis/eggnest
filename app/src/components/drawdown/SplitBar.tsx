@@ -38,7 +38,7 @@ export function SplitBar({
           title={`${unit(part.amount)} ${part.name}`}
           className="flex items-center rounded px-2 text-xs font-semibold tabular-nums"
           style={{
-            width: `${(part.amount / whole) * 100}%`,
+            width: `${(part.amount * 100) / whole}%`,
             backgroundColor: SPLIT_COLORS[part.key],
             color: part.ink,
           }}

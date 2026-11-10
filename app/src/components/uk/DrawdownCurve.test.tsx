@@ -85,7 +85,7 @@ describe("DrawdownCurve", () => {
   it("describes the curve for screen readers", () => {
     renderCurve();
     expect(screen.getByRole("img")).toHaveAccessibleName(
-      "Money to spend by amount drawn, from £12,000 with no draw to £19,100 with a draw of £10,000.",
+      "Money to spend at each amount you draw, from £12,000 with no draw to £19,100 with a draw of £10,000.",
     );
   });
 
