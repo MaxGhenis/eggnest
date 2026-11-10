@@ -1,4 +1,4 @@
-"""OAuth device flow authentication for EggNest CLI."""
+"""OAuth device flow authentication for Eggnest CLI."""
 
 from __future__ import annotations
 

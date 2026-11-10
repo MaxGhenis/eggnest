@@ -1,4 +1,4 @@
-"""Filesystem sync functionality for EggNest CLI.
+"""Filesystem sync functionality for Eggnest CLI.
 
 Syncs scenarios between local YAML files and Supabase.
 Enables AI agents to explore and edit financial scenarios as files.
@@ -60,7 +60,7 @@ def scenario_to_yaml(scenario: dict[str, Any]) -> str:
     params = scenario.get("input_params", scenario)
 
     # Build a structured YAML with comments
-    yaml_content = f"""# EggNest Scenario: {scenario.get('name', 'Unnamed')}
+    yaml_content = f"""# Eggnest Scenario: {scenario.get('name', 'Unnamed')}
 # Last synced: {datetime.now().isoformat()}
 # Edit this file and run 'eggnest sync push' to update
 

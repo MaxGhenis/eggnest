@@ -1,4 +1,4 @@
-"""Agent-facing program catalog for EggNest calculation surfaces."""
+"""Agent-facing program catalog for Eggnest calculation surfaces."""
 
 from __future__ import annotations
 

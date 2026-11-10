@@ -3,23 +3,23 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://eggnest.co"),
-  title: "EggNest - Financial planning simulator",
+  title: "Eggnest - Financial planning simulator",
   description:
     "Monte Carlo financial simulation with real tax calculations. See your actual probability of success, not just guesses.",
   icons: {
     icon: "/favicon.svg",
   },
   openGraph: {
-    siteName: "EggNest",
+    siteName: "Eggnest",
     type: "website",
     url: "https://eggnest.co",
-    title: "EggNest - Financial planning simulator",
+    title: "Eggnest - Financial planning simulator",
     description:
       "Monte Carlo financial simulation with real tax calculations via PolicyEngine.",
   },
   twitter: {
     card: "summary",
-    title: "EggNest - Financial planning simulator",
+    title: "Eggnest - Financial planning simulator",
     description:
       "Monte Carlo financial simulation with real tax calculations via PolicyEngine.",
   },

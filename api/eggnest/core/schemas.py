@@ -26,7 +26,7 @@ EngineJobState = Literal["queued", "running", "succeeded", "failed"]
 
 
 class EngineScenario(BaseModel):
-    """Canonical input envelope for all EggNest calculation engines."""
+    """Canonical input envelope for all Eggnest calculation engines."""
 
     schema_version: str = Field(default=SCENARIO_SCHEMA_VERSION)
     engine: EngineId
@@ -59,7 +59,7 @@ class Reproducibility(BaseModel):
 
 
 class EngineResult(BaseModel):
-    """Canonical output envelope for all EggNest calculation engines."""
+    """Canonical output envelope for all Eggnest calculation engines."""
 
     schema_version: str = Field(default=RESULT_SCHEMA_VERSION)
     scenario_schema_version: str

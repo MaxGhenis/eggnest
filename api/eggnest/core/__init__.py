@@ -1,4 +1,4 @@
-"""Core calculation engine boundary for EggNest.
+"""Core calculation engine boundary for Eggnest.
 
 The core package is intentionally UI/API/auth-free. Product surfaces should
 call these stable scenario/result contracts instead of importing simulator

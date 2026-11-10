@@ -18,8 +18,8 @@
   <path d="M8 24 Q12 26, 16 26 Q20 26, 24 24" stroke="rgba(255,255,255,0.4)" stroke-width="1" fill="none"/>
   <path d="M10 22 Q13 23, 16 23 Q19 23, 22 22" stroke="rgba(255,255,255,0.3)" stroke-width="1" fill="none"/>
 
-  <!-- Text: EggNest -->
+  <!-- Text: Eggnest -->
   <text x="38" y="22" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="700" fill="#d97706">
-    EggNest
+    Eggnest
   </text>
 </svg>

@@ -2,12 +2,12 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "EggNest - Know if your money will last",
+  title: "Eggnest - Know if your money will last",
   description:
     "Monte Carlo simulation meets real tax law. See thousands of possible futures for your finances — the full range of possibilities.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "EggNest - Know if your money will last",
+    title: "Eggnest - Know if your money will last",
     description:
       "Monte Carlo simulation meets real tax law. See thousands of possible futures for your finances.",
     url: "/",
@@ -159,7 +159,7 @@ export default function HomePage() {
           className="text-center text-[clamp(2rem,4vw,2.75rem)] font-medium text-[var(--color-text)]"
           style={{ letterSpacing: "-0.02em" }}
         >
-          What makes EggNest different
+          What makes Eggnest different
         </h2>
         <div className="mx-auto mt-12 grid max-w-[75rem] grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {[

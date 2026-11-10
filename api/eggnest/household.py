@@ -397,7 +397,7 @@ class HouseholdCalculator:
         )
         # Market income PolicyEngine computes beyond what the user entered,
         # such as the Alaska Permanent Fund Dividend. PolicyEngine counts it as
-        # market income; EggNest shows it as its own line so total_income stays
+        # market income; Eggnest shows it as its own line so total_income stays
         # what the user typed.
         entered_market_income = total_income - sum(
             p.social_security for p in household.people

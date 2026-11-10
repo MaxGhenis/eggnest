@@ -1,5 +1,5 @@
 """
-Computed results for the EggNest methodology paper.
+Computed results for the Eggnest methodology paper.
 
 This module provides a single source of truth for all numerical values
 cited in the paper. Run this module to regenerate values or import `r`
@@ -288,7 +288,7 @@ r = compute_results()
 
 
 if __name__ == "__main__":
-    print("EggNest Paper Results")
+    print("Eggnest Paper Results")
     print("=" * 50)
     print(f"\nReference Case: {r.reference.description}")
     print(f"Portfolio: {r.reference.portfolio_description}")

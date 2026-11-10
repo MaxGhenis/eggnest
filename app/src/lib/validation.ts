@@ -1,5 +1,5 @@
 /**
- * Client-side form validation for EggNest.
+ * Client-side form validation for Eggnest.
  * Validates simulation parameters, holdings, and life event inputs
  * before sending to the API.
  */

@@ -1,5 +1,5 @@
 /**
- * Shared constants used across the EggNest app.
+ * Shared constants used across the Eggnest app.
  */
 import type { SimulationInput, SpouseInput, AnnuityInput } from "./api";
 

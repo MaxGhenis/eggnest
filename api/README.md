@@ -1,6 +1,6 @@
-# EggNest API
+# Eggnest API
 
-Python package behind [EggNest](https://eggnest.co): a FastAPI service and
+Python package behind [Eggnest](https://eggnest.co): a FastAPI service and
 `eggnest` CLI for Monte Carlo retirement simulation, with federal and state
 taxes and benefits calculated by PolicyEngine-US.
 

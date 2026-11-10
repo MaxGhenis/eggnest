@@ -1,4 +1,4 @@
-# Editorial Summary: EggNest Methodology Paper
+# Editorial Summary: Eggnest Methodology Paper
 
 ## Decision: Minor Revisions (Conditional Accept)
 
@@ -120,7 +120,7 @@ All reviewers acknowledged:
 
 1. **Return Distribution**: Which accurately describes the methodology—log-normal or bootstrap?
 
-2. **Validation**: Can you provide specific test cases comparing EggNest vs. IRS/TurboTax calculations?
+2. **Validation**: Can you provide specific test cases comparing Eggnest vs. IRS/TurboTax calculations?
 
 3. **Placeholder Values**: Are the paper's numerical results (82% taxable-first, etc.) from actual simulations or placeholders?
 
