@@ -34,7 +34,7 @@ draw_amount: 30000
 
 ## What decides each number
 
-PolicyEngine-US computes every tax and benefit, and EggNest holds no tax or
+PolicyEngine-US computes every tax and benefit, and Eggnest holds no tax or
 benefit formulas here. `api/eggnest/us_year_engine.py` builds one
 PolicyEngine-US household per draw amount in a single simulation and decides
 what each household's inputs hold. `api/eggnest/drawdown_us.py` chooses the
