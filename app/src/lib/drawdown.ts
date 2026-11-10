@@ -3,7 +3,20 @@
  * amount; these read amounts off its sweep and lay out the chart.
  */
 
-/** The result at any draw, read along the straight line between sweep rows. */
+function isAmounts(value: unknown): value is Record<string, number> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === "number")
+  );
+}
+
+/**
+ * The result at any draw, read along the straight line between sweep rows.
+ * Amounts nested one level down, such as benefits by program, follow the same
+ * line.
+ */
 export function rowAt<Row extends { draw: number }>(sweep: readonly Row[], draw: number): Row {
   const first = sweep[0];
   const last = sweep[sweep.length - 1];
@@ -26,6 +39,13 @@ export function rowAt<Row extends { draw: number }>(sweep: readonly Row[], draw:
     const to = b[key];
     if (key !== "draw" && typeof from === "number" && typeof to === "number") {
       row[key] = (from + share * (to - from)) as Row[keyof Row];
+    } else if (isAmounts(from) && isAmounts(to)) {
+      const mixed: Record<string, number> = {};
+      for (const name of new Set([...Object.keys(from), ...Object.keys(to)])) {
+        const start = from[name] ?? 0;
+        mixed[name] = start + share * ((to[name] ?? 0) - start);
+      }
+      row[key] = mixed as Row[keyof Row];
     }
   }
   return row;
