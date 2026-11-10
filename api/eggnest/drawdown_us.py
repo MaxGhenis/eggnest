@@ -43,7 +43,7 @@ from .models_us_drawdown import (
     source_balance,
 )
 from .rmd import UNIFORM_LIFETIME_TABLE, calculate_rmd
-from .us_year_engine import CENT, USYearArrays
+from .us_year_engine import CENT, OTHER_TAX_PARTS, USYearArrays
 
 NEXT_DRAW_STEP = 1_000.0
 # 26 USC 4974(a): 25% of the amount by which distributions fall short of the
@@ -201,6 +201,7 @@ class _Evaluated:
     money_to_spend: np.ndarray
     programs: dict[str, np.ndarray] = field(default_factory=dict)
     coverage: dict[str, np.ndarray] = field(default_factory=dict)
+    tax_parts: dict[str, np.ndarray] = field(default_factory=dict)
 
     _ARRAYS = (
         "draws",
@@ -246,6 +247,12 @@ class _Evaluated:
             if abs(values[index]) > CENT
         }
 
+    def tax_parts_at(self, index: int) -> list[str]:
+        """The parts of other taxes the household pays at this draw."""
+        return [
+            name for name, values in self.tax_parts.items() if abs(values[index]) > CENT
+        ]
+
     def coverage_at(self, index: int) -> dict[str, bool]:
         return {name: bool(values[index]) for name, values in self.coverage.items()}
 
@@ -275,6 +282,7 @@ class _Evaluated:
             },
             programs=by_name(self.programs, other.programs, 0.0),
             coverage=by_name(self.coverage, other.coverage, False),
+            tax_parts=by_name(self.tax_parts, other.tax_parts, 0.0),
         )
 
 
@@ -311,6 +319,7 @@ def _evaluate(
             coverage={
                 name: np.asarray(v, dtype=bool) for name, v in arrays.coverage.items()
             },
+            tax_parts=dict(arrays.other_tax_parts),
         ),
         people_on_medicare=arrays.people_on_medicare,
         medicare_lines=list(arrays.medicare_lines),
@@ -627,6 +636,15 @@ def _markers(
     return sorted(markers, key=lambda marker: (marker.draw, marker.kind))
 
 
+def _other_tax_keys(merged: _Evaluated, chosen: int, no_draw: int) -> list[str]:
+    """The other taxes to cite: those paid at the chosen draw or at none."""
+    if not merged.tax_parts:
+        # An engine that doesn't itemize: cite the payroll tax and the total.
+        return ["payroll_tax", "other_taxes"]
+    paid = {*merged.tax_parts_at(chosen), *merged.tax_parts_at(no_draw)}
+    return [name for name in OTHER_TAX_PARTS if name in paid]
+
+
 def run_us_drawdown_year(
     inputs: USDrawdownYearInput, engine: USYearEngine | None = None
 ) -> USDrawdownYearResult:
@@ -667,6 +685,7 @@ def run_us_drawdown_year(
     program_keys = list(
         dict.fromkeys([*merged.programs_at(chosen), *merged.programs_at(no_draw)])
     )
+    other_tax_keys = _other_tax_keys(merged, chosen, no_draw)
     return USDrawdownYearResult(
         tax_year=inputs.tax_year,
         state=inputs.state,
@@ -690,7 +709,7 @@ def run_us_drawdown_year(
         other_taxes=USDrawdownFigure(
             amount=_money(merged.other_taxes[chosen]),
             engine=engine_label,
-            citations=citations_for_keys(["payroll_tax", "other_taxes"]),
+            citations=citations_for_keys(other_tax_keys),
         ),
         benefits=USDrawdownFigure(
             amount=_money(merged.benefits[chosen]),

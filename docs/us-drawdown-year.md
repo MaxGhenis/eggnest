@@ -73,6 +73,8 @@ credits once, among benefits:
   local income tax and local occupational tax. In North Carolina, for example,
   PolicyEngine-US sets use tax from adjusted gross income, so a traditional draw
   raises it.
+  `other_taxes.citations` names the ones the household pays at the chosen draw
+  or with no draw.
 
 Benefits start from PolicyEngine-US's `household_benefits`, leave out Social
 Security, which the household enters as income, and health coverage, and add

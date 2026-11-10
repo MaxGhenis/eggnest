@@ -61,6 +61,25 @@ COVERAGE_VARIABLES = {
     "msp": "msp",
 }
 
+# What other taxes hold, as eggnest.household itemizes them: employee FICA
+# (payroll_tax), state payroll and self-employment tax, then the rest of
+# household_tax_before_refundable_credits by PolicyEngine-US variable, with
+# anything left over as other_taxes.
+_NAMED_REST = (
+    "state_use_tax",
+    "local_income_tax_before_refundable_credits",
+    "local_occupational_tax",
+    # Zero under current law; a PolicyEngine-US reform can add it.
+    "flat_tax",
+)
+OTHER_TAX_PARTS = (
+    "payroll_tax",
+    "state_payroll_tax",
+    "self_employment_tax",
+    *_NAMED_REST,
+    "other_taxes",
+)
+
 
 def engine_label() -> str:
     return f"{ENGINE} {package_version('policyengine-us')}"
@@ -178,6 +197,8 @@ class USYearArrays:
     """A household's year at each draw amount; each array has one value per draw.
 
     Taxes and benefits are household totals in dollars for the tax year.
+    ``other_tax_parts`` splits ``other_taxes`` by the keys ``OTHER_TAX_PARTS``
+    names; an engine that doesn't itemize them leaves it empty.
     """
 
     federal_income_tax: np.ndarray
@@ -189,6 +210,7 @@ class USYearArrays:
     medicare_income: np.ndarray
     later_medicare_surcharge: np.ndarray
     coverage: dict[str, np.ndarray] = field(default_factory=dict)
+    other_tax_parts: dict[str, np.ndarray] = field(default_factory=dict)
     people_on_medicare: int = 0
     medicare_lines: list[float] = field(default_factory=list)
     medicare_rates_year: int = 0
@@ -238,11 +260,29 @@ class PolicyEngineUSYear:
         state_credits = np.where(
             election, np.maximum(-state_after_credits, 0.0), state_credits
         )
-        payroll = household("employee_payroll_tax") + household("self_employment_tax")
+        employee_payroll = household("employee_payroll_tax")
+        state_payroll = household("employee_state_payroll_tax")
+        self_employment = household("self_employment_tax")
+        payroll = employee_payroll + self_employment
         household_tax = household("household_tax_before_refundable_credits")
-        # State use tax and local taxes: the rest of the household's tax.
-        rest = household_tax - federal - state_before_credits - payroll
-        rest = np.where(np.abs(rest) < _rounding(household_tax), 0.0, rest)
+        # State use tax and local taxes: the rest of the household's tax, by
+        # PolicyEngine-US variable, and whatever remains beyond float32 rounding.
+        named = {name: household(name) for name in _NAMED_REST}
+        unnamed = (
+            household_tax
+            - federal
+            - state_before_credits
+            - payroll
+            - sum(named.values(), np.zeros(len(draws)))
+        )
+        unnamed = np.where(np.abs(unnamed) < _rounding(household_tax), 0.0, unnamed)
+        other_tax_parts = {
+            "payroll_tax": employee_payroll - state_payroll,
+            "state_payroll_tax": state_payroll,
+            "self_employment_tax": self_employment,
+            **named,
+            "other_taxes": unnamed,
+        }
 
         # Benefits: household_benefits without Social Security and health
         # coverage, plus market income PolicyEngine computes that the household
@@ -309,13 +349,14 @@ class PolicyEngineUSYear:
         return USYearArrays(
             federal_income_tax=federal,
             state_income_tax=state,
-            other_taxes=payroll + rest,
+            other_taxes=sum(other_tax_parts.values(), np.zeros(len(draws))),
             benefits=benefits,
             programs=programs,
             taxable_social_security=household("taxable_social_security"),
             medicare_income=household("medicare_irmaa_magi_two_years_prior", later),
             later_medicare_surcharge=np.asarray(surcharge, dtype=float),
             coverage=coverage,
+            other_tax_parts=other_tax_parts,
             people_on_medicare=people_on_medicare,
             medicare_lines=lines,
             medicare_rates_year=rates_year,

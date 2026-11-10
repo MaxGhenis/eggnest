@@ -35,6 +35,7 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
+from eggnest.citations import citations_for_keys
 from eggnest.core.us_drawdown_year import (
     ENGINE_ID,
     OUTPUT_KEY,
@@ -644,6 +645,47 @@ def test_envelope_round_trips_the_result():
     assert OUTPUT_KEY in envelope.outputs
     assert envelope.citations
     assert envelope.caveats == caveats_for(inputs, result)
+
+
+class ItemizingEngine(StandInEngine):
+    """The stand-in plus a use tax of 0.1% of the draw, itemized as
+    PolicyEngine-US itemizes other taxes."""
+
+    def evaluate(self, inputs: USDrawdownYearInput, draws: np.ndarray) -> USYearArrays:
+        arrays = super().evaluate(inputs, draws)
+        use_tax = 0.001 * np.asarray(draws, dtype=float)
+        zeros = np.zeros(len(draws))
+        arrays.other_taxes = use_tax
+        arrays.other_tax_parts = {
+            "payroll_tax": zeros,
+            "state_use_tax": use_tax,
+            "other_taxes": zeros,
+        }
+        return arrays
+
+
+def _ids(citations) -> list[str]:
+    return [citation.id for citation in citations]
+
+
+def test_other_taxes_cite_the_taxes_the_household_pays():
+    result = run_us_drawdown_year(_inputs(), ItemizingEngine())
+    assert result.other_taxes.amount == pytest.approx(40.0)
+    assert _ids(result.other_taxes.citations) == _ids(
+        citations_for_keys(["state_use_tax"])
+    )
+
+
+def test_other_taxes_cite_nothing_when_the_household_pays_none():
+    result = run_us_drawdown_year(_inputs(draw_amount=0.0), ItemizingEngine())
+    assert result.other_taxes.amount == 0.0
+    assert result.other_taxes.citations == []
+
+
+def test_an_engine_that_does_not_itemize_cites_payroll_tax_and_the_total():
+    assert _ids(_run(_inputs()).other_taxes.citations) == _ids(
+        citations_for_keys(["payroll_tax", "other_taxes"])
+    )
 
 
 def test_caveats_follow_the_inputs():

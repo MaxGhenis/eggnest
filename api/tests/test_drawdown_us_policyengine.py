@@ -35,6 +35,7 @@ from eggnest.models_us_drawdown import USDrawdownYearInput
 from eggnest.us_year_engine import (
     CENT,
     FLOAT32_RELATIVE_ROUNDING,
+    OTHER_TAX_PARTS,
     PolicyEngineUSYear,
     build_situation,
     reported_draw,
@@ -251,6 +252,55 @@ def test_benefits_by_program_add_up_to_benefits(name):
         assert sum(point.benefits_by_program.values()) == pytest.approx(
             point.benefits, abs=DOLLAR
         )
+
+
+@pytest.mark.parametrize("name", list(IDENTITY_CASES))
+def test_other_tax_parts_add_up_to_other_taxes(name):
+    inputs = IDENTITY_CASES[name]
+    arrays = ENGINE.evaluate(inputs, np.array([0.0, inputs.draw_amount]))
+    assert tuple(arrays.other_tax_parts) == OTHER_TAX_PARTS
+    assert sum(arrays.other_tax_parts.values()) == pytest.approx(
+        arrays.other_taxes, abs=DOLLAR
+    )
+
+
+def test_other_taxes_hold_north_carolina_use_tax_and_fica_on_wages():
+    """The page's example person has no earnings and so pays no FICA. North
+    Carolina's use tax, which PolicyEngine-US sets from adjusted gross income,
+    makes up their other taxes and rises with an IRA draw. $20,000 of wages
+    adds 7.65% FICA (26 USC 3101)."""
+    retiree = USDrawdownYearInput.model_validate(
+        {
+            "state": "NC",
+            "you": {
+                "birth_year": 1952,
+                "social_security": 24_000.0,
+                "traditional_balance": 250_000.0,
+            },
+            "cash_savings": 15_000.0,
+            "draw_amount": 30_000.0,
+        }
+    )
+    arrays = ENGINE.evaluate(retiree, np.array([0.0, 30_000.0]))
+    paid = {
+        name
+        for name, values in arrays.other_tax_parts.items()
+        if np.any(np.abs(values) > CENT)
+    }
+    assert paid == {"state_use_tax"}
+    use_tax = arrays.other_tax_parts["state_use_tax"]
+    assert use_tax[1] > use_tax[0]
+
+    worker = USDrawdownYearInput.model_validate(
+        {
+            **retiree.model_dump(),
+            "you": {**retiree.you.model_dump(), "earnings": 20_000.0},
+        }
+    )
+    wages = ENGINE.evaluate(worker, np.array([0.0]))
+    assert wages.other_tax_parts["payroll_tax"][0] == pytest.approx(
+        0.0765 * 20_000.0, abs=DOLLAR
+    )
 
 
 def test_alaska_permanent_fund_dividend_counts_as_a_benefit():
