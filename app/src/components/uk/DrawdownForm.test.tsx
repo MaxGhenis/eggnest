@@ -89,6 +89,8 @@ describe("DrawdownForm", () => {
     renderForm();
     const options = screen.getAllByRole("option").map((option) => option.textContent);
     expect(options).toEqual(["England", "Wales", "Northern Ireland"]);
-    expect(screen.getByText(/The Scottish Parliament sets its own income tax rates/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Where you live")).toHaveAccessibleDescription(
+      "The Scottish Parliament sets its own income tax rates, which we don’t cover.",
+    );
   });
 });

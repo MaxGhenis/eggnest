@@ -38,8 +38,9 @@ from pathlib import Path
 
 import numpy as np
 
-from . import axiom_uk
+from . import axiom_uk, drawdown_bands
 from .citations import Citation
+from .drawdown_bands import band_breaks, crossing_point  # noqa: F401 (re-exported)
 from .models_uk import UKCitationRef
 from .models_uk_drawdown import (
     UKDrawdownAssumptions,
@@ -80,7 +81,6 @@ _SWEEP_FINE_STEP = 250.0
 _BAND_TAX_TOLERANCE = 1.0
 _BAND_CREDIT_TOLERANCE = 60.0
 _BAND_MIN_WIDTH = 1.0
-_KINK_MIN_RATE_CHANGE = 0.005
 
 _GAD_FACTORS_PATH = Path(__file__).parent / "data" / "gad_drawdown_factors.json"
 
@@ -452,104 +452,13 @@ def _slice(evaluated: _Evaluated, low: int, high: int) -> UKDrawdownSlice:
     )
 
 
-def band_breaks(draws: np.ndarray, series: list[tuple[np.ndarray, float]]) -> list[int]:
-    """Grid indices where a straight line stops describing a series.
-
-    Splits each span at the point furthest from the chord across it
-    (Ramer-Douglas-Peucker) until every series stays within its tolerance.
-    """
-    breaks = {0, len(draws) - 1}
-    spans = [(0, len(draws) - 1)]
-    while spans:
-        low, high = spans.pop()
-        if high - low < 2:
-            continue
-        share = (draws[low + 1 : high] - draws[low]) / (draws[high] - draws[low])
-        split, worst = None, 1.0
-        for values, tolerance in series:
-            chord = values[low] + share * (values[high] - values[low])
-            excess = np.abs(values[low + 1 : high] - chord) / tolerance
-            at = int(np.argmax(excess))
-            if excess[at] > worst:
-                split, worst = low + 1 + at, float(excess[at])
-        if split is not None:
-            breaks.add(split)
-            spans += [(low, split), (split, high)]
-    return sorted(breaks)
-
-
-def crossing_point(
-    draws: np.ndarray,
-    values: np.ndarray,
-    left: tuple[int, int],
-    right: tuple[int, int],
-) -> float | None:
-    """Where the line through grid span ``left`` crosses the one through ``right``.
-
-    Returns None when the two lines carry the same rate or cross outside the
-    gap between them.
-    """
-    left_from, left_to = left
-    right_from, right_to = right
-    if left_to <= left_from or right_to <= right_from:
-        return None
-    left_rate = (values[left_to] - values[left_from]) / (
-        draws[left_to] - draws[left_from]
-    )
-    right_rate = (values[right_to] - values[right_from]) / (
-        draws[right_to] - draws[right_from]
-    )
-    if abs(left_rate - right_rate) < _KINK_MIN_RATE_CHANGE:
-        return None
-    crossing = (
-        values[right_from]
-        - values[left_from]
-        + left_rate * draws[left_from]
-        - right_rate * draws[right_from]
-    ) / (left_rate - right_rate)
-    return float(crossing) if draws[left_to] <= crossing <= draws[right_from] else None
-
-
 def band_edges(draws: np.ndarray, tax: np.ndarray, credit: np.ndarray) -> np.ndarray:
-    """Draw amounts, to the penny, where the rate on the next pound changes.
-
-    A rate changes between grid points, and the interval holding the change
-    mixes both rates. So the edge comes from where the clean lines on either
-    side cross, which puts it on the pound while the grid stays coarse.
-    """
-    series = [(tax, _BAND_TAX_TOLERANCE), (credit, _BAND_CREDIT_TOLERANCE)]
-    breaks = band_breaks(draws, series)
-
-    def crossing(left: tuple[int, int], right: tuple[int, int]) -> float | None:
-        for values, _ in series:
-            point = crossing_point(draws, values, left, right)
-            if point is not None:
-                return point
-        return None
-
-    edges = [float(draws[breaks[0]]), float(draws[breaks[-1]])]
-    index = 1
-    while index < len(breaks) - 1:
-        before, at, after = breaks[index - 1 : index + 2]
-        # Two neighbouring breaks bracket one interval that holds the change.
-        if after == at + 1 and index + 2 < len(breaks):
-            point = crossing((before, at), (after, breaks[index + 2]))
-            if point is not None:
-                edges.append(point)
-                index += 2
-                continue
-        # A lone break sits just next to the change, on either side.
-        point = crossing((before, at - 1), (at + 1, after))
-        edges.append(float(draws[at]) if point is None else point)
-        index += 1
-
-    ordered = np.unique(np.round(edges, 2))
-    separated = [ordered[0]]
-    for edge in ordered[1:-1]:
-        if edge - separated[-1] >= _BAND_MIN_WIDTH:
-            separated.append(edge)
-    separated.append(ordered[-1])
-    return np.unique(separated)
+    """Draw amounts, to the penny, where the rate on the next pound changes."""
+    return drawdown_bands.band_edges(
+        draws,
+        [(tax, _BAND_TAX_TOLERANCE), (credit, _BAND_CREDIT_TOLERANCE)],
+        min_width=_BAND_MIN_WIDTH,
+    )
 
 
 def _markers(

@@ -41,18 +41,21 @@ def test_program_outputs_name_fields_of_their_engine_results():
     from eggnest.core import (
         uk_drawdown_year,
         uk_retirement,
+        us_drawdown_year,
         us_household_resources,
         us_retirement,
     )
     from eggnest.models import HouseholdResult, SimulationResult
     from eggnest.models_uk import UKSimulationResult
     from eggnest.models_uk_drawdown import UKDrawdownYearResult
+    from eggnest.models_us_drawdown import USDrawdownYearResult
 
     results = {
         "us_household_resources": (us_household_resources.OUTPUT_KEY, HouseholdResult),
         "us_retirement": (us_retirement.OUTPUT_KEY, SimulationResult),
         "uk_retirement": (uk_retirement.OUTPUT_KEY, UKSimulationResult),
         "uk_drawdown_year": (uk_drawdown_year.OUTPUT_KEY, UKDrawdownYearResult),
+        "us_drawdown_year": (us_drawdown_year.OUTPUT_KEY, USDrawdownYearResult),
     }
     programs = list_programs()
     assert {program.engine for program in programs} == set(results)

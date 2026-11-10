@@ -16,6 +16,10 @@ from .uk_drawdown_year import (
     build_uk_drawdown_year_scenario,
     run_uk_drawdown_year_scenario,
 )
+from .us_drawdown_year import (
+    build_us_drawdown_year_scenario,
+    run_us_drawdown_year_scenario,
+)
 from .us_household_resources import (
     build_us_household_resources_scenario,
     run_us_household_resources,
@@ -28,10 +32,12 @@ __all__ = [
     "ModelSource",
     "Reproducibility",
     "build_uk_drawdown_year_scenario",
+    "build_us_drawdown_year_scenario",
     "build_us_household_resources_scenario",
     "build_us_retirement_scenario",
     "run_core_scenario",
     "run_uk_drawdown_year_scenario",
+    "run_us_drawdown_year_scenario",
     "run_us_household_resources",
     "run_us_retirement",
 ]

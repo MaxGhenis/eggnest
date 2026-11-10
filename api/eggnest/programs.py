@@ -5,6 +5,7 @@ from __future__ import annotations
 from .models import ProgramOutput, ProgramSpec
 from .models_uk import UKSimulationResult
 from .models_uk_drawdown import UKDrawdownYearResult
+from .models_us_drawdown import USDrawdownYearResult
 
 PROGRAMS: list[ProgramSpec] = [
     ProgramSpec(
@@ -194,6 +195,71 @@ PROGRAMS: list[ProgramSpec] = [
             "Needs the Axiom rules engine and a rulespec-uk checkout.",
             "Covers one person living alone and leaves out Savings Credit, Housing Benefit and Council Tax Reduction.",
             "Doesn't cover Scottish taxpayers.",
+        ],
+    ),
+    ProgramSpec(
+        id="us_drawdown_year",
+        display_name="US drawdown year",
+        country="USA",
+        jurisdiction="us",
+        scope=(
+            "What drawing a chosen amount from a traditional IRA or 401(k), a "
+            "Roth IRA, taxable investments or cash costs a single person or a "
+            "married couple, everyone 65 or older, in 2026 federal and state "
+            "income tax and in benefits, and how it moves their Medicare "
+            "premiums in 2028, across every draw that account allows."
+        ),
+        engine="us_drawdown_year",
+        cli=(
+            "eggnest core run scenario.yaml --engine us_drawdown_year "
+            "--output-format envelope"
+        ),
+        primary_output="us_drawdown_year_result.money_to_spend",
+        outputs=[
+            ProgramOutput(
+                name="money_to_spend",
+                label="Money to spend",
+                kind="scalar",
+                unit="USD/year",
+                description=USDrawdownYearResult.model_fields["at_chosen_draw"]
+                .annotation.model_fields["money_to_spend"]
+                .description,
+            ),
+            ProgramOutput(
+                name="benefits",
+                label="Benefits",
+                kind="scalar",
+                unit="USD/year",
+                description=USDrawdownYearResult.model_fields["at_chosen_draw"]
+                .annotation.model_fields["benefits"]
+                .description,
+            ),
+            ProgramOutput(
+                name="medicare_surcharge",
+                label="Medicare surcharge two years on",
+                kind="object",
+                unit="USD/year",
+                description=(
+                    "The income-related Part B and Part D premiums Social Security "
+                    "sets for 2028 from this year's income, at the latest lines "
+                    "and amounts CMS has published."
+                ),
+            ),
+            ProgramOutput(
+                name="next_1000",
+                label="Where the next $1,000 goes",
+                kind="object",
+                unit="share",
+                description=(
+                    "Shares of the next $1,000 of draw the household keeps, pays "
+                    "in tax and loses in benefits; they add to 1."
+                ),
+            ),
+        ],
+        caveats=[
+            "Covers one person filing single or a married couple filing jointly, everyone 65 or older by the end of 2026.",
+            "Counts savings at their balances on January 1, 2026, and doesn't count the value of Medicaid or the Medicare Savings Programs.",
+            "Applies Medicare’s 2026 income lines and amounts to 2028 premiums.",
         ],
     ),
 ]

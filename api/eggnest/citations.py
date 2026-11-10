@@ -272,6 +272,11 @@ def _other_tax_keys(result: Any | None) -> list[str]:
     return [key for key in OTHER_TAX_KEYS if tax_breakdown.get(key, 0) != 0]
 
 
+def citations_for_keys(keys: list[str] | tuple[str, ...]) -> list[Citation]:
+    """Sources for result keys, which are PolicyEngine-US variable names."""
+    return _citations_for_keys(keys)
+
+
 def _citation_for_key(key: str) -> Citation:
     return HOUSEHOLD_CITATIONS.get(key) or _policyengine_variable(key)
 
