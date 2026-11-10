@@ -80,7 +80,7 @@ Where:
 
 ### PolicyEngine Integration
 
-EggNest uses PolicyEngine-US via `Microsimulation` with a custom `Dataset` class:
+Eggnest uses PolicyEngine-US via `Microsimulation` with a custom `Dataset` class:
 
 ```python
 class MonteCarloDataset(Dataset):

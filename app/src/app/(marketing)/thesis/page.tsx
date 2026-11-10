@@ -614,7 +614,7 @@ export default function ThesisPage() {
             2. The vision
           </h2>
           <p className="mb-8 text-lg leading-relaxed text-[var(--color-text-muted)]">
-            EggNest answers &ldquo;what if?&rdquo; for major financial decisions
+            Eggnest answers &ldquo;what if?&rdquo; for major financial decisions
             with{" "}
             <strong className="text-[var(--color-text)]">
               real tax and benefit math
@@ -990,9 +990,9 @@ export default function ThesisPage() {
                 Open source
               </span>
 
-              {/* EggNest row */}
+              {/* Eggnest row */}
               <span className="rounded-l-[var(--radius-sm)] bg-[var(--color-primary-50)] px-3 py-2 text-left font-semibold text-[var(--color-primary-dark)]">
-                EggNest
+                Eggnest
               </span>
               {[true, true, true, true].map((_, i) => (
                 <span
@@ -1180,7 +1180,7 @@ export default function ThesisPage() {
               },
               {
                 title: "Open source ecosystem",
-                desc: "EggNest Python package (MIT license) lets developers build on our engine. Drives adoption and trust, not direct revenue.",
+                desc: "Eggnest Python package (MIT license) lets developers build on our engine. Drives adoption and trust, not direct revenue.",
                 metric: "Strategic: Adoption over monetization",
               },
             ].map(({ title, desc, metric, primary }) => (

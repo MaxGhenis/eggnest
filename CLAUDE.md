@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-EggNest is an agent-callable household finance calculator suite with real tax calculations via PolicyEngine-US and PolicyEngine UK. Retirement simulation is one product surface; the emerging core is stable CLI/API contracts for AI agents to compute household resources, compare scenarios, and cite assumptions without putting policy logic outside PolicyEngine. The project uses a unified Next.js frontend with a Python FastAPI backend.
+Eggnest is an agent-callable household finance calculator suite with real tax calculations via PolicyEngine-US and PolicyEngine UK. Retirement simulation is one product surface; the emerging core is stable CLI/API contracts for AI agents to compute household resources, compare scenarios, and cite assumptions without putting policy logic outside PolicyEngine. The project uses a unified Next.js frontend with a Python FastAPI backend.
 
 ## Development Commands
 
@@ -114,7 +114,7 @@ eggnest/
 - Backend uses Pydantic v2 models with `Field()` validators
 - New product surfaces should use `eggnest.core` scenario/result envelopes before adding API- or UI-specific contracts
 - CLI/MCP-style callers should prefer `GET /programs`, `POST /core/simulate`, or `uv run eggnest core run ... --output-format envelope`; legacy product endpoints are compatibility shims
-- For low- and middle-income household work, use `eggnest household validate`, `eggnest household run`, and `eggnest compare earnings-grid`; do not add tax or benefit policy formulas to EggNest
+- For low- and middle-income household work, use `eggnest household validate`, `eggnest household run`, and `eggnest compare earnings-grid`; do not add tax or benefit policy formulas to Eggnest
 - Household resources follow PolicyEngine-US `household_net_income` with health coverage excluded: `net_income = total_income - total_taxes + total_benefits`. Taxes are before refundable credits (federal income tax after non-refundable credits, state income tax before state refundable credits, payroll including state payroll such as CA SDI, self-employment tax, `other_taxes` for state use tax, local taxes and any reform flat tax). Refundable credits and benefits are counted once, in `total_benefits`. The marginal tax rate is `1 - Δnet_income / $1,000` of extra wages for the primary earner (the non-dependent person with the highest earnings)
 - Household `benefits`, `tax_breakdown` and `non_refundable_credit_breakdown` keys are PolicyEngine-US variable names (`refundable_ctc`, `eitc`, `snap`, `ssi`, ...); `benefits` sums to `total_benefits` and `tax_breakdown` sums to `total_taxes`
 - Agent-facing household outputs expose FinBot-style citations as `citations: [{id, url}]`; `HouseholdResult.output_citations` maps fields like `benefits.snap` to supporting sources

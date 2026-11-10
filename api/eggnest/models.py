@@ -917,7 +917,7 @@ class LifeEventComparison(BaseModel):
 
 
 class ProgramOutput(BaseModel):
-    """A machine-readable output exposed by an EggNest program."""
+    """A machine-readable output exposed by an Eggnest program."""
 
     name: str
     label: str

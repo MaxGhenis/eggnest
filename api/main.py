@@ -1,4 +1,4 @@
-"""EggNest API - Main FastAPI application."""
+"""Eggnest API - Main FastAPI application."""
 
 import json
 
@@ -65,7 +65,7 @@ from eggnest.supabase_client import (
 )
 
 app = FastAPI(
-    title="EggNest API",
+    title="Eggnest API",
     description="""
 Monte Carlo financial planning simulation API with real tax calculations.
 

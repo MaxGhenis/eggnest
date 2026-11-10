@@ -1,5 +1,5 @@
 /**
- * EggNest design system tokens for use in JS/TSX (e.g. Plotly chart config).
+ * Eggnest design system tokens for use in JS/TSX (e.g. Plotly chart config).
  * CSS custom properties are defined in globals.css; these mirror the values
  * for contexts where CSS variables are not available.
  */

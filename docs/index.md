@@ -4,7 +4,7 @@ kernelspec:
   display_name: Python 3
 ---
 
-# EggNest: Tax-Aware Monte Carlo Retirement Simulation with Real Microsimulation
+# Eggnest: Tax-Aware Monte Carlo Retirement Simulation with Real Microsimulation
 
 ```{code-cell} python
 :tags: [remove-cell]
@@ -49,7 +49,7 @@ COLORS = {
 
 ## Abstract
 
-Retirement planning requires balancing multiple uncertainties: market returns, longevity, inflation, and tax policy. Existing Monte Carlo simulators either ignore taxes entirely or use simplified effective tax rates that miss important interactions between account types, withdrawal strategies, and bracket inflation. We present EggNest, a retirement planning framework that integrates Monte Carlo simulation with PolicyEngine, an open-source tax-benefit microsimulation model. For a reference case—a {eval}`r.reference.description` with {eval}`r.reference.portfolio_description`—the taxable-first withdrawal strategy achieves {eval}`r.strategies.taxable_first.success_pct` success rate versus {eval}`r.strategies.traditional_first.success_pct` for traditional-first, despite higher lifetime taxes. The framework enforces required minimum distributions (RMDs), models calendar-year bracket inflation, and distinguishes tax treatment across traditional (ordinary income), Roth (tax-free), and taxable (capital gains) accounts. We find that withdrawal strategy choice can affect both success probability and total lifetime taxes by meaningful amounts, with the optimal strategy depending on individual circumstances.
+Retirement planning requires balancing multiple uncertainties: market returns, longevity, inflation, and tax policy. Existing Monte Carlo simulators either ignore taxes entirely or use simplified effective tax rates that miss important interactions between account types, withdrawal strategies, and bracket inflation. We present Eggnest, a retirement planning framework that integrates Monte Carlo simulation with PolicyEngine, an open-source tax-benefit microsimulation model. For a reference case—a {eval}`r.reference.description` with {eval}`r.reference.portfolio_description`—the taxable-first withdrawal strategy achieves {eval}`r.strategies.taxable_first.success_pct` success rate versus {eval}`r.strategies.traditional_first.success_pct` for traditional-first, despite higher lifetime taxes. The framework enforces required minimum distributions (RMDs), models calendar-year bracket inflation, and distinguishes tax treatment across traditional (ordinary income), Roth (tax-free), and taxable (capital gains) accounts. We find that withdrawal strategy choice can affect both success probability and total lifetime taxes by meaningful amounts, with the optimal strategy depending on individual circumstances.
 
 ## Introduction
 
@@ -83,7 +83,7 @@ Current retirement calculators fall into several categories:
 
 ### Contribution
 
-EggNest addresses these limitations through three innovations:
+Eggnest addresses these limitations through three innovations:
 
 1. **Real tax microsimulation**: Integration with PolicyEngine {cite:p}`policyengine2024` provides accurate federal and state income tax calculations, including all deductions, credits, and phase-outs.
 
@@ -97,7 +97,7 @@ EggNest addresses these limitations through three innovations:
 
 ### System Architecture
 
-EggNest consists of three main components:
+Eggnest consists of three main components:
 
 ```{code-cell} python
 :tags: [remove-input]
@@ -138,7 +138,7 @@ ax.text(2.75, 2.3, 'withdrawals', fontsize=8, ha='center')
 ax.text(5.25, 2.3, 'income by type', fontsize=8, ha='center')
 ax.text(7.75, 2.3, 'survival', fontsize=8, ha='center')
 
-ax.set_title('Figure 1: EggNest System Architecture', fontsize=12, fontweight='bold', pad=20)
+ax.set_title('Figure 1: Eggnest System Architecture', fontsize=12, fontweight='bold', pad=20)
 plt.tight_layout()
 plt.show()
 ```
@@ -163,7 +163,7 @@ Returns are modeled as log-normal with parameters calibrated to historical data 
 
 ### Holdings-Based Portfolio Model
 
-Unlike traditional simulators that model a single portfolio balance, EggNest tracks individual holdings by:
+Unlike traditional simulators that model a single portfolio balance, Eggnest tracks individual holdings by:
 
 **Account Type**:
 - Traditional 401(k)/IRA: Pre-tax contributions, ordinary income on withdrawal
@@ -222,7 +222,7 @@ plt.show()
 
 ### Tax Integration with PolicyEngine
 
-PolicyEngine is an open-source microsimulation model that computes accurate federal and state taxes {cite:p}`policyengine2024`. For each simulation year, EggNest:
+PolicyEngine is an open-source microsimulation model that computes accurate federal and state taxes {cite:p}`policyengine2024`. For each simulation year, Eggnest:
 
 1. Constructs a tax unit with age, filing status, and state
 2. Assigns income by type:
@@ -368,7 +368,7 @@ This aligns with the "4% rule" literature {cite:p}`bengen1994,finke2013`, though
 
 ### Comparison to Existing Tools
 
-| Feature | EggNest | cFIREsim | FICalc | Commercial |
+| Feature | Eggnest | cFIREsim | FICalc | Commercial |
 |---------|---------|----------|--------|------------|
 | Monte Carlo | ✓ | ✓ | ✓ | ✓ |
 | Real tax microsimulation | ✓ | ✗ | ✗ | Partial |
@@ -399,7 +399,7 @@ This aligns with the "4% rule" literature {cite:p}`bengen1994,finke2013`, though
 
 ## Conclusion
 
-EggNest demonstrates that accurate tax modeling materially affects retirement planning outcomes. The integration with PolicyEngine provides the first open-source retirement simulator with real microsimulation, enabling:
+Eggnest demonstrates that accurate tax modeling materially affects retirement planning outcomes. The integration with PolicyEngine provides the first open-source retirement simulator with real microsimulation, enabling:
 
 1. Accurate comparison of withdrawal strategies
 2. Proper accounting for RMDs

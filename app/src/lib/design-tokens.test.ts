@@ -1,7 +1,7 @@
 /**
  * Design-token contrast matrix.
  *
- * Locks the WCAG AA contrast guarantees for the EggNest palette so that
+ * Locks the WCAG AA contrast guarantees for the Eggnest palette so that
  * accidental palette changes (or downgraded `*Text` variants) fail CI
  * before they reach users.
  *

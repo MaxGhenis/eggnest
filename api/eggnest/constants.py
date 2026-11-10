@@ -1,4 +1,4 @@
-"""Shared constants for EggNest simulation and tax calculations."""
+"""Shared constants for Eggnest simulation and tax calculations."""
 
 # State FIPS codes (two-letter abbreviation -> integer FIPS code)
 STATE_FIPS: dict[str, int] = {

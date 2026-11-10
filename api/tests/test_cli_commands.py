@@ -39,7 +39,7 @@ class TestMainCommand:
         """Test --help shows usage."""
         result = runner.invoke(main, ["--help"])
         assert result.exit_code == 0
-        assert "EggNest" in result.output
+        assert "Eggnest" in result.output
         assert "Monte Carlo" in result.output
 
     def test_version_not_required(self, runner):

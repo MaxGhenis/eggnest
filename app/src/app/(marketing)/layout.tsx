@@ -10,7 +10,7 @@ export default function MarketingLayout({
     <>
       <nav className="sticky top-0 z-50 flex items-center justify-between border-b border-[var(--color-border-light)] bg-white/95 px-5 py-3 backdrop-blur-md md:px-10">
         <Link href="/" className="flex items-center gap-2">
-          <Image src="/logo.svg" alt="EggNest" width={160} height={32} className="h-8 w-auto" priority />
+          <Image src="/logo.svg" alt="Eggnest" width={160} height={32} className="h-8 w-auto" priority />
         </Link>
         <div className="flex items-center gap-6">
           <Link
@@ -33,7 +33,7 @@ export default function MarketingLayout({
       <footer className="bg-[var(--color-gray-900)] px-6 py-12 text-[var(--color-gray-400)]">
         <div className="mx-auto grid max-w-5xl gap-8 md:grid-cols-[2fr_1fr]">
           <div>
-            <span className="text-lg font-semibold text-white">EggNest</span>
+            <span className="text-lg font-semibold text-white">Eggnest</span>
             <p className="mt-2 max-w-xs text-sm leading-relaxed">
               Monte Carlo financial planning with real tax calculations.
             </p>
@@ -77,7 +77,7 @@ export default function MarketingLayout({
         </div>
         <div className="mx-auto mt-10 max-w-5xl border-t border-[var(--color-gray-700)] pt-6 text-center text-sm">
           <p>
-            &copy; {new Date().getFullYear()} EggNest. Tax calculations powered
+            &copy; {new Date().getFullYear()} Eggnest. Tax calculations powered
             by{" "}
             <a
               href="https://policyengine.org"
@@ -89,7 +89,7 @@ export default function MarketingLayout({
             </a>
           </p>
           <p className="mx-auto mt-2 max-w-lg text-xs opacity-60">
-            EggNest provides educational projections only and is not financial
+            Eggnest provides educational projections only and is not financial
             advice. Use independent professional judgment before making
             financial decisions.
           </p>

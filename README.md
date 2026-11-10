@@ -1,12 +1,12 @@
-# EggNest
+# Eggnest
 
 Agent-callable household finance calculators with real tax calculations.
 
 **[eggnest.co](https://eggnest.co)**
 
-## What is EggNest?
+## What is Eggnest?
 
-EggNest exposes household finance calculations that AI agents and chat interfaces can call directly. Retirement simulations are one surface; the broader contract is deterministic, source-backed taxes, credits, benefits, and resource comparisons under explicit assumptions. The calculators are educational tools and avoid financial-advice language.
+Eggnest exposes household finance calculations that AI agents and chat interfaces can call directly. Retirement simulations are one surface; the broader contract is deterministic, source-backed taxes, credits, benefits, and resource comparisons under explicit assumptions. The calculators are educational tools and avoid financial-advice language.
 
 ## Product Surfaces
 
@@ -124,7 +124,7 @@ uv run eggnest simulate scenario.yaml --local --output-format result
 # Use the remote pollable job API for long-running simulations.
 uv run eggnest simulate scenario.yaml --job --output-format envelope
 
-# Compare account withdrawal orders without adding tax-policy logic to EggNest.
+# Compare account withdrawal orders without adding tax-policy logic to Eggnest.
 uv run eggnest compare withdrawal-strategies scenario.yaml
 
 # Compare historical market cohorts with contiguous, non-wrapping return paths.
@@ -142,7 +142,7 @@ uv run eggnest household run household.yaml --output-format envelope
 uv run eggnest compare earnings-grid household.yaml --income-min 0 --income-max 80000 --step 1000
 ```
 
-Use `--output FILE` when a tool prefers file artifacts. `eggnest core run` accepts either a full `eggnest.scenario.v1` envelope or raw engine inputs. Policy logic belongs in PolicyEngine; EggNest orchestrates schemas, validation, comparisons, and stable CLI/API contracts.
+Use `--output FILE` when a tool prefers file artifacts. `eggnest core run` accepts either a full `eggnest.scenario.v1` envelope or raw engine inputs. Policy logic belongs in PolicyEngine; Eggnest orchestrates schemas, validation, comparisons, and stable CLI/API contracts.
 
 ## Test Commands
 

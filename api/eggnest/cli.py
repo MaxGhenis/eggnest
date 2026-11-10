@@ -1,4 +1,4 @@
-"""Command-line interface for EggNest.
+"""Command-line interface for Eggnest.
 
 Filesystem-first financial planning. AI agents can explore your scenarios.
 """
@@ -238,7 +238,7 @@ def _build_core_scenario(
 )
 @click.pass_context
 def main(ctx: click.Context, verbose: bool, scenarios_dir: Path | None) -> None:
-    """EggNest - Monte Carlo retirement planning with real tax calculations.
+    """Eggnest - Monte Carlo retirement planning with real tax calculations.
 
     Your financial scenarios as local YAML files. Edit with any tool.
     AI agents can explore and modify your plans.
@@ -269,7 +269,7 @@ def auth(ctx: click.Context) -> None:
 @auth.command()
 @click.pass_context
 def login(ctx: click.Context) -> None:
-    """Login to EggNest via browser (OAuth device flow)."""
+    """Login to Eggnest via browser (OAuth device flow)."""
     if is_logged_in():
         user = get_current_user()
         console.print(f"[yellow]Already logged in as {user}[/yellow]")
@@ -450,7 +450,7 @@ def status(ctx: click.Context) -> None:
 
 @main.group()
 def programs() -> None:
-    """List agent-callable EggNest programs."""
+    """List agent-callable Eggnest programs."""
     pass
 
 
@@ -1042,7 +1042,7 @@ def init(ctx: click.Context, name: str) -> None:
     }
 
     # Write with comments
-    content = f"""# EggNest Scenario: {name}
+    content = f"""# Eggnest Scenario: {name}
 # Edit this file, then run: eggnest simulate {filename}
 
 name: {name}

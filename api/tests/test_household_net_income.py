@@ -10,7 +10,7 @@ PolicyEngine-US defines household net income as
 
 where federal ``income_tax`` already nets out refundable credits and
 ``income_tax_before_refundable_credits`` already nets out the non-refundable
-credits that were used. EggNest reports Social Security inside
+credits that were used. Eggnest reports Social Security inside
 ``total_income`` (the user enters it) and excludes health coverage, so its net
 income must equal PolicyEngine's with health benefits and costs removed:
 
@@ -19,9 +19,9 @@ income must equal PolicyEngine's with health benefits and costs removed:
                  + refundable credits (federal and state, counted once)
                  - tax before refundable credits
 
-These tests compare EggNest against PolicyEngine-US aggregates computed in a
+These tests compare Eggnest against PolicyEngine-US aggregates computed in a
 separate simulation, so any credit counted twice, or any tax or benefit that
-EggNest drops, shows up as a gap.
+Eggnest drops, shows up as a gap.
 """
 
 import copy
@@ -97,7 +97,7 @@ def _reference(situation: dict, year: int) -> dict[str, float]:
 
 
 def _state_rows(ref: dict[str, float]) -> tuple[float, float]:
-    """The state tax row and state refundable credits EggNest should report.
+    """The state tax row and state refundable credits Eggnest should report.
 
     Normally the before-refundable tax and the refundable credits. Where
     state_income_tax applies an election the before-refundable figure ignores
@@ -114,7 +114,7 @@ def _state_rows(ref: dict[str, float]) -> tuple[float, float]:
 
 
 def _state_election_adjustment(ref: dict[str, float]) -> float:
-    """EggNest's net state tax minus the one household_net_income uses.
+    """Eggnest's net state tax minus the one household_net_income uses.
 
     household_net_income nets state_income_tax_before_refundable_credits
     against the refundable credits, so it misses the Wisconsin exclusion.
@@ -140,7 +140,7 @@ def _expected_net_income(ref: dict[str, float]) -> float:
 def assert_net_income_identity(
     household: HouseholdInput, result: HouseholdResult, ref: dict[str, float]
 ) -> None:
-    """Every invariant that ties EggNest's rows to PolicyEngine-US."""
+    """Every invariant that ties Eggnest's rows to PolicyEngine-US."""
     social_security = sum(p.social_security for p in household.people)
     entered_income = sum(
         p.employment_income
@@ -152,7 +152,7 @@ def assert_net_income_identity(
         for p in household.people
     )
     # Market income PolicyEngine adds on its own (the Alaska Permanent Fund
-    # Dividend); EggNest reports it as a benefit line.
+    # Dividend); Eggnest reports it as a benefit line.
     computed_income = ref["household_market_income"] - (
         entered_income - social_security
     )
@@ -354,7 +354,7 @@ def _hand_built(
 
 
 # Households whose PolicyEngine situation is written out by hand, so the
-# input mapping (which EggNest field becomes which PolicyEngine variable, the
+# input mapping (which Eggnest field becomes which PolicyEngine variable, the
 # tax unit roles and the filing status) is checked independently of
 # HouseholdCalculator._build_situation.
 HAND_BUILT_CASES = {
@@ -447,7 +447,7 @@ HAND_BUILT_CASES = {
 
 
 class TestHandBuiltSituations:
-    """Net income matches PolicyEngine-US for situations EggNest did not build."""
+    """Net income matches PolicyEngine-US for situations Eggnest did not build."""
 
     @pytest.mark.parametrize("case", sorted(HAND_BUILT_CASES))
     def test_net_income_matches_hand_built_situation(self, case):
@@ -801,7 +801,7 @@ def households(draw) -> HouseholdInput:
 
 
 class TestNetIncomeProperties:
-    """For any household, EggNest's rows reconcile with PolicyEngine-US."""
+    """For any household, Eggnest's rows reconcile with PolicyEngine-US."""
 
     # Pinned cases the random draws are not guaranteed to reach.
     @example(
