@@ -69,6 +69,10 @@ class UKYearInputs:
     # State Pension age (SSCBA 1992 s.6(3)); the simulated year runs from
     # the birthday at ``age`` to the next.
     birth_date: date | None = None
+    # When set, the share of this year's earnings paid after State Pension
+    # age, for a caller whose year is not birthday to birthday (a single tax
+    # year, say). Takes precedence over the birthday-based calculation.
+    share_of_year_over_spa: float | None = None
 
 
 @dataclass
@@ -172,6 +176,8 @@ def share_of_year_over_state_pension_age(inputs: UKYearInputs) -> float:
     minus this share. Without a birth date the person is taken to be
     ``age`` for the whole tax year starting in ``year``.
     """
+    if inputs.share_of_year_over_spa is not None:
+        return inputs.share_of_year_over_spa
     birth_date = inputs.birth_date or tax_year_birth_date(inputs)
     from .state_pension_age import (
         anniversary,

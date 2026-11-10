@@ -362,3 +362,56 @@ h1, h2, h3, h4, h5, h6 {
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--color-border), transparent);
 }
+
+/* The slider that doubles as the axis of the drawdown curve. */
+.draw-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  margin: 0;
+  cursor: ew-resize;
+}
+
+.draw-slider::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--color-gray-500);
+}
+
+.draw-slider::-moz-range-track {
+  height: 2px;
+  background: var(--color-gray-500);
+}
+
+.draw-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -12px;
+  border-radius: 50%;
+  background: var(--color-gold);
+  border: 3px solid var(--color-bg-card);
+  box-shadow: 0 0 0 1px var(--color-border-strong), var(--shadow-md);
+}
+
+.draw-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-gold);
+  border: 3px solid var(--color-bg-card);
+  box-shadow: 0 0 0 1px var(--color-border-strong), var(--shadow-md);
+}
+
+.draw-slider:focus-visible {
+  outline: none;
+}
+
+.draw-slider:focus-visible::-webkit-slider-thumb {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.draw-slider:focus-visible::-moz-range-thumb {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}

@@ -426,9 +426,12 @@ def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
     """
     params = _statutory_inputs()
     rates = params["income_tax_rates"]
-    dividend_rates = params["dividend_tax"]
-    ni = params["national_insurance"]
     year = inputs.year
+    # Finance Act 2026 s.4 changed the dividend rates from 2026-27.
+    dividend_rates = params[
+        "dividend_tax_from_2026_27" if year >= 2026 else "dividend_tax"
+    ]
+    ni = params["national_insurance"]
 
     rate_inputs = {
         "basic_rate": rates["basic_rate"],

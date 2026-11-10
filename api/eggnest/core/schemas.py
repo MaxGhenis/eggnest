@@ -21,7 +21,9 @@ def package_version(package: str) -> str:
 SCENARIO_SCHEMA_VERSION = "eggnest.scenario.v1"
 RESULT_SCHEMA_VERSION = "eggnest.result.v1"
 
-EngineId = Literal["us_retirement", "uk_retirement", "us_household_resources"]
+EngineId = Literal[
+    "us_retirement", "uk_retirement", "us_household_resources", "uk_drawdown_year"
+]
 EngineJobState = Literal["queued", "running", "succeeded", "failed"]
 
 
