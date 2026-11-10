@@ -475,7 +475,7 @@ export default function UKDrawdownPage() {
       <header className="header-glass sticky top-0 z-50 border-b border-[var(--color-border-light)]">
         <div className="mx-auto flex max-w-6xl items-center px-4 py-3 md:px-6">
           <Link href="/" className="flex items-center gap-2.5 transition-opacity hover:opacity-80">
-            <Image src="/logo.svg" alt="EggNest" width={140} height={28} priority />
+            <Image src="/logo.svg" alt="Eggnest" width={140} height={28} priority />
           </Link>
         </div>
       </header>
