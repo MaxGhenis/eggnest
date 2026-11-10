@@ -56,6 +56,8 @@ eggnest/
 │       ├── tax_uk.py        # PolicyEngine UK compiled integration
 │       ├── axiom_uk.py      # UK tax and Pension Credit via the Axiom rules engine
 │       ├── drawdown_uk.py   # One-year UK drawdown calculator
+│       ├── drawdown_us.py   # One-year US drawdown calculator
+│       ├── us_year_engine.py # PolicyEngine-US households for each US draw amount
 │       ├── mortality.py     # SSA mortality tables
 │       └── models.py        # Pydantic request/response models
 ├── app/                     # Next.js frontend (unified)
@@ -64,7 +66,9 @@ eggnest/
 │       │   ├── (marketing)/ # Landing page & thesis (route group)
 │       │   ├── simulator/   # US Monte Carlo simulator
 │       │   ├── life-event/  # Tax & benefits calculator
-│       │   └── uk-simulator/# UK simulator
+│       │   ├── uk-simulator/# UK simulator
+│       │   ├── uk-drawdown/ # One-year UK drawdown calculator
+│       │   └── us-drawdown/ # One-year US drawdown calculator
 │       ├── lib/api.ts       # US API client with SSE streaming
 │       ├── lib/api-uk.ts    # UK API client
 │       ├── hooks/           # Custom React hooks
@@ -94,7 +98,7 @@ eggnest/
 
 ### API Endpoints
 - `GET /programs` - List agent-callable programs, primary outputs, caveats, and CLI entry points
-- `POST /core/simulate` - Run a versioned core scenario envelope (`us_household_resources`, `us_retirement`, `uk_retirement`, `uk_drawdown_year`)
+- `POST /core/simulate` - Run a versioned core scenario envelope (`us_household_resources`, `us_retirement`, `uk_retirement`, `uk_drawdown_year`, `us_drawdown_year`)
 - `POST /simulate` - Run US simulation, returns legacy result shape via the core engine
 - `POST /simulate/stream` - SSE streaming with progress events
 - `GET /mortality/{gender}` - Mortality rates and survival curves
