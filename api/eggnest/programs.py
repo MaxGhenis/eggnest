@@ -240,8 +240,9 @@ PROGRAMS: list[ProgramSpec] = [
                 kind="object",
                 unit="USD/year",
                 description=(
-                    "Part B and Part D income-related premiums this year's "
-                    "income sets for 2028, at the latest lines CMS has set."
+                    "The income-related Part B and Part D premiums Social Security "
+                    "sets for 2028 from this year's income, at the latest lines "
+                    "and amounts CMS has published."
                 ),
             ),
             ProgramOutput(
@@ -250,8 +251,8 @@ PROGRAMS: list[ProgramSpec] = [
                 kind="object",
                 unit="share",
                 description=(
-                    "Shares of the next $1,000 of draw kept, paid in tax and lost "
-                    "in benefits; they add to 1."
+                    "Shares of the next $1,000 of draw the household keeps, pays "
+                    "in tax and loses in benefits; they add to 1."
                 ),
             ),
         ],

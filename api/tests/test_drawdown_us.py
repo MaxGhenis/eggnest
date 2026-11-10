@@ -667,3 +667,23 @@ def test_caveats_follow_the_inputs():
         draw_amount=10_000.0,
     )
     assert [c for c in caveats_for(roth, _run(roth)) if "408A" in c]
+
+
+def test_medicare_caveat_expects_higher_lines_only_until_medicare_publishes_them():
+    inputs = _inputs()
+    result = _run(inputs)
+    assert result.medicare_surcharge.rates_year < result.medicare_surcharge.premium_year
+    assert [
+        c for c in caveats_for(inputs, result) if "2028 lines will exceed these" in c
+    ]
+    published = result.model_copy(
+        update={
+            "medicare_surcharge": result.medicare_surcharge.model_copy(
+                update={"rates_year": result.medicare_surcharge.premium_year}
+            )
+        }
+    )
+    assert [c for c in caveats_for(inputs, published) if "1395r(i)(4)" in c] == [
+        "Social Security uses your 2026 income to set the extra you pay for Medicare "
+        "in 2028 (42 USC 1395r(i)(4)). We apply Medicare’s 2028 income lines and amounts."
+    ]

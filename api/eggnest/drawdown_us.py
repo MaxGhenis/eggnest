@@ -14,10 +14,10 @@ minimum distribution.
 It evaluates the year twice. The first run covers a grid of round draw
 amounts. The second runs where the first found the rate on the next dollar
 changing, so band edges land on the dollar, and inside any interval where a
-benefit or tax jumps, so a cliff is placed to a few dollars.
+benefit or tax jumps, so it places each cliff to within a few dollars.
 
-Money drawn counts as spent through the year and savings balances are those on
-January 1, 2026, the figures SSI, Medicaid and SNAP test against.
+It counts each draw as spent through the year and holds savings at their
+balances on January 1, 2026, the figures SSI, Medicaid and SNAP test against.
 """
 
 from __future__ import annotations

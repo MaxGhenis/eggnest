@@ -139,10 +139,10 @@ def _assumptions(
         "draw_treatment": _DRAW_TREATMENT[inputs.draw_source],
         "taxable_gain_share": result.assumptions.taxable_gain_share_applied,
         "money_to_spend_definition": (
-            "income entered plus the draw, less taxes before refundable credits, "
-            "plus benefits and refundable credits; equal to PolicyEngine-US "
-            "household_net_income plus the part of the draw that isn't income, "
-            "with health benefits and costs left out"
+            "the income the household enters plus the draw, less taxes before "
+            "refundable credits, plus benefits and refundable credits; it equals "
+            "PolicyEngine-US household_net_income plus the part of the draw that "
+            "isn't income, without health benefits or costs"
         ),
         "savings_tested": (
             "balances on January 1, 2026; retirement accounts count toward "
@@ -152,7 +152,7 @@ def _assumptions(
         "household_income_and_savings_owner": "the first person",
         "medicare_premium_year": inputs.tax_year + MEDICARE_PREMIUM_LAG_YEARS,
         "medicare_lines_and_amounts_year": result.medicare_surcharge.rates_year,
-        "medicare_part_d": "everyone on Medicare is taken to have Part D",
+        "medicare_part_d": "we assume everyone on Medicare has Part D",
         "dividends": "qualified",
         "capital_gains": "long-term",
         "roth_withdrawals": "qualified distributions",
@@ -175,12 +175,12 @@ def _sources(versions: dict[str, str]) -> list[ModelSource]:
             name="PolicyEngine Core",
             url="https://github.com/PolicyEngine/policyengine-core",
             version=versions["policyengine-core"],
-            notes="Microsimulation framework used by PolicyEngine US.",
+            notes="The microsimulation framework PolicyEngine US runs on.",
         ),
         ModelSource(
             name="IRS Uniform Lifetime Table",
             url="https://www.irs.gov/publications/p590b",
-            notes="Sets the 2026 required minimum distributions (26 CFR 1.401(a)(9)-9).",
+            notes="Gives the divisors for the 2026 required minimum distributions (26 CFR 1.401(a)(9)-9).",
         ),
     ]
 
@@ -189,16 +189,28 @@ def caveats_for(
     inputs: USDrawdownYearInput, result: USDrawdownYearResult | None = None
 ) -> list[str]:
     """What this result leaves out, specific to these inputs where it can be."""
+    premium_year = inputs.tax_year + MEDICARE_PREMIUM_LAG_YEARS
+    rates_year = result.medicare_surcharge.rates_year if result else inputs.tax_year
+    medicare = (
+        f"Social Security uses your {inputs.tax_year} income to set the extra you pay "
+        f"for Medicare in {premium_year} (42 USC 1395r(i)(4)). We apply Medicare’s "
+        f"{rates_year} income lines and amounts."
+    )
+    if rates_year < premium_year:
+        medicare += (
+            " Medicare raises the lines with inflation, as the law requires "
+            f"(42 USC 1395r(i)(5)), so its {premium_year} lines will exceed these."
+        )
     caveats = [
         "We give educational estimates, not financial, tax or legal advice or a benefits decision.",
         "We cover one person filing single or a married couple filing jointly, everyone 65 or older by the end of 2026.",
-        "We don’t ask where in your state you live, so local income taxes follow PolicyEngine-US’s defaults.",
+        "We don’t ask where in your state you live, so PolicyEngine-US places you in your state’s alphabetically first county and applies that county’s rules, including any local income tax.",
         "We count savings at their balances on January 1, 2026, for the whole year, so spending them down doesn’t change what you qualify for here.",
         "We count IRA and 401(k) balances as resources for SSI, and for the Medicaid and Medicare Savings Program tests that use SSI’s resource figure, because you can withdraw them (POMS SI 01120.210 B).",
-        "We count every IRA and 401(k) withdrawal as income spread over the year, as PolicyEngine-US does for SNAP and SSI. SNAP leaves nonrecurring lump sums out of income and counts them as resources (7 CFR 273.9(c)(8)), so a single large withdrawal may count as savings instead.",
+        "We count every IRA and 401(k) withdrawal as income and spread it over the year, as PolicyEngine-US does for SNAP and SSI. State SNAP agencies count a nonrecurring lump sum as a resource rather than income (7 CFR 273.9(c)(8)), so a single large withdrawal may count as savings instead.",
         "We take Social Security as the amount you enter, before Medicare premiums, and don’t apply the retirement earnings test.",
         "We don’t count the value of Medicaid or the Medicare Savings Programs; we mark where you would lose them.",
-        f"Medicare premiums in {inputs.tax_year + MEDICARE_PREMIUM_LAG_YEARS} depend on {inputs.tax_year} income (42 USC 1395r(i)(4)). We apply CMS’s income lines and amounts for {result.medicare_surcharge.rates_year if result else inputs.tax_year}; the lines rise with inflation each year (42 USC 1395r(i)(5)), so the real {inputs.tax_year + MEDICARE_PREMIUM_LAG_YEARS} lines will be higher.",
+        medicare,
         "We assume everyone on Medicare has Part D drug coverage and so pays its income-related amount too.",
         "We treat every dividend as qualified.",
     ]
@@ -206,25 +218,25 @@ def caveats_for(
         person.roth_balance > 0 for _, person in inputs.people
     ):
         caveats.append(
-            "We treat Roth withdrawals as qualified distributions, free of tax, which needs the first Roth contribution to be five or more years old (26 USC 408A(d)(2))."
+            "We treat Roth withdrawals as tax-free qualified distributions, as the IRS does from the fifth tax year after the year of your first Roth contribution (26 USC 408A(d)(2))."
         )
     if inputs.draw_source == "taxable":
         caveats.append(
-            "We treat the gain on investments sold as long-term, so the lower capital gains rates apply."
+            "We treat the gain on investments you sell as long-term and apply the lower long-term capital gains rates to it."
         )
     minimums = result.required_minimums if result else []
     if minimums:
         caveats.append(
-            "We figure required minimum distributions from the Uniform Lifetime Table. In the first year one is due, it can wait until April 1 of the next year."
+            "We figure required minimum distributions from the IRS Uniform Lifetime Table. In the first year you owe one, you can wait until April 1 of the next year to take it."
         )
         if inputs.spouse is not None and (
             abs(inputs.you.birth_year - inputs.spouse.birth_year) > _JOINT_TABLE_AGE_GAP
         ):
             caveats.append(
-                "When a spouse more than 10 years younger is the sole beneficiary, the Joint and Last Survivor Table applies and gives a smaller required minimum."
+                "If you name a spouse more than 10 years younger as your sole beneficiary, you use the IRS Joint and Last Survivor Table instead. It gives a smaller required minimum than we show."
             )
     if any(minimum.shortfall > 0 for minimum in minimums):
         caveats.append(
-            "Taking less than the required minimum brings an excise tax of 25% of the shortfall, or 10% if corrected in time (26 USC 4974); this result doesn’t add it to your taxes."
+            "If you take less than your required minimum, you owe an excise tax of 25% of the shortfall, or 10% if you correct it in time (26 USC 4974). We leave it out of your taxes and money to spend."
         )
     return caveats
