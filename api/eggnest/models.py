@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from eggnest.citations import Citation
 from eggnest.constants import STATE_FIPS
+from eggnest.earnings_grid import MAX_GRID_ROWS, earnings_grid_too_large
 
 # Account types for tax treatment
 AccountType = Literal[
@@ -788,9 +789,10 @@ class HouseholdResult(BaseModel):
     """Results from a household tax calculation.
 
     ``net_income = total_income - total_taxes + total_benefits``, which equals
-    PolicyEngine-US ``household_net_income`` (health coverage excluded). Taxes
-    are before refundable credits; refundable credits are counted once, in
-    ``benefits``.
+    PolicyEngine-US ``household_net_income`` (health coverage excluded), except
+    that it keeps Wisconsin's retirement income exclusion, which
+    ``household_net_income`` misses. Taxes are before refundable credits;
+    refundable credits are counted once, in ``benefits``.
     """
 
     # Taxes, all before refundable credits
@@ -960,11 +962,21 @@ class EarningsGridInput(BaseModel):
         ge=0,
         description="Index of the person whose employment income varies.",
     )
-    income_min: float = Field(default=0, ge=0, description="Lowest annual earnings.")
-    income_max: float = Field(
-        default=80_000, ge=0, description="Highest annual earnings."
+    income_min: float = Field(
+        default=0, ge=0, allow_inf_nan=False, description="Lowest annual earnings."
     )
-    step: float = Field(default=1_000, gt=0, description="Annual earnings increment.")
+    income_max: float = Field(
+        default=80_000,
+        ge=0,
+        allow_inf_nan=False,
+        description="Highest annual earnings.",
+    )
+    step: float = Field(
+        default=1_000,
+        gt=0,
+        allow_inf_nan=False,
+        description="Annual earnings increment.",
+    )
 
     @model_validator(mode="after")
     def validate_grid(self) -> "EarningsGridInput":
@@ -973,9 +985,9 @@ class EarningsGridInput(BaseModel):
             raise ValueError("person_index must refer to an existing household member")
         if self.income_max < self.income_min:
             raise ValueError("income_max must be greater than or equal to income_min")
-        n_rows = int((self.income_max - self.income_min) / self.step) + 1
-        if n_rows > 501:
-            raise ValueError("earnings grid cannot exceed 501 rows")
+        # Counts the grid's own levels, including an income_max the steps miss.
+        if earnings_grid_too_large(self.income_min, self.income_max, self.step):
+            raise ValueError(f"earnings grid cannot exceed {MAX_GRID_ROWS} rows")
         return self
 
 

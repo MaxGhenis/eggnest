@@ -612,8 +612,10 @@ def calculate_household_endpoint(household: HouseholdInput):
     Returns federal/state taxes, payroll taxes, and benefit amounts (EITC, SNAP, etc.).
 
     ``net_income = total_income - total_taxes + total_benefits``, matching
-    PolicyEngine-US ``household_net_income`` without health coverage. Taxes are
-    before refundable credits; refundable credits are counted once, as benefits.
+    PolicyEngine-US ``household_net_income`` without health coverage, except
+    that it keeps Wisconsin's retirement income exclusion, which
+    ``household_net_income`` misses. Taxes are before refundable credits;
+    refundable credits are counted once, as benefits.
     """
     calc = HouseholdCalculator()
     return calc.calculate(household)
