@@ -9,6 +9,7 @@ import type {
   DrawdownSlice,
   UKDrawdownYearInput,
 } from "./api-uk-drawdown";
+import { ApiError, NetworkError, TimeoutError } from "./api";
 
 const wholePounds = new Intl.NumberFormat("en-GB", {
   style: "currency",
@@ -226,6 +227,8 @@ export function niceTicks(low: number, high: number, count: number): number[] {
 export const FULL_NEW_STATE_PENSION = 12_547.6;
 export const LUMP_SUM_ALLOWANCE = 268_275;
 const LARGEST_AMOUNT = 100_000_000;
+/** The last birth date of someone who is 55 by 5 April 2027. */
+const LAST_BIRTH_FOR_POT = "1972-04-05";
 
 /** The figures the page opens with, for anyone to replace. */
 export const EXAMPLE_INPUTS: UKDrawdownYearInput = {
@@ -233,6 +236,7 @@ export const EXAMPLE_INPUTS: UKDrawdownYearInput = {
   region: "England",
   tax_year: 2026,
   state_pension: 9_360,
+  state_pension_deferred: false,
   other_pension_income: 0,
   employment_income: 0,
   savings_interest: 0,
@@ -245,6 +249,7 @@ export const EXAMPLE_INPUTS: UKDrawdownYearInput = {
   draw_amount: 2_500,
   sipp_draw_pattern: "regular",
   sipp_tax_free_fraction: 0.25,
+  sipp_tax_free_cash_first: false,
   lump_sum_allowance_remaining: LUMP_SUM_ALLOWANCE,
   gilt_yield_percent: 5.25,
   annuity_income_per_1000: null,
@@ -259,6 +264,7 @@ export function isExamplePerson(inputs: UKDrawdownYearInput): boolean {
       draw_source: "sipp",
       sipp_draw_pattern: "regular",
       sipp_tax_free_fraction: 0,
+      sipp_tax_free_cash_first: false,
     });
   return aboutThePerson(inputs) === aboutThePerson(EXAMPLE_INPUTS);
 }
@@ -288,8 +294,10 @@ export function inputProblem(inputs: UKDrawdownYearInput): string | null {
   if (age < 18 || age > 120) {
     return "Enter a date of birth for someone aged 18 to 120 on 6 April 2026.";
   }
-  if (inputs.draw_source === "sipp" && inputs.draw_amount > 0 && age < 55) {
-    return "You can’t draw from a pension pot before age 55. Draw from your savings, or set the draw to £0.";
+  // Pension rules let a pot pay out from age 55 (Finance Act 2004 s.165
+  // pension rule 1, s.279); the API allows a draw for anyone 55 by 5 April 2027.
+  if (inputs.draw_source === "sipp" && inputs.draw_amount > 0 && inputs.birth_date > LAST_BIRTH_FOR_POT) {
+    return "You can’t draw from a pension pot before age 55, and you turn 55 after this tax year ends on 5 April 2027. Draw from your savings, or set the draw to £0.";
   }
   const amounts = [
     inputs.state_pension,
@@ -314,4 +322,40 @@ export function inputProblem(inputs: UKDrawdownYearInput): string | null {
 export function withDrawInBounds(inputs: UKDrawdownYearInput): UKDrawdownYearInput {
   const balance = sourceBalance(inputs);
   return inputs.draw_amount > balance ? { ...inputs, draw_amount: balance } : inputs;
+}
+
+/**
+ * Tax-free cash first applies only to a one-off pot draw with a quarter tax
+ * free; any other choice turns it off, as the API requires.
+ */
+export function withTaxFreeChoiceInBounds(inputs: UKDrawdownYearInput): UKDrawdownYearInput {
+  const fits =
+    inputs.draw_source === "sipp" &&
+    inputs.sipp_draw_pattern === "one_off" &&
+    inputs.sipp_tax_free_fraction === 0.25;
+  return inputs.sipp_tax_free_cash_first && !fits
+    ? { ...inputs, sipp_tax_free_cash_first: false }
+    : inputs;
+}
+
+/** What the page sends: the draw within the balance and a tax-free choice that applies. */
+export function inputsToSend(inputs: UKDrawdownYearInput): UKDrawdownYearInput {
+  return withDrawInBounds(withTaxFreeChoiceInBounds(inputs));
+}
+
+/** Why a run failed, in words that say what to do next. */
+export function failureMessage(error: unknown): string {
+  if (error instanceof NetworkError) {
+    return "We couldn’t reach the calculator. Check your connection and try again.";
+  }
+  if (error instanceof TimeoutError) {
+    return "The calculator took too long to answer. Try again.";
+  }
+  if (error instanceof ApiError && error.statusCode === 503) {
+    return "The calculator isn’t running right now. Try again later.";
+  }
+  if (error instanceof ApiError && error.statusCode !== undefined) {
+    return "The calculator couldn’t work out this year. Try again, or change a figure.";
+  }
+  return "We couldn’t work this out. Try again.";
 }

@@ -24,8 +24,10 @@ import {
   describeNextStep,
   drawStep,
   emptySourceMessage,
+  failureMessage,
   headline,
   inputProblem,
+  inputsToSend,
   isExamplePerson,
   outcomeAt,
   pounds,
@@ -33,7 +35,6 @@ import {
   sliceBetween,
   sourceBalance,
   splitPence,
-  withDrawInBounds,
 } from "../../lib/uk-drawdown";
 
 const NEXT_STEP = 1_000;
@@ -116,7 +117,7 @@ function YearLedger({
   );
 }
 
-function PensionCreditWorking({ run }: { run: UKDrawdownRun }) {
+function PensionCreditWorking({ run, deferred }: { run: UKDrawdownRun; deferred: boolean }) {
   const working = run.result.pension_credit_working;
   if (working.status === "under_qualifying_age") {
     return (
@@ -127,7 +128,7 @@ function PensionCreditWorking({ run }: { run: UKDrawdownRun }) {
     );
   }
   const rows: [string, number][] = [
-    ["State Pension", working.state_pension],
+    [deferred ? "State Pension you could claim" : "State Pension", working.state_pension],
     ["Other pensions and annuities", working.other_pension_income],
     ["Earnings above £5 a week", working.earnings_counted],
     ["Regular withdrawals from your pot", working.regular_pot_income],
@@ -187,7 +188,7 @@ function PensionCreditWorking({ run }: { run: UKDrawdownRun }) {
           </tr>
         </tbody>
       </table>
-      {run.result.pension_credit_working.annual_annuity_income > 0 && (
+      {working.annual_annuity_income > 0 && working.annuity_income_per_1000 !== null && (
         <p className="mt-3">
           DWP assumes an untouched pot pays the annuity it could buy. For your pot that comes to{" "}
           {pounds(working.annual_annuity_income)} a year,{" "}
@@ -294,7 +295,7 @@ function Results({
     Math.min(inputs.draw_amount + NEXT_STEP, balance),
   );
   const income =
-    inputs.state_pension +
+    result.state_pension_paid +
     inputs.other_pension_income +
     inputs.employment_income +
     inputs.savings_interest +
@@ -383,7 +384,7 @@ function Results({
           What DWP counts each week
         </h2>
         <div className="mt-3">
-          <PensionCreditWorking run={run} />
+          <PensionCreditWorking run={run} deferred={inputs.state_pension_deferred} />
         </div>
       </section>
 
@@ -444,7 +445,7 @@ export default function UKDrawdownPage() {
   const [failure, setFailure] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
-  const inputs = useMemo(() => withDrawInBounds(form), [form]);
+  const inputs = useMemo(() => inputsToSend(form), [form]);
   const problem = inputProblem(inputs);
   const key = JSON.stringify(inputs);
   const baseKey = JSON.stringify({ ...inputs, draw_amount: 0 });
@@ -459,10 +460,8 @@ export default function UKDrawdownPage() {
         setRun({ baseKey: JSON.stringify({ ...sent, draw_amount: 0 }), data });
         setFailure(null);
       })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setFailure("We couldn’t work this out. Check your connection and try again.");
-        }
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setFailure(failureMessage(error));
       });
     return () => controller.abort();
   }, [debouncedKey, key, problem, attempt]);

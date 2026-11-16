@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import recorded from "../../test/fixtures/uk-drawdown-recorded.json";
 import type { UKDrawdownRun, UKDrawdownYearInput } from "../../lib/api-uk-drawdown";
+import { NetworkError, SimulationError } from "../../lib/api";
 import { runUKDrawdownYear } from "../../lib/api-uk-drawdown";
 import UKDrawdownPage from "./page";
 
@@ -118,7 +119,7 @@ describe("UKDrawdownPage", () => {
     });
     expect(screen.getByText(/These figures describe an example person/)).toBeInTheDocument();
 
-    edit("State Pension", "12547.60");
+    edit("State Pension, yearly rate", "12547.60");
     expect(screen.queryByText(/These figures describe an example person/)).not.toBeInTheDocument();
   });
 
@@ -140,7 +141,9 @@ describe("UKDrawdownPage", () => {
     await openPage();
     runMock.mockClear();
     fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "1975-01-01" } });
-    expect(screen.getByRole("alert")).toHaveTextContent("You can’t draw from a pension pot before age 55.");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "You can’t draw from a pension pot before age 55, and you turn 55 after this tax year ends",
+    );
     await debounceSettles();
     expect(runMock).not.toHaveBeenCalled();
   });
@@ -158,14 +161,32 @@ describe("UKDrawdownPage", () => {
     expect(runMock.mock.calls.map(([inputs]) => inputs.birth_date)).toEqual(["1962-01-01"]);
   });
 
-  it("offers a retry when the API fails", async () => {
-    runMock.mockRejectedValueOnce(new Error("network down"));
+  it("offers a retry when the API can't be reached", async () => {
+    runMock.mockRejectedValueOnce(new NetworkError("network down"));
     render(<UKDrawdownPage />);
     expect(await screen.findByRole("alert", undefined, { timeout: 3_000 })).toHaveTextContent(
-      "We couldn’t work this out. Check your connection and try again.",
+      "We couldn’t reach the calculator. Check your connection and try again.",
     );
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
+  });
+
+  it("words a server error as one, not as a connection problem", async () => {
+    runMock.mockRejectedValueOnce(new SimulationError("engine failed", 500));
+    render(<UKDrawdownPage />);
+    expect(await screen.findByRole("alert", undefined, { timeout: 3_000 })).toHaveTextContent(
+      "The calculator couldn’t work out this year. Try again, or change a figure.",
+    );
+  });
+
+  it("never sends tax-free cash first with a regular draw", async () => {
+    await openPage();
+    fireEvent.click(screen.getByRole("radio", { name: "One-off" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Tax-free cash first" }));
+    await waitFor(() => expect(lastInputs().sipp_tax_free_cash_first).toBe(true));
+    fireEvent.click(screen.getByRole("radio", { name: "Regular" }));
+    await waitFor(() => expect(lastInputs().sipp_draw_pattern).toBe("regular"));
+    expect(lastInputs().sipp_tax_free_cash_first).toBe(false);
   });
 
   it("ignores the result of a superseded request", async () => {

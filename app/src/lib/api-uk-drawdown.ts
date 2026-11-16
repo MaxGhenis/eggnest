@@ -11,7 +11,9 @@ export interface UKDrawdownYearInput {
   birth_date: string;
   region: DrawRegion;
   tax_year: 2026;
+  /** The yearly rate; the API counts it from State Pension age. */
   state_pension: number;
+  state_pension_deferred: boolean;
   other_pension_income: number;
   employment_income: number;
   savings_interest: number;
@@ -24,6 +26,7 @@ export interface UKDrawdownYearInput {
   draw_amount: number;
   sipp_draw_pattern: DrawPattern;
   sipp_tax_free_fraction: number;
+  sipp_tax_free_cash_first: boolean;
   lump_sum_allowance_remaining: number;
   gilt_yield_percent: number;
   annuity_income_per_1000: number | null;
@@ -68,8 +71,10 @@ export interface DrawdownPensionCreditWorking {
   eligible_weeks: number;
   weekly_minimum_guarantee: number | null;
   annual_annuity_income: number;
-  annuity_income_per_1000: number;
-  annuity_age: number;
+  /** Null when no week is eligible and no provider figure was given. */
+  annuity_income_per_1000: number | null;
+  annuity_age: number | null;
+  /** The weekly rate DWP counts, claimed or deferred. */
   state_pension: number;
   other_pension_income: number;
   earnings_counted: number;
@@ -87,6 +92,10 @@ export interface UKDrawdownYearResult {
   draw_source: DrawSource;
   sipp_draw_pattern: DrawPattern;
   pot_left: number;
+  /** State Pension paid in the tax year: the rate from State Pension age. */
+  state_pension_paid: number;
+  state_pension_age_date: string;
+  minimum_pension_age_date: string;
   income_tax: DrawdownFigure;
   employee_ni: DrawdownFigure;
   pension_credit: DrawdownFigure;
@@ -100,6 +109,7 @@ export interface UKDrawdownYearResult {
   markers: DrawdownMarker[];
   assumptions: {
     tax_free_fraction_applied: number;
+    tax_free_cash_first: boolean;
     money_spent_evenly_through_year: boolean;
     gilt_yield_percent_used: number | null;
   };

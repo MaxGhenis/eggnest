@@ -100,7 +100,7 @@ function Choice<T extends string | number>({
   hint?: string;
   name: string;
   value: T;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; wide?: boolean }[];
   onChange: (value: T) => void;
 }) {
   return (
@@ -108,7 +108,10 @@ function Choice<T extends string | number>({
       <legend className="font-medium">{legend}</legend>
       <div className="mt-1 grid grid-cols-2 gap-1.5">
         {options.map((option) => (
-          <label key={String(option.value)} className="cursor-pointer">
+          <label
+            key={String(option.value)}
+            className={`cursor-pointer ${option.wide ? "col-span-2" : ""}`}
+          >
             <input
               type="radio"
               className="peer sr-only"
@@ -126,6 +129,61 @@ function Choice<T extends string | number>({
     </fieldset>
   );
 }
+
+function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  const hintId = useId();
+  return (
+    <div className="flex items-start gap-2">
+      <input
+        id={id}
+        type="checkbox"
+        className="mt-1 size-4 accent-[var(--color-primary-dark)]"
+        checked={checked}
+        aria-describedby={hint ? hintId : undefined}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <div>
+        <label htmlFor={id}>{label}</label>
+        {hint && (
+          <p id={hintId} className="text-sm text-[var(--color-text-muted)]">
+            {hint}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type TaxFreeChoice = "quarter" | "none" | "first";
+
+function taxFreeChoice(inputs: UKDrawdownYearInput): TaxFreeChoice {
+  if (inputs.sipp_tax_free_fraction === 0) return "none";
+  return inputs.sipp_tax_free_cash_first ? "first" : "quarter";
+}
+
+const TAX_FREE_UPDATES: Record<TaxFreeChoice, Partial<UKDrawdownYearInput>> = {
+  quarter: { sipp_tax_free_fraction: 0.25, sipp_tax_free_cash_first: false },
+  none: { sipp_tax_free_fraction: 0, sipp_tax_free_cash_first: false },
+  first: { sipp_tax_free_fraction: 0.25, sipp_tax_free_cash_first: true },
+};
+
+const TAX_FREE_HINTS: Record<TaxFreeChoice, string> = {
+  quarter: "A quarter of each withdrawal comes tax free. Choose none if you’ve already taken your tax-free cash.",
+  none: "Choose none if you’ve already taken your tax-free cash.",
+  first:
+    "Up to a quarter of your pot comes out tax free first, within your Lump Sum Allowance, and the rest of the draw is taxed.",
+};
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -155,6 +213,9 @@ export function DrawdownForm({
   const birthId = useId();
   const regionId = useId();
   const onPot = inputs.draw_source === "sipp";
+  const oneOff = inputs.sipp_draw_pattern === "one_off";
+  // Cash first applies only to a one-off draw; a regular draw shows a quarter.
+  const taxFree = taxFreeChoice(inputs) === "first" && !oneOff ? "quarter" : taxFreeChoice(inputs);
 
   return (
     <form
@@ -193,16 +254,19 @@ export function DrawdownForm({
               ]}
               onChange={(sipp_draw_pattern) => onChange({ sipp_draw_pattern })}
             />
-            <Choice<number>
-              legend="Tax-free share of each withdrawal"
-              hint="Choose none if you’ve already taken your tax-free cash."
-              name="sipp_tax_free_fraction"
-              value={inputs.sipp_tax_free_fraction}
+            <Choice<TaxFreeChoice>
+              legend="Tax-free cash"
+              hint={TAX_FREE_HINTS[taxFree]}
+              name="sipp_tax_free"
+              value={taxFree}
               options={[
-                { value: 0.25, label: "A quarter" },
-                { value: 0, label: "None" },
+                { value: "quarter", label: "A quarter" },
+                { value: "none", label: "None" },
+                ...(oneOff
+                  ? [{ value: "first" as const, label: "Tax-free cash first", wide: true }]
+                  : []),
               ]}
-              onChange={(sipp_tax_free_fraction) => onChange({ sipp_tax_free_fraction })}
+              onChange={(choice) => onChange(TAX_FREE_UPDATES[choice])}
             />
           </>
         )}
@@ -240,12 +304,20 @@ export function DrawdownForm({
 
       <Group title="Income in 2026/27, before you draw">
         <NumberField
-          label="State Pension"
-          hint="The full new State Pension pays £12,547.60. Include yours from State Pension age, even if you haven’t claimed it."
+          label="State Pension, yearly rate"
+          hint="The full new State Pension is £12,547.60 a year. We count yours from State Pension age."
           prefix="£"
           value={inputs.state_pension}
           onChange={(state_pension) => onChange({ state_pension })}
         />
+        {inputs.state_pension > 0 && (
+          <Toggle
+            label="I’m putting off claiming it"
+            hint="Pension Credit still counts a State Pension you could claim."
+            checked={inputs.state_pension_deferred}
+            onChange={(state_pension_deferred) => onChange({ state_pension_deferred })}
+          />
+        )}
         <NumberField
           label="Other pensions and annuities"
           prefix="£"
