@@ -27,6 +27,7 @@ import {
   outcomeAt,
   pounds,
   poundsAndPence,
+  potLockedAllYear,
   sliceBetween,
   sourceBalance,
   splitPence,
@@ -227,7 +228,13 @@ describe("recorded real-engine runs", () => {
     expect(outcomeAt(result.sweep, 0)).toEqual(result.with_no_draw);
 
     const next = result.next_1000;
-    expect(next).not.toBeNull();
+    if (next === null) {
+      // A pot locked all year: the API costs only the zero draw, and the page
+      // reads no next step off it either.
+      expect(result.sweep).toHaveLength(1);
+      expect(sliceBetween(result.sweep, chosen.draw, chosen.draw + 1_000)).toBeNull();
+      return;
+    }
     const read = sliceBetween(result.sweep, next!.draw_from, next!.draw_to)!;
     expect(read.kept).toBeCloseTo(next!.kept, 5);
     expect(read.to_tax).toBeCloseTo(next!.to_tax, 5);
@@ -519,6 +526,14 @@ describe("inputProblem", () => {
   it("lets someone who turns 55 during the tax year draw from a pot", () => {
     expect(inputProblem({ ...EXAMPLE_INPUTS, birth_date: "1971-08-01" })).toBeNull();
     expect(inputProblem({ ...EXAMPLE_INPUTS, birth_date: "1972-04-05" })).toBeNull();
+  });
+
+  it("locks a pot all year for anyone who turns 55 after 5 April 2027", () => {
+    expect(potLockedAllYear({ ...EXAMPLE_INPUTS, birth_date: "1972-04-05" })).toBe(false);
+    expect(potLockedAllYear({ ...EXAMPLE_INPUTS, birth_date: "1972-04-06" })).toBe(true);
+    expect(
+      potLockedAllYear({ ...EXAMPLE_INPUTS, birth_date: "1980-01-10", draw_source: "isa" }),
+    ).toBe(false);
   });
 
   it("lets someone under 55 draw from savings or draw nothing", () => {

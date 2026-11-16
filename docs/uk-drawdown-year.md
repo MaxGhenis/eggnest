@@ -46,8 +46,10 @@ taken their tax-free cash, up to the Lump Sum Allowance. A one-off withdrawal
 can instead take the tax-free cash first, as a pension commencement lump sum:
 up to a quarter of the pot, within the Lump Sum Allowance left, comes tax free
 and the rest is taxable (Finance Act 2004 s.166 and Sch 29 paras 1-3). A pot
-pays out from age 55 (s.165 pension rule 1 and s.279), so the calculator draws
-from it for anyone 55 by 5 April 2027 and names the day they turn 55. ISA,
+pays out from age 55 (s.165 pension rule 1, Sch 29 paras 1(1)(d) and 4A(1)(c),
+and s.279), so the calculator draws from it for anyone 55 by 5 April 2027 and
+names the day they turn 55. For anyone younger the pot can pay nothing in the
+year, so the calculator costs only a draw of nothing from it. ISA,
 investment and cash draws add no taxable income; the calculator leaves out
 Capital Gains Tax.
 
@@ -97,7 +99,8 @@ carries the table, and `api/scripts/build_gad_drawdown_factors.py` rebuilds it.
   so Pension Credit starts to fall, and the draw where guarantee credit ends.
 - `pension_credit_working`: the weekly amounts behind the result.
 - `next_1000`: where the next £1,000 of draw goes, or a smaller step near the
-  end of the pot.
+  end of the pot; none at the end of the pot or for a pot that can't pay out
+  this year.
 
 ## What it leaves out
 

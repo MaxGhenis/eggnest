@@ -57,6 +57,7 @@ from .models_uk_drawdown import (
     UKDrawdownYearInput,
     UKDrawdownYearResult,
     minimum_pension_age_date,
+    pot_locked_all_year,
 )
 from .state_pension_age import (
     pension_credit_qualifying_date,
@@ -232,6 +233,9 @@ def _sweep_draws(inputs: UKDrawdownYearInput) -> np.ndarray:
     past the additional-rate threshold, so the last band's rate holds to the
     balance.
     """
+    if pot_locked_all_year(inputs):
+        # The pot can pay nothing this tax year, so no other draw exists.
+        return np.array([0.0])
     balance = _source_balance(inputs)
     tax_free_ends = _tax_free_ends(inputs)
     useful = max(_SWEEP_MIN_TOP, inputs.draw_amount * 1.25)
@@ -751,7 +755,11 @@ def run_uk_drawdown_year(
     engines = engines or default_engines()
     calculation = _Calculation(inputs, engines)
     balance = _source_balance(inputs)
-    next_draw = min(inputs.draw_amount + _NEXT_DRAW_STEP, balance)
+    next_draw = (
+        inputs.draw_amount
+        if pot_locked_all_year(inputs)
+        else min(inputs.draw_amount + _NEXT_DRAW_STEP, balance)
+    )
 
     grid = np.unique(
         np.concatenate([_sweep_draws(inputs), [0.0, inputs.draw_amount, next_draw]])

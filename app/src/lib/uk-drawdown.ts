@@ -287,6 +287,20 @@ export function ageAtTaxYearStart(birthDate: string): number | null {
   return 2026 - year - (hadBirthday ? 0 : 1);
 }
 
+/**
+ * True when the pot drawn from can pay nothing in 2026/27. Pension rules let a
+ * pot pay out from age 55 (Finance Act 2004 s.165 pension rule 1, Sch 29 paras
+ * 1(1)(d) and 4A(1)(c), s.279), and the API costs a pot draw for anyone 55 by
+ * 5 April 2027.
+ */
+export function potLockedAllYear(inputs: UKDrawdownYearInput): boolean {
+  return inputs.draw_source === "sipp" && inputs.birth_date > LAST_BIRTH_FOR_POT;
+}
+
+/** What the page shows in place of the curve for a pot locked all year. */
+export const LOCKED_POT_MESSAGE =
+  "You turn 55 after this tax year ends on 5 April 2027, so your pension pot can’t pay you a pension or lump sum in 2026/27. Take money from your savings instead to see what you’d keep.";
+
 /** What stops the calculation running, in words someone can act on. */
 export function inputProblem(inputs: UKDrawdownYearInput): string | null {
   const age = ageAtTaxYearStart(inputs.birth_date);
@@ -294,9 +308,7 @@ export function inputProblem(inputs: UKDrawdownYearInput): string | null {
   if (age < 18 || age > 120) {
     return "Enter a date of birth for someone aged 18 to 120 on 6 April 2026.";
   }
-  // Pension rules let a pot pay out from age 55 (Finance Act 2004 s.165
-  // pension rule 1, s.279); the API allows a draw for anyone 55 by 5 April 2027.
-  if (inputs.draw_source === "sipp" && inputs.draw_amount > 0 && inputs.birth_date > LAST_BIRTH_FOR_POT) {
+  if (inputs.draw_amount > 0 && potLockedAllYear(inputs)) {
     return "You can’t draw from a pension pot before age 55, and you turn 55 after this tax year ends on 5 April 2027. Draw from your savings, or set the draw to £0.";
   }
   const amounts = [

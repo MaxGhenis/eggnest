@@ -13,9 +13,9 @@ vi.mock("../../lib/api-uk-drawdown", async (importOriginal) => ({
 
 const runMock = vi.mocked(runUKDrawdownYear);
 
-/** A real-engine run recorded for the page's example inputs. */
-function exampleRun(): UKDrawdownRun {
-  const { envelope } = recorded.example;
+/** A real-engine run recorded for the page's example inputs, or another scenario. */
+function exampleRun(name: keyof typeof recorded = "example"): UKDrawdownRun {
+  const { envelope } = recorded[name];
   return {
     result: envelope.outputs.uk_drawdown_year_result as unknown as UKDrawdownRun["result"],
     caveats: envelope.caveats,
@@ -206,6 +206,21 @@ describe("UKDrawdownPage", () => {
     edit("Earnings", "200");
     await waitFor(() => expect(aborted).toEqual([true]));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("offers no draw from a pot that can't pay out this tax year", async () => {
+    await openPage();
+    runMock.mockImplementation(async () => exampleRun("locked_pot"));
+    edit("Amount to draw in 2026/27", "0");
+    fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "1980-01-10" } });
+    expect(
+      screen.getByText(/your pension pot can’t pay you a pension or lump sum in 2026\/27/),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(lastInputs().birth_date).toBe("1980-01-10"));
+    expect(await screen.findByText(/You turn 55 on 10 January 2035/)).toBeInTheDocument();
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Your next/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Draw another/)).not.toBeInTheDocument();
   });
 
   it("asks for a balance when the chosen source holds nothing", async () => {

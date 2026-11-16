@@ -68,6 +68,13 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "birth_date": "1960-07-15",
         "state_pension": 12547.6,
     },
+    # 55 on 10 January 2035, after the tax year: the pot can pay nothing.
+    "locked_pot": {
+        **EXAMPLE,
+        "birth_date": "1980-01-10",
+        "state_pension": 0.0,
+        "draw_amount": 0.0,
+    },
     "tax_free_cash_first": {
         **EXAMPLE,
         "state_pension": 12547.6,

@@ -19,6 +19,7 @@ import {
 import { citationLabel } from "../../lib/uk-benefits";
 import {
   EXAMPLE_INPUTS,
+  LOCKED_POT_MESSAGE,
   chartTop,
   comparedWithNoDraw,
   describeNextStep,
@@ -32,6 +33,7 @@ import {
   outcomeAt,
   pounds,
   poundsAndPence,
+  potLockedAllYear,
   sliceBetween,
   sourceBalance,
   splitPence,
@@ -284,16 +286,20 @@ function Results({
   onDraw: (draw: number) => void;
 }) {
   const { result } = run;
+  // Checked on the inputs, so a dimmed earlier result never offers a draw.
+  const locked = potLockedAllYear(inputs);
   const balance = sourceBalance(inputs);
   const sweepTop = result.sweep[result.sweep.length - 1].draw;
   const top = chartTop(sweepTop, balance, inputs.draw_amount);
   const chosen = outcomeAt(result.sweep, inputs.draw_amount);
   const none = result.with_no_draw;
-  const next = sliceBetween(
-    result.sweep,
-    inputs.draw_amount,
-    Math.min(inputs.draw_amount + NEXT_STEP, balance),
-  );
+  const next = locked
+    ? null
+    : sliceBetween(
+        result.sweep,
+        inputs.draw_amount,
+        Math.min(inputs.draw_amount + NEXT_STEP, balance),
+      );
   const income =
     result.state_pension_paid +
     inputs.other_pension_income +
@@ -333,7 +339,9 @@ function Results({
         </a>
       </section>
 
-      {balance > 0 ? (
+      {locked ? (
+        <p className="text-lg">{LOCKED_POT_MESSAGE}</p>
+      ) : balance > 0 ? (
         <div>
           <DrawdownCurve
             sweep={result.sweep}
@@ -375,7 +383,7 @@ function Results({
         )}
       </section>
 
-      {result.bands.length > 0 && (
+      {!locked && result.bands.length > 0 && (
         <PoundLadder bands={result.bands} draw={inputs.draw_amount} balance={balance} />
       )}
 

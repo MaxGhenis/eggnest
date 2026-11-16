@@ -30,6 +30,10 @@ Invariants, for every input:
 - One-off draws taking tax-free cash first: the taxable part is the draw less
   the smaller of a quarter of the pot and the Lump Sum Allowance left.
 - The same input gives the same output; the chosen draw equals its sweep row.
+- A pot that turns 55 after the tax year can pay nothing in it (Finance Act
+  2004 s.165 pension rule 1, Sch 29 paras 1(1)(d) and 4A(1)(c), s.279), so its
+  sweep holds only the zero draw, with no bands, markers or next_1000.
+  Otherwise next_1000 is missing only when the source is empty after the draw.
 - On a coarse grid, band_edges places each kink of a piecewise-linear series
   within £1. A whole run, after its refinement pass, places each turning
   point within 2p on these stand-in rules (two credit kinks £200 or more
@@ -75,6 +79,7 @@ from eggnest.models_uk_drawdown import (
     LUMP_SUM_ALLOWANCE,
     UKDrawdownYearInput,
     UKDrawdownYearResult,
+    pot_locked_all_year,
 )
 from eggnest.programs import list_programs
 from eggnest.tax_uk import AXIOM_UK_TAX_ENGINE, UKYearInputs, UKYearResults
@@ -306,7 +311,7 @@ class TestAccounting:
         result = run(inputs)
         step = result.next_1000
         if step is None:
-            assert result.pot_left == 0.0
+            assert result.pot_left == 0.0 or pot_locked_all_year(inputs)
             return
         assert step.draw_from == result.at_chosen_draw.draw
         assert step.kept + step.to_tax + step.to_pension_credit == pytest.approx(
@@ -958,6 +963,75 @@ class TestBandsAndMarkersOnWholeRuns:
     def test_sweep_stops_at_the_balance_when_the_allowance_outlasts_it(self):
         result = run(person(sipp_balance=900_000.0, draw_amount=400_000.0))
         assert result.sweep[-1].draw == 900_000.0
+
+
+class TestPotLockedAllYear:
+    """A pot whose owner turns 55 after 5 April 2027 pays nothing in 2026/27."""
+
+    def test_only_the_zero_draw_is_costed(self):
+        inputs = person(
+            birth_date=date(1980, 1, 10),
+            state_pension=0.0,
+            sipp_balance=10_000.0,
+            draw_amount=0.0,
+        )
+        result = run(inputs)
+        assert [row.draw for row in result.sweep] == [0.0]
+        assert result.next_1000 is None
+        assert result.bands == []
+        assert result.markers == []
+        assert result.minimum_pension_age_date == date(2035, 1, 10)
+        caveats = caveats_for(inputs)
+        assert not any("take this draw on or after" in c for c in caveats)
+        locked = [c for c in caveats if "after this tax year ends" in c]
+        assert len(locked) == 1
+        assert "10 January 2035" in locked[0]
+        assert "Sch 29" in locked[0]
+
+    def test_the_lock_starts_with_births_from_6_april_1972(self):
+        locked = run(
+            person(birth_date=date(1972, 4, 6), sipp_balance=10_000.0, draw_amount=0.0)
+        )
+        assert [row.draw for row in locked.sweep] == [0.0]
+        assert locked.next_1000 is None
+        # 55 on 5 April 2027, the last day of the tax year.
+        open_pot = run(
+            person(birth_date=date(1972, 4, 5), sipp_balance=10_000.0, draw_amount=0.0)
+        )
+        assert open_pot.sweep[-1].draw == 10_000.0
+        assert open_pot.next_1000 is not None
+
+    def test_savings_sweep_as_usual_before_55(self):
+        result = run(
+            person(
+                birth_date=date(1980, 1, 10),
+                isa_balance=10_000.0,
+                draw_source="isa",
+                draw_amount=0.0,
+            )
+        )
+        assert result.sweep[-1].draw == 10_000.0
+        assert result.next_1000 is not None
+
+    @given(
+        birth_date=st.dates(date(1972, 4, 6), date(2008, 4, 6)),
+        pot=pounds,
+        income=pounds,
+    )
+    def test_a_locked_pot_costs_no_draw_but_zero(self, birth_date, pot, income):
+        inputs = UKDrawdownYearInput(
+            birth_date=birth_date,
+            state_pension=0.0,
+            employment_income=income,
+            sipp_balance=pot,
+            draw_amount=0.0,
+        )
+        assert pot_locked_all_year(inputs)
+        result = run(inputs)
+        assert [row.draw for row in result.sweep] == [0.0]
+        assert result.next_1000 is None
+        assert result.bands == []
+        assert result.markers == []
 
 
 class TestGadTable:

@@ -31,6 +31,19 @@ def minimum_pension_age_date(birth_date: date) -> date:
     return anniversary(birth_date, MINIMUM_PENSION_AGE)
 
 
+def pot_locked_all_year(inputs: UKDrawdownYearInput) -> bool:
+    """Whether the pot drawn from can pay nothing in the tax year.
+
+    Pension rule 1 and the lump sum rules bar a payment before the minimum
+    pension age (Finance Act 2004 s.165, Sch 29 paras 1(1)(d) and 4A(1)(c),
+    s.279), not a payment in the tax year someone reaches it, so a pot opens
+    to anyone who turns 55 by 5 April of the tax year's end.
+    """
+    return inputs.draw_source == "sipp" and minimum_pension_age_date(
+        inputs.birth_date
+    ) > date(inputs.tax_year + 1, 4, 5)
+
+
 class UKDrawdownYearInput(BaseModel):
     """One person, one tax year, one amount drawn from one pot."""
 
@@ -184,16 +197,7 @@ class UKDrawdownYearInput(BaseModel):
         age = tax_year_start.year - self.birth_date.year - (not had_birthday)
         if not 18 <= age <= 120:
             raise ValueError("birth_date must give an age from 18 to 120")
-        # Pension rule 1 bars a payment before the minimum pension age, not a
-        # payment in the tax year someone reaches it (Finance Act 2004 ss.165,
-        # 279), so someone who turns 55 by 5 April 2027 can draw after the
-        # birthday.
-        if (
-            self.draw_source == "sipp"
-            and self.draw_amount > 0
-            and minimum_pension_age_date(self.birth_date)
-            > date(self.tax_year + 1, 4, 5)
-        ):
+        if self.draw_amount > 0 and pot_locked_all_year(self):
             raise ValueError(
                 f"A pension pot can't be drawn before age {MINIMUM_PENSION_AGE}"
             )

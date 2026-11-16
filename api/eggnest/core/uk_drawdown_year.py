@@ -12,6 +12,7 @@ from eggnest.models_uk_drawdown import (
     UKDrawdownYearInput,
     UKDrawdownYearResult,
     minimum_pension_age_date,
+    pot_locked_all_year,
 )
 from eggnest.state_pension_age import state_pension_age_date
 from eggnest.tax_uk import AXIOM_UK_TAX_ENGINE
@@ -197,7 +198,11 @@ def caveats_for(inputs: UKDrawdownYearInput) -> list[str]:
     caveats += _state_pension_caveats(inputs)
     if inputs.draw_source == "sipp":
         turns_55 = minimum_pension_age_date(inputs.birth_date)
-        if turns_55 > date(inputs.tax_year, 4, 6):
+        if pot_locked_all_year(inputs):
+            caveats.append(
+                f"You turn 55 on {_day(turns_55)}, after this tax year ends, and pension rules let a pot pay you a pension or lump sum only from then (Finance Act 2004 s.165 pension rule 1, Sch 29 paras 1(1)(d) and 4A(1)(c), and s.279), so we show no draw from your pot this year."
+            )
+        elif turns_55 > date(inputs.tax_year, 4, 6):
             caveats.append(
                 f"You turn 55 on {_day(turns_55)}, and pension rules let a pot pay you only from then (Finance Act 2004 s.165 pension rule 1 and s.279), so take this draw on or after that day."
             )
