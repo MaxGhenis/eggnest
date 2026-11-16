@@ -251,9 +251,13 @@ def _state_pension_caveats(inputs: UKDrawdownYearInput) -> list[str]:
         ]
     caveats = []
     if inputs.state_pension_deferred:
-        caveats.append(
-            "You haven't claimed your State Pension, so we leave it out of tax and money to spend. Pension Credit still counts it from State Pension age as if you had claimed it (SI 2002/1792 reg 18(1)). For an older State Pension deferred 12 months or more, DWP counts the lump sum you could take instead (reg 18(1B))."
-        )
+        deferred = "You haven't claimed your State Pension, so we leave it out of tax and money to spend. Pension Credit still counts it from State Pension age as if you had claimed it (SI 2002/1792 reg 18(1))."
+        # Reg 18(1B) reaches only the State Pension of people who reached
+        # State Pension age before 6 April 2016 (SPCA 2002 s.16(1)(a)-(c)).
+        # The page doesn't ask sex, so the women's later date decides.
+        if reached < SAVINGS_CREDIT_CUTOFF:
+            deferred += " For an older State Pension (State Pension age before 6 April 2016) deferred 12 months or more, DWP counts the weekly pension you would get if you chose the lump sum for deferring, which leaves out the extra pension deferring earns (reg 18(1B); DMG 85445-85446), so enter that rate."
+        caveats.append(deferred)
     elif reached > starts:
         caveats.append(
             f"You reach State Pension age on {_day(reached)}. We count your State Pension from that day: a share of the yearly rate for tax and money to spend, and the weekly rate in each week Pension Credit covers."

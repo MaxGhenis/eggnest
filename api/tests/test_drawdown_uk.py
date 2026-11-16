@@ -1260,6 +1260,25 @@ class TestCaveats:
         assert "reg 18(1)" in text
         assert "reg 18(1)" not in self.text(person())
 
+    def test_an_older_deferred_state_pension_counts_the_pension_not_the_lump_sum(
+        self,
+    ):
+        # SI 2002/1792 reg 18(1B): after 12 months' deferral of a pre-2016
+        # State Pension, DWP counts the pension payable if the lump sum were
+        # chosen, without the extra pension for deferring (DMG 85445-85446).
+        text = self.text(
+            person(
+                birth_date=date(1945, 1, 1),
+                state_pension=5_200.0,
+                state_pension_deferred=True,
+            )
+        )
+        assert "counts the lump sum" not in text
+        assert "reg 18(1B)" in text
+        assert "if you chose the lump sum" in text
+        # The new State Pension (s.16(1)(za)) is outside reg 18(1B).
+        assert "18(1B)" not in self.text(person(state_pension_deferred=True))
+
     def test_names_the_day_someone_turns_55(self):
         inputs = person(
             birth_date=date(1971, 8, 1), sipp_balance=1_000.0, draw_amount=1.0
