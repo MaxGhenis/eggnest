@@ -17,6 +17,9 @@
 - Benefit steps far smaller than a grid interval's width are placed to
   within 1/24 of the interval.
 - Each outcome's benefits by program add up to its benefits.
+- The federal figure cites the net investment income tax when the household
+  pays it, and the state figure cites state_income_tax on Wisconsin's
+  retirement income exclusion path.
 - The frontend's recorded runs match what PolicyEngine-US now produces.
 """
 
@@ -308,6 +311,53 @@ def test_other_taxes_hold_north_carolina_use_tax_and_fica_on_wages():
     assert wages.other_tax_parts["payroll_tax"][0] == pytest.approx(
         0.0765 * 20_000.0, abs=DOLLAR
     )
+
+
+def test_federal_tax_parts_and_the_wisconsin_path_reach_the_citations():
+    """A California couple selling $400,000 of investments that are all gain
+    pays the 3.8% net investment income tax on the $220,600 of AGI above
+    $250,000 (26 USC 1411), which federal income tax includes, so the federal
+    figure cites it. The Wisconsin household takes the retirement income
+    exclusion path, so its state figure cites state_income_tax."""
+    couple = USDrawdownYearInput.model_validate(
+        {
+            "state": "CA",
+            "filing_status": "married_filing_jointly",
+            "you": {
+                "birth_year": 1956,
+                "social_security": 24_000.0,
+                "earnings": 30_000.0,
+                "traditional_balance": 300_000.0,
+            },
+            "spouse": {
+                "birth_year": 1958,
+                "social_security": 12_000.0,
+                "pension_income": 8_000.0,
+                "traditional_balance": 400_000.0,
+            },
+            "taxable_interest": 2_000.0,
+            "taxable_balance": 900_000.0,
+            "taxable_gain_share": 1.0,
+            "draw_source": "taxable",
+            "draw_amount": 400_000.0,
+        }
+    )
+    arrays = ENGINE.evaluate(couple, np.array([0.0, 400_000.0]))
+    niit = arrays.federal_tax_parts["net_investment_income_tax"]
+    assert niit == pytest.approx([0.0, 0.038 * 220_600.0], abs=DOLLAR)
+    assert arrays.federal_income_tax[1] > niit[1]
+    result = run_us_drawdown_year(couple, ENGINE)
+    sources = [c.source for c in result.federal_income_tax.citations]
+    assert "26 USC 1411" in sources
+
+    wisconsin = IDENTITY_CASES["wisconsin_exclusion_roth"]
+    path = ENGINE.evaluate(wisconsin, np.array([0.0, wisconsin.draw_amount]))
+    assert path.state_tax_election.all()
+    state = run_us_drawdown_year(wisconsin, ENGINE).state_income_tax.citations
+    assert [c.id for c in state] == [
+        "policyengine-us:variables/state_income_tax",
+        "us-wi:statutes/71.05(6)(b)54m.a",
+    ]
 
 
 def test_alaska_permanent_fund_dividend_counts_as_a_benefit():

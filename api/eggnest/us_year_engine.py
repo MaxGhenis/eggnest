@@ -96,6 +96,9 @@ OTHER_TAX_PARTS = (
     *_NAMED_REST,
     "other_taxes",
 )
+# Parts of income_tax_before_refundable_credits with law of their own, which
+# the federal figure cites when the household pays them.
+FEDERAL_TAX_PARTS = ("net_investment_income_tax", "alternative_minimum_tax")
 
 
 # SSI's unearned income sources, and the one the calculator takes out of them.
@@ -273,6 +276,11 @@ class USYearArrays:
     Taxes and benefits are household totals in dollars for the tax year.
     ``other_tax_parts`` splits ``other_taxes`` by the keys ``OTHER_TAX_PARTS``
     names; an engine that doesn't itemize them leaves it empty.
+    ``federal_tax_parts`` holds the parts of federal income tax that
+    ``FEDERAL_TAX_PARTS`` names. ``state_tax_election`` is true where the state
+    income tax comes from an election path that the tax before refundable
+    credits ignores (Wisconsin's retirement income exclusion); an engine
+    without one leaves it None.
     """
 
     federal_income_tax: np.ndarray
@@ -285,6 +293,8 @@ class USYearArrays:
     later_medicare_surcharge: np.ndarray
     coverage: dict[str, np.ndarray] = field(default_factory=dict)
     other_tax_parts: dict[str, np.ndarray] = field(default_factory=dict)
+    federal_tax_parts: dict[str, np.ndarray] = field(default_factory=dict)
+    state_tax_election: np.ndarray | None = None
     people_on_medicare: int = 0
     medicare_lines: list[float] = field(default_factory=list)
     medicare_rates_year: int = 0
@@ -429,6 +439,8 @@ class PolicyEngineUSYear:
             later_medicare_surcharge=np.asarray(surcharge, dtype=float),
             coverage=coverage,
             other_tax_parts=other_tax_parts,
+            federal_tax_parts={name: household(name) for name in FEDERAL_TAX_PARTS},
+            state_tax_election=election,
             people_on_medicare=people_on_medicare,
             medicare_lines=lines,
             medicare_rates_year=rates_year,

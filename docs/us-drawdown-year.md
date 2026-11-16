@@ -110,12 +110,16 @@ a resource (POMS SI 01120.210 B), and its payments are then periodic income
 The calculator takes every tax before refundable credits and counts those
 credits once, among benefits:
 
-- Federal income tax comes from `income_tax_before_refundable_credits`.
+- Federal income tax comes from `income_tax_before_refundable_credits`, which
+  includes the net investment income tax and the alternative minimum tax.
+  `federal_income_tax.citations` adds 26 USC 1411 or 26 USC 55 when the
+  household pays either at the chosen draw or with no draw.
 - State income tax comes from `state_income_tax_before_refundable_credits`.
   PolicyEngine-US's Wisconsin tax takes the lower of the usual tax after
   refundable credits and the tax on the retirement income exclusion path, which
   allows no credits. When the exclusion path wins, the calculator takes its tax
-  and counts no Wisconsin refundable credits.
+  from `state_income_tax`, counts no Wisconsin refundable credits, and cites
+  `state_income_tax` and Wis. Stat. 71.05(6)(b)54m.a.
 - Other taxes add employee payroll and self-employment tax to the rest of
   PolicyEngine-US's `household_tax_before_refundable_credits`: state use tax,
   local income tax and local occupational tax. In North Carolina, for example,
@@ -135,8 +139,10 @@ leaves the value of that coverage out of money to spend.
 Money to spend adds the income the household enters, the draw and benefits,
 and takes away taxes. It matches PolicyEngine-US's `household_net_income` plus
 the cost of the investments the household sells and the cash it spends, which
-PolicyEngine-US never sees as income, without health benefits or costs. A Roth
-conversion adds tax but no money.
+PolicyEngine-US never sees as income, without health benefits or costs. The one
+exception is Wisconsin's retirement income exclusion path: `household_net_income`
+nets the usual tax, so when the path wins, money to spend exceeds that sum by
+the tax the path saves. A Roth conversion adds tax but no money.
 
 Social Security sets the income-related part of each person's 2028 Part B and
 Part D premiums from their 2026 income (42 USC 1395r(i)(4)). The calculator

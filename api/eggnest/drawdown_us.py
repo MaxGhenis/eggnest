@@ -30,7 +30,12 @@ from typing import Protocol
 import numpy as np
 
 from . import drawdown_bands
-from .citations import Citation, _statute, citations_for_keys
+from .citations import (
+    Citation,
+    _policyengine_variable,
+    _statute,
+    citations_for_keys,
+)
 from .models_us_drawdown import (
     MEDICARE_PREMIUM_LAG_YEARS,
     USDrawdownAssumptions,
@@ -45,7 +50,12 @@ from .models_us_drawdown import (
     source_balance,
 )
 from .rmd import RMD_START_AGE, UNIFORM_LIFETIME_TABLE, calculate_rmd
-from .us_year_engine import CENT, OTHER_TAX_PARTS, USYearArrays
+from .us_year_engine import (
+    CENT,
+    FEDERAL_TAX_PARTS,
+    OTHER_TAX_PARTS,
+    USYearArrays,
+)
 
 NEXT_DRAW_STEP = 1_000.0
 # 26 USC 4974(a): 25% of the amount by which distributions fall short of the
@@ -113,6 +123,23 @@ _FEDERAL_TAX_CITATIONS = (
     _statute("26", "63", "Standard deduction and the addition for age 65"),
     _statute("26", "86", "Social Security benefits in gross income"),
     _statute("26", "151", "Deduction for seniors aged 65 and over"),
+)
+# Parts of federal income tax cited when the household pays them.
+_FEDERAL_PART_CITATIONS = {
+    "net_investment_income_tax": _statute("26", "1411", "Net investment income tax"),
+    "alternative_minimum_tax": _statute("26", "55", "Alternative minimum tax"),
+}
+assert set(_FEDERAL_PART_CITATIONS) == set(FEDERAL_TAX_PARTS)
+# The state tax on an election path that state_income_tax_before_refundable_credits
+# ignores; Wisconsin's retirement income exclusion is the one PolicyEngine-US has.
+_STATE_ELECTION_CITATION = _policyengine_variable(
+    "state_income_tax", "State income tax, on the path the filer elects"
+)
+_WISCONSIN_EXCLUSION_CITATION = Citation(
+    id="us-wi:statutes/71.05(6)(b)54m.a",
+    url="https://docs.legis.wisconsin.gov/statutes/statutes/71/i/05/6/b/54m/a",
+    title="Wisconsin retirement income exclusion",
+    source="Wis. Stat. 71.05(6)(b)54m.a",
 )
 MEDICARE_CITATIONS = (
     _statute("42", "1395r", "Part B premium and its income-related adjustment"),
@@ -204,6 +231,8 @@ class _Evaluated:
     programs: dict[str, np.ndarray] = field(default_factory=dict)
     coverage: dict[str, np.ndarray] = field(default_factory=dict)
     tax_parts: dict[str, np.ndarray] = field(default_factory=dict)
+    federal_parts: dict[str, np.ndarray] = field(default_factory=dict)
+    state_election: np.ndarray | None = None
 
     _ARRAYS = (
         "draws",
@@ -255,6 +284,14 @@ class _Evaluated:
             name for name, values in self.tax_parts.items() if abs(values[index]) > CENT
         ]
 
+    def federal_parts_at(self, index: int) -> list[str]:
+        """The parts of federal income tax with law of their own paid at this draw."""
+        return [
+            name
+            for name, values in self.federal_parts.items()
+            if abs(values[index]) > CENT
+        ]
+
     def coverage_at(self, index: int) -> dict[str, bool]:
         return {name: bool(values[index]) for name, values in self.coverage.items()}
 
@@ -285,6 +322,12 @@ class _Evaluated:
             programs=by_name(self.programs, other.programs, 0.0),
             coverage=by_name(self.coverage, other.coverage, False),
             tax_parts=by_name(self.tax_parts, other.tax_parts, 0.0),
+            federal_parts=by_name(self.federal_parts, other.federal_parts, 0.0),
+            state_election=(
+                combined(self.state_election, other.state_election)
+                if self.state_election is not None and other.state_election is not None
+                else None
+            ),
         )
 
 
@@ -322,6 +365,12 @@ def _evaluate(
                 name: np.asarray(v, dtype=bool) for name, v in arrays.coverage.items()
             },
             tax_parts=dict(arrays.other_tax_parts),
+            federal_parts=dict(arrays.federal_tax_parts),
+            state_election=(
+                None
+                if arrays.state_tax_election is None
+                else np.asarray(arrays.state_tax_election, dtype=bool)
+            ),
         ),
         people_on_medicare=arrays.people_on_medicare,
         medicare_lines=list(arrays.medicare_lines),
@@ -680,6 +729,29 @@ def _markers(
     return sorted(markers, key=lambda marker: (marker.draw, marker.kind))
 
 
+def _federal_tax_citations(
+    merged: _Evaluated, chosen: int, no_draw: int
+) -> list[Citation]:
+    """The federal tax's law, with the parts paid at the chosen draw or at none."""
+    paid = {*merged.federal_parts_at(chosen), *merged.federal_parts_at(no_draw)}
+    return [
+        *citations_for_keys(["federal_income_tax"]),
+        *_FEDERAL_TAX_CITATIONS,
+        *(c for name, c in _FEDERAL_PART_CITATIONS.items() if name in paid),
+    ]
+
+
+def _state_tax_citations(
+    inputs: USDrawdownYearInput, merged: _Evaluated, chosen: int
+) -> list[Citation]:
+    """The variable the chosen draw's state tax comes from."""
+    if merged.state_election is None or not merged.state_election[chosen]:
+        return citations_for_keys(["state_income_tax"])
+    if inputs.state == "WI":
+        return [_STATE_ELECTION_CITATION, _WISCONSIN_EXCLUSION_CITATION]
+    return [_STATE_ELECTION_CITATION]
+
+
 def _other_tax_keys(merged: _Evaluated, chosen: int, no_draw: int) -> list[str]:
     """The other taxes to cite: those paid at the chosen draw or at none."""
     if not merged.tax_parts:
@@ -743,15 +815,12 @@ def run_us_drawdown_year(
         federal_income_tax=USDrawdownFigure(
             amount=_money(merged.federal_income_tax[chosen]),
             engine=engine_label,
-            citations=[
-                *citations_for_keys(["federal_income_tax"]),
-                *_FEDERAL_TAX_CITATIONS,
-            ],
+            citations=_federal_tax_citations(merged, chosen, no_draw),
         ),
         state_income_tax=USDrawdownFigure(
             amount=_money(merged.state_income_tax[chosen]),
             engine=engine_label,
-            citations=citations_for_keys(["state_income_tax"]),
+            citations=_state_tax_citations(inputs, merged, chosen),
         ),
         other_taxes=USDrawdownFigure(
             amount=_money(merged.other_taxes[chosen]),

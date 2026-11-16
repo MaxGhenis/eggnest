@@ -994,6 +994,98 @@ def test_an_engine_that_does_not_itemize_cites_payroll_tax_and_the_total():
     )
 
 
+class FederalPartsEngine(StandInEngine):
+    """The stand-in with federal income tax itemized as PolicyEngine-US adds it
+    up: a 3.8% net investment income tax on draws above $100,000, and on
+    request an alternative minimum tax of $500 at every draw."""
+
+    def __init__(self, amt: bool = False) -> None:
+        super().__init__()
+        self.amt = amt
+
+    def evaluate(self, inputs: USDrawdownYearInput, draws: np.ndarray) -> USYearArrays:
+        arrays = super().evaluate(inputs, draws)
+        draws = np.asarray(draws, dtype=float)
+        niit = 0.038 * np.maximum(draws - 100_000.0, 0.0)
+        amt = np.full(len(draws), 500.0 if self.amt else 0.0)
+        arrays.federal_income_tax = arrays.federal_income_tax + niit + amt
+        arrays.federal_tax_parts = {
+            "net_investment_income_tax": niit,
+            "alternative_minimum_tax": amt,
+        }
+        return arrays
+
+
+def _sources(citations) -> list[str]:
+    return [citation.source for citation in citations]
+
+
+@pytest.mark.parametrize(
+    ("draw", "amt", "cited", "not_cited"),
+    [
+        (50_000.0, False, [], ["26 USC 1411", "26 USC 55"]),
+        (150_000.0, False, ["26 USC 1411"], ["26 USC 55"]),
+        (50_000.0, True, ["26 USC 55"], ["26 USC 1411"]),
+    ],
+)
+def test_federal_tax_cites_the_net_investment_income_tax_and_amt_when_paid(
+    draw, amt, cited, not_cited
+):
+    """Federal income tax holds the net investment income tax (26 USC 1411)
+    and the alternative minimum tax (26 USC 55) as PolicyEngine-US adds them
+    up; each is cited when paid at the chosen draw or with none."""
+    inputs = _inputs(
+        you={"birth_year": 1955, "traditional_balance": 600_000.0},
+        draw_amount=draw,
+    )
+    result = run_us_drawdown_year(inputs, FederalPartsEngine(amt=amt))
+    sources = _sources(result.federal_income_tax.citations)
+    assert sources[:5] == [
+        "PolicyEngine-US variable",
+        "26 USC 1",
+        "26 USC 63",
+        "26 USC 86",
+        "26 USC 151",
+    ]
+    for source in cited:
+        assert source in sources
+    for source in not_cited:
+        assert source not in sources
+
+
+class ElectionEngine(StandInEngine):
+    """The stand-in with a state tax that a filer may elect to figure another
+    way above draws of $30,000, as Wisconsin's retirement income exclusion
+    lets PolicyEngine-US's state_income_tax do."""
+
+    def evaluate(self, inputs: USDrawdownYearInput, draws: np.ndarray) -> USYearArrays:
+        arrays = super().evaluate(inputs, draws)
+        arrays.state_tax_election = np.asarray(draws, dtype=float) > 30_000.0
+        return arrays
+
+
+@pytest.mark.parametrize(
+    ("state", "draw", "variable", "statute"),
+    [
+        ("WI", 40_000.0, "state_income_tax", True),
+        ("WI", 20_000.0, "state_income_tax_before_refundable_credits", False),
+        ("TX", 40_000.0, "state_income_tax", False),
+    ],
+)
+def test_state_tax_cites_the_variable_it_comes_from(state, draw, variable, statute):
+    """On the election path the state figure is PolicyEngine-US's
+    state_income_tax, and in Wisconsin it cites the retirement income
+    exclusion; otherwise it is the tax before refundable credits."""
+    result = run_us_drawdown_year(
+        _inputs(state=state, draw_amount=draw), ElectionEngine()
+    )
+    ids = _ids(result.state_income_tax.citations)
+    assert ids[0] == f"policyengine-us:variables/{variable}"
+    assert ("Wis. Stat. 71.05(6)(b)54m.a" in _sources(
+        result.state_income_tax.citations
+    )) is statute
+
+
 def test_caveats_follow_the_inputs():
     plain = caveats_for(_inputs(), _run(_inputs()))
     assert not [c for c in plain if "Roth" in c]
