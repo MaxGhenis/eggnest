@@ -692,8 +692,10 @@ def run_core_simulation_endpoint(scenario: EngineScenario):
     shapes while delegating to this core layer.
     """
     from eggnest.core.router import run_core_scenario
+    from eggnest.drawdown_uk import DrawdownEngineUnavailable
     from eggnest.models import HouseholdInput, SimulationInput
     from eggnest.models_uk import UKSimulationInput
+    from eggnest.models_uk_drawdown import UKDrawdownYearInput
 
     try:
         if scenario.engine == "us_retirement":
@@ -702,6 +704,8 @@ def run_core_simulation_endpoint(scenario: EngineScenario):
             parsed = UKSimulationInput.model_validate(scenario.inputs)
         elif scenario.engine == "us_household_resources":
             parsed = HouseholdInput.model_validate(scenario.inputs)
+        elif scenario.engine == "uk_drawdown_year":
+            parsed = UKDrawdownYearInput.model_validate(scenario.inputs)
         else:
             parsed = None
     except ValidationError as exc:
@@ -719,6 +723,8 @@ def run_core_simulation_endpoint(scenario: EngineScenario):
 
     try:
         return run_core_scenario(scenario)
+    except DrawdownEngineUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -728,6 +734,7 @@ def create_core_job(scenario: EngineScenario):
     """Start a stable core engine scenario as a background job."""
     from eggnest.models import HouseholdInput, SimulationInput
     from eggnest.models_uk import UKSimulationInput
+    from eggnest.models_uk_drawdown import UKDrawdownYearInput
 
     try:
         if scenario.engine == "us_retirement":
@@ -736,6 +743,8 @@ def create_core_job(scenario: EngineScenario):
             parsed = UKSimulationInput.model_validate(scenario.inputs)
         elif scenario.engine == "us_household_resources":
             parsed = HouseholdInput.model_validate(scenario.inputs)
+        elif scenario.engine == "uk_drawdown_year":
+            parsed = UKDrawdownYearInput.model_validate(scenario.inputs)
         else:
             parsed = None
     except ValidationError as exc:

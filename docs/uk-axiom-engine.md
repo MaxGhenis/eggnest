@@ -129,9 +129,10 @@ employee NI at State Pension age. Remaining encoding gap: Scottish and
 Welsh rates (the Axiom backend ignores region).
 
 Upstream issue to track: rulespec-uk's ITA s.8 encoding dates the Finance
-Act 2026 dividend rates (10.75%/35.75%) from 2024-04-06, so eggnest feeds
-the 2025/26 rates from its cited values file for every year until the
-effective-dating is corrected.
+Act 2026 dividend rates (10.75%/35.75%) from 2024-04-06, while Finance Act
+2026 s.4 applies them from 2026-27. Until upstream corrects the dating,
+eggnest feeds dividend rates by year from its cited values file: 8.75%/33.75%
+through 2025-26 and 10.75%/35.75% from 2026-27.
 
 ## WASM feasibility
 

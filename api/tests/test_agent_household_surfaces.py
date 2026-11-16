@@ -38,14 +38,21 @@ def test_program_catalog_exposes_household_resources():
 def test_program_outputs_name_fields_of_their_engine_results():
     """Agents read the outputs `GET /programs` names, so each must be a field
     of the result its engine returns, under that engine's output key."""
-    from eggnest.core import uk_retirement, us_household_resources, us_retirement
+    from eggnest.core import (
+        uk_drawdown_year,
+        uk_retirement,
+        us_household_resources,
+        us_retirement,
+    )
     from eggnest.models import HouseholdResult, SimulationResult
     from eggnest.models_uk import UKSimulationResult
+    from eggnest.models_uk_drawdown import UKDrawdownYearResult
 
     results = {
         "us_household_resources": (us_household_resources.OUTPUT_KEY, HouseholdResult),
         "us_retirement": (us_retirement.OUTPUT_KEY, SimulationResult),
         "uk_retirement": (uk_retirement.OUTPUT_KEY, UKSimulationResult),
+        "uk_drawdown_year": (uk_drawdown_year.OUTPUT_KEY, UKDrawdownYearResult),
     }
     programs = list_programs()
     assert {program.engine for program in programs} == set(results)

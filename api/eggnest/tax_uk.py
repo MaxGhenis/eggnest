@@ -69,6 +69,10 @@ class UKYearInputs:
     # State Pension age (SSCBA 1992 s.6(3)); the simulated year runs from
     # the birthday at ``age`` to the next.
     birth_date: date | None = None
+    # When set, the share of this year's earnings paid after State Pension
+    # age, for a caller whose year is not birthday to birthday (a single tax
+    # year, say). Takes precedence over the birthday-based calculation.
+    share_of_year_over_spa: float | None = None
 
 
 @dataclass
@@ -81,6 +85,11 @@ class UKYearResults:
     total_tax: np.ndarray  # income tax + employee NI, £
     income_tax: np.ndarray  # £
     employee_ni: np.ndarray  # £
+    # The part of income_tax charged on non-savings income (employment,
+    # pensions), which sits below savings and dividends (ITA 2007 s.16) and
+    # takes the allowance first (s.25(3A)). None from an engine that doesn't
+    # report income tax by component.
+    non_savings_income_tax: np.ndarray | None = None  # £
 
 
 def _defaults_frame(defaults: dict, n: int) -> dict[str, np.ndarray]:
@@ -172,6 +181,8 @@ def share_of_year_over_state_pension_age(inputs: UKYearInputs) -> float:
     minus this share. Without a birth date the person is taken to be
     ``age`` for the whole tax year starting in ``year``.
     """
+    if inputs.share_of_year_over_spa is not None:
+        return inputs.share_of_year_over_spa
     birth_date = inputs.birth_date or tax_year_birth_date(inputs)
     from .state_pension_age import (
         anniversary,

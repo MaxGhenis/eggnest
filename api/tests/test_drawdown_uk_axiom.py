@@ -1,0 +1,463 @@
+"""The one-year UK drawdown calculator on the real rules engine.
+
+These need the Axiom rules engine and a rulespec-uk checkout
+(EGGNEST_AXIOM_ENGINE_BIN / EGGNEST_RULESPEC_UK_ROOT). Locally they skip when
+those are absent; CI installs the pinned engine and sets
+EGGNEST_REQUIRE_AXIOM=1, which turns a missing engine into a failure.
+
+The expected figures are calculated by hand from the statutory rates:
+- 2026/27 Personal Allowance £12,570; basic rate band £37,700.
+- Standard minimum guarantee £238.00 a week (SI 2002/1792 reg 6).
+- Ordinary and upper dividend rates of 10.75% and 35.75% from 2026-27
+  (Income Tax Act 2007 s.8 as amended by Finance Act 2026 s.4).
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+from datetime import date
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from eggnest import axiom_uk
+from eggnest.core.uk_drawdown_year import (
+    build_uk_drawdown_year_scenario,
+    extract_uk_drawdown_year_result,
+    run_uk_drawdown_year_scenario,
+)
+from eggnest.drawdown_uk import run_uk_drawdown_year
+from eggnest.models_uk_drawdown import UKDrawdownYearInput
+from eggnest.tax_uk import UKYearInputs, calculate_uk_tax
+
+REQUIRED = os.environ.get("EGGNEST_REQUIRE_AXIOM") == "1"
+
+pytestmark = pytest.mark.skipif(
+    not REQUIRED and not axiom_uk.available(),
+    reason="Axiom rules engine not configured",
+)
+
+BORN = date(1958, 6, 15)  # 67 on 6 April 2026
+
+
+def test_engine_is_available():
+    assert axiom_uk.available()
+
+
+def _inputs(**overrides) -> UKYearInputs:
+    base = {
+        "age": 67,
+        "year": 2026,
+        "state_pension": np.zeros(1),
+        "private_pension_income": np.zeros(1),
+        "savings_interest": np.zeros(1),
+        "dividend_income": np.zeros(1),
+        "employment_income": np.zeros(1),
+    }
+    return UKYearInputs(**{**base, **overrides})
+
+
+class TestScenariosByHand:
+    def test_small_pot_regular_draw(self):
+        # Draw £2,500 from £20,000. £180 + £48.08 = £228.08 counted, so
+        # credit of £9.92 a week. Taxable £11,235 sits below the allowance.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=9_360.0,
+                sipp_balance=20_000.0,
+                draw_amount=2_500.0,
+            )
+        )
+        assert result.income_tax.amount == 0.0
+        assert result.pension_credit.amount == pytest.approx(516.0, abs=0.01)
+        assert result.money_to_spend == pytest.approx(12_376.0, abs=0.01)
+        # With no draw: £180 + £30.77 notional, so £27.23 a week.
+        assert result.with_no_draw.pension_credit == pytest.approx(1_416.0, abs=0.01)
+        assert result.pension_credit_working.annuity_income_per_1000 == 80.0
+
+    def test_turning_points_land_on_the_pound(self):
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=9_360.0,
+                sipp_balance=20_000.0,
+                draw_amount=2_500.0,
+            )
+        )
+        edges = [round(b.draw_to) for b in result.bands]
+        # Annuity income, credit gone at £180 + D/52 = £238, then tax once
+        # 0.75 D passes the £3,210 of allowance left.
+        assert edges == [1_600, 3_016, 4_280, 20_000]
+        assert [round(b.kept, 2) for b in result.bands] == [1.0, 0.0, 1.0, 0.85]
+
+    def test_same_draw_taken_as_a_one_off(self):
+        # DMG 85457-85458: capital, and the pot is re-valued at £17,500.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=9_360.0,
+                sipp_balance=20_000.0,
+                draw_amount=2_500.0,
+                sipp_draw_pattern="one_off",
+            )
+        )
+        assert result.pension_credit.amount == pytest.approx(1_616.0, abs=0.01)
+        assert result.money_to_spend == pytest.approx(13_476.0, abs=0.01)
+
+    def test_savings_draw_spreads_deemed_income_over_the_year(self):
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=9_360.0,
+                isa_balance=30_000.0,
+                draw_source="isa",
+                draw_amount=15_000.0,
+            )
+        )
+        working = result.pension_credit_working
+        assert working.deemed_income_first_week == 40.0
+        assert working.deemed_income_last_week == 11.0
+        assert result.income_tax.amount == 0.0
+        # With no draw: £20,000 over £10,000 deems £40 a week, £18 of credit.
+        assert result.with_no_draw.pension_credit == pytest.approx(936.0, abs=0.01)
+
+    def test_large_pot_full_new_state_pension(self):
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_547.60,
+                sipp_balance=400_000.0,
+                draw_amount=30_000.0,
+            )
+        )
+        # (£12,547.60 + £22,500 - £12,570) x 20%
+        assert result.income_tax.amount == pytest.approx(4_495.52, abs=0.01)
+        assert result.pension_credit.amount == 0.0
+        assert result.money_to_spend == pytest.approx(38_052.08, abs=0.01)
+        edges = [b.draw_to for b in result.bands]
+        # 0.75 D reaches the higher-rate threshold at D = £50,296.53.
+        assert any(abs(edge - 50_296.53) <= 3 for edge in edges)
+        # And the Personal Allowance taper at D = £116,603.20.
+        assert any(abs(edge - 116_603.20) <= 3 for edge in edges)
+
+    def test_employee_ni_stops_at_state_pension_age(self):
+        # 66th birthday on 15 June 2026; qualifying date in the same year.
+        younger = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=date(1960, 6, 15),
+                state_pension=0.0,
+                employment_income=30_000.0,
+            )
+        )
+        past_spa = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN, state_pension=0.0, employment_income=30_000.0
+            )
+        )
+        assert past_spa.employee_ni.amount == 0.0
+        assert younger.employee_ni.amount > 0.0
+
+
+class TestReviewCounterexamples:
+    """Inputs from the 2026-11-11 review, by hand from the statutory rates."""
+
+    # State Pension age 15 November 2026 (Pensions Act 2014 s.26): 142 of the
+    # year's 365 days, and the 20 weeks that start on or after it.
+    REACHES_SPA_IN_YEAR = date(1960, 7, 15)
+
+    def test_full_state_pension_from_november_leaves_no_credit(self):
+        # £12,547.60 a year is £241.30 a week, over the £238 minimum guarantee
+        # in every eligible week (reg 17(1) weekly amounts).
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=self.REACHES_SPA_IN_YEAR, state_pension=12_547.60
+            )
+        )
+        paid = 12_547.60 * 142 / 365
+        assert result.state_pension_paid == pytest.approx(paid, abs=0.01)
+        assert result.pension_credit_working.eligible_weeks == 20
+        assert result.pension_credit.amount == 0.0
+        assert result.income_tax.amount == 0.0
+        assert result.money_to_spend == pytest.approx(paid, abs=0.01)
+
+    def test_lower_state_pension_from_november_earns_credit_in_20_weeks(self):
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=self.REACHES_SPA_IN_YEAR, state_pension=9_360.0
+            )
+        )
+        assert result.pension_credit.amount == pytest.approx(20 * 58.0, abs=0.01)
+
+    def test_deferred_state_pension_still_counts_for_credit(self):
+        claimed = run_uk_drawdown_year(
+            UKDrawdownYearInput(birth_date=BORN, state_pension=9_360.0)
+        )
+        deferred = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN, state_pension=9_360.0, state_pension_deferred=True
+            )
+        )
+        assert claimed.pension_credit.amount == pytest.approx(52 * 58.0, abs=0.01)
+        assert deferred.pension_credit.amount == claimed.pension_credit.amount
+        assert deferred.money_to_spend == pytest.approx(52 * 58.0, abs=0.01)
+
+    def test_tax_free_cash_first_pays_no_tax_on_a_quarter_of_the_pot(self):
+        # uk-law-5: £25,000 of a £100,000 pot as a pension commencement lump
+        # sum is tax free; £12,547.60 of State Pension sits under the allowance.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=date(1956, 1, 10),
+                state_pension=12_547.60,
+                sipp_balance=100_000.0,
+                draw_amount=25_000.0,
+                sipp_draw_pattern="one_off",
+                sipp_tax_free_cash_first=True,
+            )
+        )
+        assert result.income_tax.amount == 0.0
+        assert result.money_to_spend == pytest.approx(37_547.60, abs=0.01)
+
+    def test_two_credit_kinks_276_apart(self):
+        # uk-law-3: aged 90 (GAD £155 per £1,000), so £3,100 of annuity
+        # income; credit of £276 runs out at £3,376; tax from £4,760.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=date(1936, 1, 10),
+                state_pension=9_000.0,
+                sipp_balance=20_000.0,
+            )
+        )
+        edges = [band.draw_to for band in result.bands]
+        assert edges == pytest.approx([3_100.0, 3_376.0, 4_760.0, 20_000.0], abs=2.0)
+        assert result.bands[1].to_pension_credit == pytest.approx(1.0, abs=0.01)
+
+
+class TestIndependentReviewCounterexamples:
+    """Inputs from the 2026-11-16 independent review, by hand from the law."""
+
+    def test_cash_first_sweep_passes_the_additional_rate_threshold(self):
+        # R1: £100,000 of tax-free cash comes first, then every pound drawn is
+        # taxable. With £12,547.60 of State Pension, the allowance tapers from
+        # a draw of £187,452.40, where adjusted net income passes £100,000
+        # (ITA 2007 s.35(2)), and the additional rate starts at £212,592.40,
+        # where it passes £125,140 (s.10(3A), (5A)).
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_547.60,
+                sipp_balance=400_000.0,
+                draw_amount=25_000.0,
+                sipp_draw_pattern="one_off",
+                sipp_tax_free_cash_first=True,
+            )
+        )
+        assert result.at_chosen_draw.income_tax == 0.0
+        assert result.sweep[-1].draw > 212_592.40
+        rates = [round(band.to_tax, 2) for band in result.bands]
+        assert rates == [0.0, 0.2, 0.4, 0.6, 0.45]
+        assert result.bands[-1].to_tax == pytest.approx(0.45, abs=1e-6)
+        # Within £5: the £2 bound on edges is fixed with the shared band code.
+        starts = dict(zip(rates, (b.draw_from for b in result.bands), strict=True))
+        assert starts[0.6] == pytest.approx(187_452.40, abs=5.0)
+        assert starts[0.45] == pytest.approx(212_592.40, abs=5.0)
+
+    @pytest.mark.parametrize("investment", ["savings_interest", "dividend_income"])
+    def test_tax_off_counted_income_keeps_the_tapered_allowance(self, investment):
+        # R2: £90,000 of interest or dividends takes adjusted net income to
+        # £102,000, so the allowance is £11,570 (ITA 2007 s.35(2)). It comes
+        # off the State Pension first (s.25(3A)), leaving £430 taxed at 20%:
+        # £86 of tax on income Pension Credit counts (SI 2002/1792 reg
+        # 17(10)). Savings and dividends sit on top (s.16), so none of that
+        # £86 is theirs. Credit: £238 x 52 - (£12,000 - £86) = £462.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_000.0,
+                draw_source="cash",
+                draw_amount=0.0,
+                **{investment: 90_000.0},
+            )
+        )
+        assert result.pension_credit_working.tax_deducted == pytest.approx(
+            86.0 / 52, abs=0.01
+        )
+        assert result.pension_credit.amount == pytest.approx(462.0, abs=0.01)
+
+    def test_interest_below_the_taper_leaves_counted_income_untaxed(self):
+        # £88,000 takes adjusted net income to exactly £100,000: no taper, and
+        # the £12,570 allowance covers the State Pension. Tax on the interest:
+        # £5,500 at nil (s.12 starting rate, s.12B allowance), £32,200 at 20%
+        # and £49,730 at 40%.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_000.0,
+                savings_interest=88_000.0,
+                draw_source="cash",
+                draw_amount=0.0,
+            )
+        )
+        assert result.income_tax.amount == pytest.approx(26_332.0, abs=0.01)
+        assert result.pension_credit_working.tax_deducted == 0.0
+        assert result.pension_credit.amount == pytest.approx(376.0, abs=0.01)
+
+    def test_one_off_draw_keeps_the_tapered_allowance_on_counted_income(self):
+        # The same £86 on the State Pension. The one-off draw is capital, so
+        # its own tax comes off the capital, not the income (DMG 85457); the
+        # £500 left in the pot yields £40 a year at £80 per £1,000.
+        # Credit: £12,376 - (£12,000 - £86) - £40 = £422.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_000.0,
+                savings_interest=90_000.0,
+                sipp_balance=1_000.0,
+                draw_amount=500.0,
+                sipp_draw_pattern="one_off",
+            )
+        )
+        assert result.pension_credit_working.tax_deducted == pytest.approx(
+            86.0 / 52, abs=0.01
+        )
+        assert result.pension_credit.amount == pytest.approx(422.0, abs=0.01)
+
+
+class TestEnvelope:
+    def test_citations_come_from_the_engine_traces(self):
+        inputs = UKDrawdownYearInput(
+            birth_date=BORN,
+            state_pension=9_360.0,
+            sipp_balance=20_000.0,
+            draw_amount=2_500.0,
+        )
+        envelope = run_uk_drawdown_year_scenario(
+            build_uk_drawdown_year_scenario(inputs)
+        )
+        result = extract_uk_drawdown_year_result(envelope)
+        assert any("legislation.gov.uk" in c.url for c in envelope.citations)
+        assert any(
+            "regulation/6" in ref.url or "reg 6" in ref.id
+            for ref in result.pension_credit.citations
+        )
+        versions = envelope.reproducibility.tax_engine_versions
+        assert versions["axiom-rules-engine"]
+        assert versions["rulespec-uk"]
+
+
+class TestDividendRates:
+    """Finance Act 2026 s.4 raised two of the three rates from 2026-27."""
+
+    def test_ordinary_rate_2026_27(self):
+        # £20,000 dividends: £12,570 allowance, £500 nil rate, £6,930 at 10.75%.
+        tax = axiom_uk.calculate_uk_tax_axiom(
+            _inputs(dividend_income=np.array([20_000.0]))
+        ).income_tax[0]
+        assert tax == pytest.approx(744.98, abs=0.01)
+
+    def test_upper_rate_2026_27(self):
+        # £80,000: £37,200 at 10.75% after the nil rate, £29,730 at 35.75%.
+        tax = axiom_uk.calculate_uk_tax_axiom(
+            _inputs(dividend_income=np.array([80_000.0]))
+        ).income_tax[0]
+        assert tax == pytest.approx(3_999.0 + 10_628.48, abs=0.01)
+
+    def test_earlier_years_keep_the_old_rates(self):
+        tax = axiom_uk.calculate_uk_tax_axiom(
+            _inputs(year=2025, dividend_income=np.array([20_000.0]))
+        ).income_tax[0]
+        assert tax == pytest.approx(606.38, abs=0.01)
+
+
+class TestShareOfYearOverStatePensionAge:
+    def test_the_caller_can_set_the_share(self):
+        earnings = np.array([30_000.0])
+        full = axiom_uk.calculate_uk_tax_axiom(
+            _inputs(age=60, employment_income=earnings, share_of_year_over_spa=0.0)
+        ).employee_ni[0]
+        half = axiom_uk.calculate_uk_tax_axiom(
+            _inputs(age=60, employment_income=earnings, share_of_year_over_spa=0.5)
+        ).employee_ni[0]
+        none = axiom_uk.calculate_uk_tax_axiom(
+            _inputs(age=60, employment_income=earnings, share_of_year_over_spa=1.0)
+        ).employee_ni[0]
+        assert full > 0.0
+        assert half == pytest.approx(full * 0.5, abs=0.01)
+        assert none == 0.0
+
+
+class TestAgainstCompiledEngine:
+    """Two implementations of the same income tax must agree for 2026/27.
+
+    Dividends are left out: policyengine-uk-compiled still applies the
+    2025/26 dividend rates to 2026/27.
+    """
+
+    @staticmethod
+    def tax_both_ways(draws, interest):
+        n = len(draws)
+        inputs = _inputs(
+            state_pension=np.full(n, 12_547.60),
+            private_pension_income=draws,
+            savings_interest=np.full(n, interest),
+            dividend_income=np.zeros(n),
+            employment_income=np.full(n, 8_000.0),
+        )
+        return (
+            axiom_uk.calculate_uk_tax_axiom(inputs).income_tax,
+            calculate_uk_tax(inputs).income_tax,
+        )
+
+    def test_income_tax_matches_across_draws(self):
+        axiom, compiled = self.tax_both_ways(np.arange(0.0, 200_001.0, 500.0), 0.0)
+        assert np.max(np.abs(axiom - compiled)) <= 1.0
+
+    def test_income_tax_matches_with_interest_clear_of_the_thresholds(self):
+        # Total income stays clear of £50,270 and £125,140 by more than the
+        # interest, where the engines part ways (see the next test).
+        draws = np.concatenate(
+            [np.arange(0.0, 27_001.0, 500.0), np.arange(32_000.0, 100_001.0, 500.0)]
+        )
+        axiom, compiled = self.tax_both_ways(draws, 1_500.0)
+        assert np.max(np.abs(axiom - compiled)) <= 1.0
+
+    def test_savings_allowance_where_interest_straddles_the_threshold(self):
+        # An intended difference from the compiled engine. ITA 2007 s.12B(8)
+        # counts income that would be higher-rate but for the savings nil
+        # rate, so £49,000 pension and £1,500 interest get the £500 allowance.
+        # Pension: £36,430 x 20%. Interest: £500 nil, £770 at 20%, £230 at 40%.
+        tax = axiom_uk.calculate_uk_tax_axiom(
+            _inputs(
+                private_pension_income=np.array([49_000.0]),
+                savings_interest=np.array([1_500.0]),
+            )
+        ).income_tax[0]
+        assert tax == pytest.approx(7_286.0 + 154.0 + 92.0, abs=0.01)
+
+
+class TestFrontendFixture:
+    """The frontend's tests read recorded runs, which must match the engine."""
+
+    @staticmethod
+    def recorder():
+        path = Path(__file__).parents[1] / "scripts" / "record_uk_drawdown_fixture.py"
+        spec = importlib.util.spec_from_file_location("record_fixture", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_recorded_runs_match_the_engine(self):
+        recorder = self.recorder()
+        recorded = json.loads(recorder.FIXTURE.read_text())
+        assert set(recorded) == set(recorder.SCENARIOS)
+        for name, run in recorder.record().items():
+            saved = recorded[name]
+            assert saved["inputs"] == run["inputs"], name
+            fresh = run["envelope"]["outputs"]["uk_drawdown_year_result"]
+            old = saved["envelope"]["outputs"]["uk_drawdown_year_result"]
+            for field in sorted(set(fresh) | set(old)):
+                assert fresh.get(field) == old.get(field), f"{name}: {field}"
+            assert run["envelope"]["caveats"] == saved["envelope"]["caveats"], name
