@@ -92,7 +92,12 @@ export interface USRequiredMinimum {
   other_withdrawals: number;
   withdrawn: number;
   shortfall: number;
+  /** 2026 is the first year a minimum is due (age 73): it can wait until April 1, 2027. */
+  first_year: boolean;
+  /** ISO date: the last day to take the 2026 minimum without an excise tax. */
+  due_by: string;
   excise_tax_rate: number;
+  /** Nothing in the first year, when a shortfall can still be taken by April 1, 2027. */
   excise_tax_on_shortfall: number;
 }
 

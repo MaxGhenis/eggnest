@@ -16,6 +16,8 @@ Invariants held for every input:
 - Money to spend equals income entered plus the draw, less taxes, plus
   benefits, at every point of the sweep.
 - Bands tile the sweep, from nothing to its top, in order.
+- A required minimum's excise tax is 25% of its shortfall, except in the
+  first year a minimum is due (age 73 in 2026), when it is nothing.
 - The chosen and no-draw outcomes are points of the sweep, and the account
   left is what the source holds for the draw, less the draw. For a
   traditional draw that is the owner's balance less their other traditional
@@ -231,9 +233,13 @@ def _assert_invariants(inputs: USDrawdownYearInput, result) -> None:
         assert minimum.shortfall == pytest.approx(
             max(minimum.amount - minimum.withdrawn, 0.0), abs=0.01
         )
+        # No excise tax attaches to a shortfall in the first year, when the
+        # minimum can wait until April 1 of the next year.
+        rate = 0.0 if minimum.first_year else minimum.excise_tax_rate
         assert minimum.excise_tax_on_shortfall == pytest.approx(
-            minimum.excise_tax_rate * minimum.shortfall, abs=0.01
+            rate * minimum.shortfall, abs=0.01
         )
+        assert minimum.first_year == (minimum.age == 73)
     if draws[-1] == 0.0:
         assert result.bands == [] and result.next_1000 is None
         return
@@ -544,6 +550,44 @@ def test_required_minimum_is_marked_and_a_shortfall_is_costed():
     assert marker.amount == pytest.approx(10_000.0)
 
 
+def test_the_first_required_minimum_can_wait_until_april_1():
+    """Born 1953, 73 at the end of 2026: 2026 is the first year a minimum is
+    due, and it can wait until the required beginning date, April 1, 2027
+    (26 USC 401(a)(9)(C)). No excise tax attaches to a 2026 shortfall; the
+    tax for that minimum is measured in 2027 (26 CFR 54.4974-1(f)). Born 1952,
+    74, the minimum is due by December 31, 2026."""
+    first = _run(
+        _inputs(
+            you={
+                "birth_year": 1953,
+                "social_security": 24_000.0,
+                "traditional_balance": 265_000.0,
+            },
+            draw_amount=0.0,
+        )
+    )
+    (minimum,) = first.required_minimums
+    assert minimum.first_year
+    assert minimum.due_by.isoformat() == "2027-04-01"
+    assert minimum.amount == pytest.approx(10_000.0)  # 265,000 / 26.5
+    assert minimum.shortfall == pytest.approx(10_000.0)
+    assert minimum.excise_tax_on_shortfall == 0.0
+    later = _run(
+        _inputs(
+            you={
+                "birth_year": 1952,
+                "social_security": 24_000.0,
+                "traditional_balance": 255_000.0,
+            },
+            draw_amount=0.0,
+        )
+    )
+    (minimum,) = later.required_minimums
+    assert not minimum.first_year
+    assert minimum.due_by.isoformat() == "2026-12-31"
+    assert minimum.excise_tax_on_shortfall == pytest.approx(2_500.0)
+
+
 def test_other_withdrawals_count_toward_the_required_minimum():
     inputs = _inputs(
         you={
@@ -763,6 +807,30 @@ def test_caveats_follow_the_inputs():
         draw_amount=10_000.0,
     )
     assert [c for c in caveats_for(roth, _run(roth)) if "408A" in c]
+
+
+def test_rmd_caveats_follow_the_first_year_and_earnings():
+    """A first-year shortfall owes no excise tax yet, so the excise caveat
+    gives way to the April 1 deadline; earnings bring the still-working
+    exception for a current employer's plan (26 USC 401(a)(9)(C))."""
+    first = _inputs(
+        you={
+            "birth_year": 1953,
+            "social_security": 24_000.0,
+            "traditional_balance": 265_000.0,
+        },
+        draw_amount=0.0,
+    )
+    caveats = caveats_for(first, _run(first))
+    assert not [c for c in caveats if "you owe an excise tax of 25%" in c]
+    assert [c for c in caveats if "April 1, 2027" in c]
+    assert [c for c in caveats if "each workplace plan" in c]
+    assert not [c for c in caveats if "still work" in c]
+    working = first.model_copy(
+        update={"you": first.you.model_copy(update={"earnings": 20_000.0})}
+    )
+    (still,) = [c for c in caveats_for(working, _run(working)) if "still work" in c]
+    assert "401(a)(9)(C)" in still and "April 1" in still
 
 
 def test_medicare_caveat_expects_higher_lines_only_until_medicare_publishes_them():

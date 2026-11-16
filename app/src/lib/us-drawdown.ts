@@ -443,7 +443,30 @@ export function requiredMinimumAt(
   const drawsHere = inputs.draw_source === "traditional" && inputs.draw_owner === minimum.person;
   const withdrawn = minimum.other_withdrawals + (drawsHere ? inputs.draw_amount : 0);
   const shortfall = Math.max(minimum.amount - withdrawn, 0);
-  return { withdrawn, shortfall, excise: shortfall * minimum.excise_tax_rate };
+  // A first-year shortfall can still be taken by April 1, 2027 (26 CFR 54.4974-1(f)).
+  const excise = minimum.first_year ? 0 : shortfall * minimum.excise_tax_rate;
+  return { withdrawn, shortfall, excise };
+}
+
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/** An ISO date in words: 2027-04-01 is April 1, 2027. */
+function dateInWords(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  return `${MONTHS[month - 1]} ${day}, ${year}`;
 }
 
 /** A required minimum in words, for the person it falls on. */
@@ -453,11 +476,16 @@ export function describeRequiredMinimum(
   inputs: USDrawdownYearInput,
 ): string[] {
   const spouse = minimum.person === "spouse";
+  const when = minimum.first_year ? `for 2026, by ${dateInWords(minimum.due_by)}` : "in 2026";
   const opening =
     `${spouse ? "Your spouse" : "You"} must take at least ${dollars(minimum.amount)} from ` +
-    `traditional IRAs and 401(k)s in 2026. We divide ${spouse ? "their" : "your"} ` +
+    `traditional IRAs and 401(k)s ${when}. We divide ${spouse ? "their" : "your"} ` +
     `${dollars(minimum.balance)} balance at the end of 2025 by ${minimum.divisor}, ` +
-    `the IRS Uniform Lifetime Table’s factor for age ${minimum.age}.`;
+    `the IRS Uniform Lifetime Table’s factor for age ${minimum.age}. ` +
+    // IRA minimums may come from any of the owner's IRAs (26 CFR 1.408-8(e)).
+    `We figure one minimum on that whole balance. ${spouse ? "They" : "You"} can take an ` +
+    `IRA’s minimum from any of ${spouse ? "their" : "your"} IRAs, but each 401(k) or other ` +
+    "workplace plan must pay out its own.";
   if (Math.round(atDraw.shortfall) <= 0) {
     const fromDraw =
       inputs.draw_source === "traditional" &&
@@ -476,6 +504,15 @@ export function describeRequiredMinimum(
     Math.round(atDraw.withdrawn) > 0
       ? `Withdrawals of ${dollars(atDraw.withdrawn)} fall`
       : "Withdrawing nothing falls";
+  if (minimum.first_year) {
+    return [
+      opening,
+      `${taking} ${dollars(atDraw.shortfall)} short. It’s ${spouse ? "their" : "your"} first ` +
+        `required minimum, so ${spouse ? "they" : "you"} can take the rest by ` +
+        `${dateInWords(minimum.due_by)} and owe no excise tax. We count only what ` +
+        `${spouse ? "they take" : "you take"} in 2026.`,
+    ];
+  }
   return [
     opening,
     `${taking} ${dollars(atDraw.shortfall)} short, so ${spouse ? "your spouse would" : "you’d"} ` +
@@ -490,10 +527,16 @@ export function describeShortfall(
   minimum: USRequiredMinimum,
   atDraw: RequiredMinimumAtDraw,
 ): string {
-  const short =
-    minimum.person === "spouse"
-      ? `Your spouse would fall ${dollars(atDraw.shortfall)} short of their required minimum`
-      : `You’d fall ${dollars(atDraw.shortfall)} short of your required minimum`;
+  const spouse = minimum.person === "spouse";
+  if (minimum.first_year) {
+    const short = spouse
+      ? `Your spouse would fall ${dollars(atDraw.shortfall)} short of their first required minimum.`
+      : `You’d fall ${dollars(atDraw.shortfall)} short of your first required minimum.`;
+    return `${short} ${spouse ? "They" : "You"} can take the rest by ${dateInWords(minimum.due_by)} and owe no excise tax.`;
+  }
+  const short = spouse
+    ? `Your spouse would fall ${dollars(atDraw.shortfall)} short of their required minimum`
+    : `You’d fall ${dollars(atDraw.shortfall)} short of your required minimum`;
   return `${short} and owe an excise tax of ${dollars(atDraw.excise)}, which we leave out of money to spend.`;
 }
 

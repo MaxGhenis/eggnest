@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -300,11 +301,29 @@ class USRequiredMinimum(BaseModel):
         description="Traditional withdrawals at the chosen draw, conversions aside."
     )
     shortfall: float
+    first_year: bool = Field(
+        description=(
+            "Whether 2026 is the first year this person owes a minimum (age 73). "
+            "The first minimum can wait until April 1, 2027, the required "
+            "beginning date (26 USC 401(a)(9)(C)), and the 2027 minimum is due "
+            "in 2027 as well."
+        )
+    )
+    due_by: date = Field(
+        description="Last day to take the 2026 minimum without an excise tax."
+    )
     excise_tax_rate: float = Field(
-        description="Share of a shortfall due as excise tax (26 USC 4974(a))."
+        description=(
+            "Share of a shortfall due as excise tax once the minimum is past due "
+            "(26 USC 4974(a))."
+        )
     )
     excise_tax_on_shortfall: float = Field(
-        description="25% of the shortfall (26 USC 4974(a)); 10% if corrected in time."
+        description=(
+            "25% of the shortfall (26 USC 4974(a)); 10% if corrected in time. "
+            "None in the first year, when a 2026 shortfall can still be taken by "
+            "April 1, 2027 (26 CFR 54.4974-1(f))."
+        )
     )
 
 

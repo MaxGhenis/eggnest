@@ -23,6 +23,7 @@ balances on January 1, 2026, the figures SSI, Medicaid and SNAP test against.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Protocol
 
 import numpy as np
@@ -42,7 +43,7 @@ from .models_us_drawdown import (
     USRequiredMinimum,
     source_balance,
 )
-from .rmd import UNIFORM_LIFETIME_TABLE, calculate_rmd
+from .rmd import RMD_START_AGE, UNIFORM_LIFETIME_TABLE, calculate_rmd
 from .us_year_engine import CENT, OTHER_TAX_PARTS, USYearArrays
 
 NEXT_DRAW_STEP = 1_000.0
@@ -525,6 +526,20 @@ class _RequiredMinimum:
     amount: float
     other_withdrawals: float
 
+    @property
+    def first_year(self) -> bool:
+        """Whether this is the person's first distribution calendar year: the
+        year they reach the applicable age, 73 for anyone it reaches in 2026
+        (26 USC 401(a)(9)(C)(v)). Anyone older reached it in an earlier year."""
+        return self.age == RMD_START_AGE
+
+
+def _due_by(minimum: _RequiredMinimum, tax_year: int) -> date:
+    """The first minimum can wait until the required beginning date, April 1
+    of the next year (26 USC 401(a)(9)(C)(i)); later ones are due by the end of
+    the year."""
+    return date(tax_year + 1, 4, 1) if minimum.first_year else date(tax_year, 12, 31)
+
 
 def required_minimums(inputs: USDrawdownYearInput) -> list[_RequiredMinimum]:
     """2026 required minimum distributions from the Uniform Lifetime Table."""
@@ -556,6 +571,9 @@ def _required_minimum(
     )
     withdrawn = minimum.other_withdrawals + (inputs.draw_amount if draws_here else 0.0)
     shortfall = max(minimum.amount - withdrawn, 0.0)
+    # A first-year shortfall can still be taken by April 1 of the next year;
+    # the excise tax on it falls in that year (26 CFR 54.4974-1(f)).
+    excise = 0.0 if minimum.first_year else EXCISE_TAX_RATE * shortfall
     return USRequiredMinimum(
         person=minimum.person,
         age=minimum.age,
@@ -565,8 +583,10 @@ def _required_minimum(
         other_withdrawals=_money(minimum.other_withdrawals),
         withdrawn=_money(withdrawn),
         shortfall=_money(shortfall),
+        first_year=minimum.first_year,
+        due_by=_due_by(minimum, inputs.tax_year),
         excise_tax_rate=EXCISE_TAX_RATE,
-        excise_tax_on_shortfall=_money(EXCISE_TAX_RATE * shortfall),
+        excise_tax_on_shortfall=_money(excise),
     )
 
 

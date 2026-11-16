@@ -276,7 +276,7 @@ export function DrawdownForm({
         <div className="mt-3 space-y-3">
           <NumberField
             label={`${yours}${joint ? "other" : "Other"} traditional withdrawals`}
-            hint="Withdrawals from traditional IRAs and 401(k)s in 2026 besides the draw above. They count toward the required minimum."
+            hint="Withdrawals from traditional IRAs and 401(k)s in 2026 besides the draw above. They count toward the required minimum, which we figure on the whole balance, though each workplace plan must pay out its own."
             prefix="$"
             value={form.you.other_traditional_withdrawals}
             onChange={(other_traditional_withdrawals) => you({ other_traditional_withdrawals })}

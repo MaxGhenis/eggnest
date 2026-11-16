@@ -131,11 +131,24 @@ it holds, now 2026, and `medicare_surcharge.rates_year` names that year.
 Required minimum distributions come from the IRS Uniform Lifetime Table in
 `api/eggnest/rmd.py`. From age 73, a person owes their traditional balance on
 December 31, 2025 divided by the table's factor for their age at the end of
-2026. The calculator compares that minimum with their other traditional
-withdrawals plus any traditional draw from their own account. On any shortfall
-the person owes an excise tax of 25%, or 10% if they correct it in time
-(26 USC 4974). The calculator reports that tax and leaves it out of taxes and
-money to spend.
+2026. The calculator figures one minimum on that whole balance and compares it
+with their other traditional withdrawals plus any traditional draw from their
+own account. That pooling holds among IRAs, whose minimums can come from any
+of the owner's IRAs (26 CFR 1.408-8(e)); each 401(k) or other workplace plan
+must pay out its own, and the page and caveats say so. Someone still working
+for the employer whose plan they're in, owning 5% or less of it, can wait until
+April 1 after the year they retire to take that plan's minimum
+(26 USC 401(a)(9)(C)); a caveat names this whenever a person with a minimum has
+earnings.
+
+On a shortfall the person owes an excise tax of 25%, or 10% if they correct it
+in time (26 USC 4974), due by December 31, 2026. The first minimum, for someone
+who turns 73 in 2026, can wait until the required beginning date, April 1, 2027
+(26 USC 401(a)(9)(C)(i)), and the excise tax on it falls in 2027
+(26 CFR 54.4974-1(f)). For that person `first_year` is true, `due_by` is
+2027-04-01 and the excise tax on a 2026 shortfall is nothing; they then take
+both the 2026 and 2027 minimums in 2027. The calculator reports the excise tax
+and leaves it out of taxes and money to spend.
 
 ## What each result holds
 
@@ -168,7 +181,8 @@ money to spend.
   from, the number of people on Medicare, and the yearly surcharge at the chosen
   draw and at none.
 - `required_minimums`: each person's 2026 minimum, what they withdraw, any
-  shortfall and the excise tax on it.
+  shortfall, whether 2026 is their first year with one, the day it's due and
+  the excise tax on a shortfall.
 - `next_1000`: where the next $1,000 of draw goes, a smaller step near the end
   of the account, and null at a draw that empties it.
 

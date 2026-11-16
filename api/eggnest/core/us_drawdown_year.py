@@ -238,15 +238,29 @@ def caveats_for(
     minimums = result.required_minimums if result else []
     if minimums:
         caveats.append(
-            "We figure required minimum distributions from the IRS Uniform Lifetime Table. In the first year you owe one, you can wait until April 1 of the next year to take it."
+            "We figure required minimum distributions from the IRS Uniform Lifetime Table, on each person’s whole traditional balance. You can take an IRA’s minimum from any of your IRAs, but each workplace plan, such as a 401(k), must pay out its own (26 CFR 1.408-8(e))."
         )
+        if any(minimum.first_year for minimum in minimums):
+            caveats.append(
+                f"In the first year you owe a minimum, the year you turn 73, you can wait until April 1, {inputs.tax_year + 1}, to take it, and you then take your {inputs.tax_year + 1} minimum by the end of {inputs.tax_year + 1} as well (26 USC 401(a)(9)(C)). We count only what you take in {inputs.tax_year}."
+            )
+        for minimum in minimums:
+            if inputs.person(minimum.person).earnings <= 0:
+                continue
+            if minimum.person == "spouse":
+                who = "your spouse still works for the employer whose plan holds part of their balance, and owns"
+            else:
+                who = "you still work for the employer whose plan holds part of your balance, and own"
+            caveats.append(
+                f"If {who} 5% or less of the business, that plan’s minimum can wait until April 1 of the year after retirement (26 USC 401(a)(9)(C)). IRAs get no such delay, and we figure the minimum on the whole balance."
+            )
         if inputs.spouse is not None and (
             abs(inputs.you.birth_year - inputs.spouse.birth_year) > _JOINT_TABLE_AGE_GAP
         ):
             caveats.append(
                 "If you name a spouse more than 10 years younger as your sole beneficiary, you use the IRS Joint and Last Survivor Table instead. It gives a smaller required minimum than we show."
             )
-    if any(minimum.shortfall > 0 for minimum in minimums):
+    if any(minimum.shortfall > 0 and not minimum.first_year for minimum in minimums):
         caveats.append(
             "If you take less than your required minimum, you owe an excise tax of 25% of the shortfall, or 10% if you correct it in time (26 USC 4974). We leave it out of your taxes and money to spend."
         )

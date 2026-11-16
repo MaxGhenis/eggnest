@@ -62,7 +62,8 @@ import {
 //   that read the same.
 // - Coverage only ever ends as the draw grows.
 // - A required minimum's shortfall never goes below zero, and withdrawals plus
-//   the shortfall always reach the minimum.
+//   the shortfall always reach the minimum. Its excise tax is 25% of the
+//   shortfall, except in the first year, when it is nothing.
 // - The draw never exceeds what the chosen source holds, which for a traditional
 //   draw is the balance less the owner's other withdrawals and Roth conversion,
 //   as the API works it out; only a joint return
@@ -382,6 +383,8 @@ function minimum(overrides: Partial<USRequiredMinimum> = {}): USRequiredMinimum 
     other_withdrawals: 0,
     withdrawn: 0,
     shortfall: 10_000,
+    first_year: false,
+    due_by: "2026-12-31",
     excise_tax_rate: 0.25,
     excise_tax_on_shortfall: 2_500,
     ...overrides,
@@ -405,6 +408,15 @@ describe("requiredMinimumAt", () => {
           expect(atDraw.shortfall).toBeGreaterThanOrEqual(0);
           expect(atDraw.withdrawn + atDraw.shortfall).toBeGreaterThanOrEqual(amount - 1e-9);
           expect(atDraw.excise).toBeCloseTo(0.25 * atDraw.shortfall, 9);
+          const first = requiredMinimumAt(
+            minimum({ amount, other_withdrawals: other, first_year: true, due_by: "2027-04-01" }),
+            {
+              ...EXAMPLE_INPUTS,
+              draw_source: source as USDrawdownYearInput["draw_source"],
+              draw_amount: draw,
+            },
+          );
+          expect(first.excise).toBe(0);
         },
       ),
     );
@@ -846,7 +858,7 @@ describe("wording", () => {
     expect(
       describeRequiredMinimum(covered, requiredMinimumAt(covered, EXAMPLE_INPUTS), EXAMPLE_INPUTS),
     ).toEqual([
-      "You must take at least $9,804 from traditional IRAs and 401(k)s in 2026. We divide your $250,000 balance at the end of 2025 by 25.5, the IRS Uniform Lifetime Table’s factor for age 74.",
+      "You must take at least $9,804 from traditional IRAs and 401(k)s in 2026. We divide your $250,000 balance at the end of 2025 by 25.5, the IRS Uniform Lifetime Table’s factor for age 74. We figure one minimum on that whole balance. You can take an IRA’s minimum from any of your IRAs, but each 401(k) or other workplace plan must pay out its own.",
       "This draw covers it.",
     ]);
     const roth = { ...EXAMPLE_INPUTS, draw_source: "roth" as const };
@@ -857,7 +869,7 @@ describe("wording", () => {
     expect(
       describeRequiredMinimum(spouse, requiredMinimumAt(spouse, EXAMPLE_INPUTS), EXAMPLE_INPUTS),
     ).toEqual([
-      "Your spouse must take at least $10,000 from traditional IRAs and 401(k)s in 2026. We divide their $246,000 balance at the end of 2025 by 24.6, the IRS Uniform Lifetime Table’s factor for age 75.",
+      "Your spouse must take at least $10,000 from traditional IRAs and 401(k)s in 2026. We divide their $246,000 balance at the end of 2025 by 24.6, the IRS Uniform Lifetime Table’s factor for age 75. We figure one minimum on that whole balance. They can take an IRA’s minimum from any of their IRAs, but each 401(k) or other workplace plan must pay out its own.",
       "Their other withdrawals cover it.",
     ]);
     const spouseShort = minimum({ person: "spouse", other_withdrawals: 2_000 });
@@ -869,6 +881,34 @@ describe("wording", () => {
       )[1],
     ).toBe(
       "Withdrawals of $2,000 fall $8,000 short, so your spouse would owe an excise tax of $2,000 (25% of the shortfall). We leave it out of money to spend.",
+    );
+  });
+
+  it("gives a first required minimum until April 1, 2027, with no excise tax", () => {
+    // Born 1953: 73 in 2026, the first year a minimum is due (26 USC
+    // 401(a)(9)(C); 26 CFR 54.4974-1(f)).
+    const first = minimum({
+      age: 73,
+      divisor: 26.5,
+      balance: 265_000,
+      first_year: true,
+      due_by: "2027-04-01",
+      excise_tax_on_shortfall: 0,
+    });
+    const atDraw = requiredMinimumAt(first, { ...EXAMPLE_INPUTS, draw_amount: 2_000 });
+    expect(atDraw).toEqual({ withdrawn: 2_000, shortfall: 8_000, excise: 0 });
+    const words = describeRequiredMinimum(first, atDraw, { ...EXAMPLE_INPUTS, draw_amount: 2_000 });
+    expect(words[0]).toBe(
+      "You must take at least $10,000 from traditional IRAs and 401(k)s for 2026, by April 1, 2027. We divide your $265,000 balance at the end of 2025 by 26.5, the IRS Uniform Lifetime Table’s factor for age 73. We figure one minimum on that whole balance. You can take an IRA’s minimum from any of your IRAs, but each 401(k) or other workplace plan must pay out its own.",
+    );
+    expect(words[1]).toBe(
+      "Withdrawals of $2,000 fall $8,000 short. It’s your first required minimum, so you can take the rest by April 1, 2027 and owe no excise tax. We count only what you take in 2026.",
+    );
+    expect(describeShortfall(first, atDraw)).toBe(
+      "You’d fall $8,000 short of your first required minimum. You can take the rest by April 1, 2027 and owe no excise tax.",
+    );
+    expect(describeShortfall({ ...first, person: "spouse" }, atDraw)).toBe(
+      "Your spouse would fall $8,000 short of their first required minimum. They can take the rest by April 1, 2027 and owe no excise tax.",
     );
   });
 

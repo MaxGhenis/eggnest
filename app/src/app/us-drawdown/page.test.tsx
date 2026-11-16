@@ -210,7 +210,7 @@ describe("USDrawdownPage", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "You must take at least $9,804 from traditional IRAs and 401(k)s in 2026. We divide your $250,000 balance at the end of 2025 by 25.5, the IRS Uniform Lifetime Table’s factor for age 74.",
+        "You must take at least $9,804 from traditional IRAs and 401(k)s in 2026. We divide your $250,000 balance at the end of 2025 by 25.5, the IRS Uniform Lifetime Table’s factor for age 74. We figure one minimum on that whole balance. You can take an IRA’s minimum from any of your IRAs, but each 401(k) or other workplace plan must pay out its own.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("This draw covers it.")).toBeInTheDocument();
