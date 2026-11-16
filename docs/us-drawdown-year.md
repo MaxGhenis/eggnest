@@ -336,9 +336,9 @@ rules put them:
   its own edge beside a jump or a change of coverage, kinks a $50,000 grid
   can't separate get their own edges, and a cliff where a phase-out ends gets
   its jump band.
-- The band helpers both calculators share (`api/tests/test_drawdown_bands.py`)
-  place each change of rate that sits three or more grid intervals from the
-  next within a cent.
+- The band helpers both calculators share (`api/tests/test_drawdown_bands.py`),
+  the search for jumps above included, place each change of rate that sits
+  three or more grid intervals from the next within a cent.
 
 `api/tests/test_drawdown_us_policyengine.py` runs the real engine. It checks
 federal tax and taxable Social Security against hand calculations under 2026
