@@ -79,6 +79,8 @@ export interface USDrawdownSlice {
   to_tax: number;
   to_benefits: number;
   social_security_taxed: number;
+  /** The API located a tax or benefit changing all at once in this band; its rates spread the jump over the band's width. */
+  jump: boolean;
 }
 
 export interface USDrawdownMarker {

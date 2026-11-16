@@ -36,7 +36,6 @@ import {
   inputProblem,
   inputsFrom,
   isExamplePerson,
-  isStep,
   ladderRange,
   ladderRows,
   markerLabel,
@@ -216,6 +215,7 @@ describe("splitCents", () => {
           to_tax,
           to_benefits,
           social_security_taxed: 0,
+          jump: false,
         });
         expect(split.kept + split.tax + split.lost).toBe(100);
       }),
@@ -235,6 +235,7 @@ function slice(
   to_tax = 0,
   to_benefits = 0,
   social_security_taxed = 0,
+  jump = false,
 ): USDrawdownSlice {
   return {
     draw_from,
@@ -243,6 +244,7 @@ function slice(
     to_tax,
     to_benefits,
     social_security_taxed,
+    jump,
   };
 }
 
@@ -261,13 +263,14 @@ const bandList = fc
         fc.double({ min: 2, max: 400, noNaN: true }),
       ),
       taxed: fc.constantFrom(0, 0.5, 0.85),
+      jump: fc.boolean(),
     }),
     { minLength: 1, maxLength: 30 },
   )
   .map((specs) => {
     let from = 0;
-    return specs.map(({ width, to_tax, to_benefits, taxed }) => {
-      const band = slice(from, from + width, to_tax, to_benefits, taxed);
+    return specs.map(({ width, to_tax, to_benefits, taxed, jump }) => {
+      const band = slice(from, from + width, to_tax, to_benefits, taxed, jump);
       from += width;
       return band;
     });
@@ -304,7 +307,7 @@ describe("ladderRows", () => {
     fc.assert(
       fc.property(bandList, (bands) => {
         const rows = ladderRows(bands);
-        expect(rows.filter((row) => row.step)).toHaveLength(bands.filter(isStep).length);
+        expect(rows.filter((row) => row.step)).toHaveLength(bands.filter((b) => b.jump).length);
         rows.slice(1).forEach((row, index) => {
           const previous = rows[index];
           if (row.step || previous.step) return;
@@ -319,10 +322,15 @@ describe("ladderRows", () => {
     );
   });
 
-  it("treats a phase-out of up to a dollar per dollar as a phase-out, not a jump", () => {
-    expect(isStep(slice(0, 1_000, 0, 1))).toBe(false);
-    expect(isStep(slice(0, 10, 0, 20.7))).toBe(true);
-    expect(isStep(slice(0, 10, 12, 0))).toBe(true);
+  it("shows a row as a jump exactly when the API located one there", () => {
+    // us-page-7: a $30 tax jump located in a $41.67 slice moves under $1.05
+    // a dollar, yet it is a jump.
+    const located = slice(59_583.33, 59_625, 0.9799, 0, 0, true);
+    const rows = ladderRows([slice(0, 59_583.33), located, slice(59_625, 80_000, 0.26)]);
+    expect(rows.map((row) => row.step)).toEqual([false, true, false]);
+    expect(ladderRange(rows, 1, 250_000)).toBe("At about $59,625");
+    // A fast rate the API didn't locate as a jump reads as a rate.
+    expect(ladderRows([slice(0, 10, 0, 20.7)])[0].step).toBe(false);
   });
 });
 
@@ -938,7 +946,7 @@ describe("wording", () => {
   it("names the ladder's ranges, a jump by where it lands", () => {
     const rows = ladderRows([
       slice(0, 7_291.67),
-      slice(7_291.67, 7_302.08, 0, 20.75),
+      slice(7_291.67, 7_302.08, 0, 20.75, 0, true),
       slice(7_302.08, 9_000),
     ]);
     expect(rows.map((_row, index) => ladderRange(rows, index, 250_000))).toEqual([

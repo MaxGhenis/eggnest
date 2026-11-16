@@ -77,6 +77,7 @@ export function sliceBetween(
     to_tax: (taxesOf(b) - taxesOf(a)) / width,
     to_benefits: (a.benefits - b.benefits) / width,
     social_security_taxed: (b.taxable_social_security - a.taxable_social_security) / width,
+    jump: false,
   };
 }
 
@@ -264,13 +265,6 @@ export function describeNextStep(
     : sentence;
 }
 
-/** No phase-out takes more than this per dollar of draw; a slice that moves faster holds a jump. */
-const STEP_RATE = 1.05;
-
-export function isStep(slice: USDrawdownSlice): boolean {
-  return Math.abs(slice.to_tax) > STEP_RATE || Math.abs(slice.to_benefits) > STEP_RATE;
-}
-
 /** What changes all at once across a jump. */
 export function describeStep(from: USDrawdownOutcome, to: USDrawdownOutcome): string {
   const parts = programChanges(from, to).map(({ program, lost }) => {
@@ -291,7 +285,7 @@ export function describeStep(from: USDrawdownOutcome, to: USDrawdownOutcome): st
 }
 
 export interface LadderRow extends USDrawdownSlice {
-  /** A jump: a tax or benefit changes all at once inside this narrow range. */
+  /** A jump the API located: a tax or benefit changes all at once inside this narrow range. */
   step: boolean;
 }
 
@@ -316,14 +310,15 @@ function joinSlices(a: USDrawdownSlice, b: USDrawdownSlice): USDrawdownSlice {
     to_tax: mix(a.to_tax, b.to_tax),
     to_benefits: mix(a.to_benefits, b.to_benefits),
     social_security_taxed: mix(a.social_security_taxed, b.social_security_taxed),
+    jump: false,
   };
 }
 
-/** The API's bands for the ladder: each jump stands alone, and neighbours that read the same in whole cents join. */
+/** The API's bands for the ladder: each jump the API located stands alone, and neighbours that read the same in whole cents join. */
 export function ladderRows(bands: readonly USDrawdownSlice[]): LadderRow[] {
   const rows: LadderRow[] = [];
   for (const band of bands) {
-    const step = isStep(band);
+    const step = band.jump;
     const last = rows[rows.length - 1];
     if (last && !last.step && !step && sameInCents(last, band)) {
       rows[rows.length - 1] = { ...joinSlices(last, band), step: false };

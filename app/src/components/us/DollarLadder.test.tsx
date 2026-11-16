@@ -20,7 +20,13 @@ function outcome(draw: number, snap: number, tax = 0): USDrawdownOutcome {
   };
 }
 
-function band(draw_from: number, draw_to: number, to_tax = 0, to_benefits = 0): USDrawdownSlice {
+function band(
+  draw_from: number,
+  draw_to: number,
+  to_tax = 0,
+  to_benefits = 0,
+  jump = false,
+): USDrawdownSlice {
   return {
     draw_from,
     draw_to,
@@ -28,6 +34,7 @@ function band(draw_from: number, draw_to: number, to_tax = 0, to_benefits = 0): 
     to_tax,
     to_benefits,
     social_security_taxed: 0,
+    jump,
   };
 }
 
@@ -41,7 +48,7 @@ const SWEEP = [
 ];
 const BANDS = [
   band(0, 5_000),
-  band(5_000, 5_010, 0, 21.6),
+  band(5_000, 5_010, 0, 21.6, true),
   band(5_010, 6_000, 0, 75 / 990),
   band(6_000, 20_000, 0.12),
 ];
@@ -101,7 +108,7 @@ describe("DollarLadder", () => {
       outcome(5_010, 0),
       outcome(20_000, 0, 1_798.8),
     ];
-    const bands = [band(0, 5_000), band(5_000, 5_010, 0, 29.1), band(5_010, 20_000, 0.12)];
+    const bands = [band(0, 5_000), band(5_000, 5_010, 0, 29.1, true), band(5_010, 20_000, 0.12)];
     render(<DollarLadder bands={bands} sweep={sweep} draw={0} balance={20_000} />);
     expect(screen.getByText("SNAP ends, taking $291 all at once.")).toBeInTheDocument();
     expect(screen.queryByText("Benefits you lose")).not.toBeInTheDocument();
