@@ -35,10 +35,17 @@ Invariants, for every input:
   sweep holds only the zero draw, with no bands, markers or next_1000.
   Otherwise next_1000 is missing only when the source is empty after the draw.
 - On a coarse grid, band_edges places each kink of a piecewise-linear series
-  within £1. A whole run, after its refinement pass, places each turning
-  point within 2p on these stand-in rules (two credit kinks £200 or more
-  apart included); on the real engine, whose figures round to the penny,
-  within £2 (test_drawdown_uk_axiom.py).
+  within £1. A whole run places each turning point within 2p on these
+  stand-in rules (two credit kinks £200 or more apart included).
+- On the stepped stand-in (stand_in_stepped_tax: the Personal Savings
+  Allowance of ITA 2007 ss.12A-12B and the allowance rounded up to the pound
+  of s.35(3), in pence), each step in income tax of £1 or more gets a band one
+  penny wide with jump set, and every other band charges 0p to 62p a pound
+  and stays within £1 of the straight line between its ends, so no step hides
+  in it. The taper's band runs from the last penny before its first 40p step
+  to the penny of its last. A run evaluates the year six times at most.
+  test_drawdown_uk_axiom.py holds the reviewers' cases to the penny on the
+  real engine.
 """
 
 from __future__ import annotations
@@ -149,6 +156,71 @@ STAND_INS = DrawdownEngines(
 
 def run(inputs: UKDrawdownYearInput) -> UKDrawdownYearResult:
     return run_uk_drawdown_year(inputs, STAND_INS)
+
+
+def _taxed_in_bands(taxable: np.ndarray) -> np.ndarray:
+    """ITA 2007 s.10's rates on taxable income stacked from nothing."""
+    return (
+        0.20 * np.minimum(taxable, 37_700.0)
+        + 0.40 * np.clip(taxable - 37_700.0, 0.0, 87_440.0)
+        + 0.45 * np.maximum(taxable - 125_140.0, 0.0)
+    )
+
+
+def stand_in_stepped_tax(inputs: UKYearInputs) -> UKYearResults:
+    """Banded tax with the two steps of the real rules; not the real rules.
+
+    The allowance falls £1 for every £2 of income over £100,000, rounded up to
+    the pound (ITA 2007 s.35(2)-(3)), so tax moves 40p at a time through the
+    taper. Interest stacks on top, and its nil-rate slice, which still fills
+    the bands, is £1,000, or £500 once any income reaches the higher rate,
+    or nothing at the additional rate (ss.12A-12B), so tax jumps there.
+    Figures round to the penny.
+    """
+    non_savings = (
+        inputs.state_pension
+        + inputs.private_pension_income
+        + inputs.employment_income
+        + inputs.dividend_income
+    )
+    savings = inputs.savings_interest
+    # In whole pence, rounded down, so £100,002 of income is £100,002.
+    income = np.floor(np.round((non_savings + savings) * 100, 6)) / 100
+    allowance = np.ceil(
+        np.maximum(12_570.0 - np.maximum(income - 100_000.0, 0.0) / 2, 0.0)
+    )
+    taxable_non_savings = np.maximum(non_savings - allowance, 0.0)
+    taxable_savings = np.maximum(
+        savings - np.maximum(allowance - non_savings, 0.0), 0.0
+    )
+    taxable = taxable_non_savings + taxable_savings
+    savings_allowance = np.where(
+        taxable > 125_140.0, 0.0, np.where(taxable > 37_700.0, 500.0, 1_000.0)
+    )
+    nil = np.minimum(savings_allowance, taxable_savings)
+    income_tax = np.round(
+        _taxed_in_bands(taxable)
+        - (
+            _taxed_in_bands(taxable_non_savings + nil)
+            - _taxed_in_bands(taxable_non_savings)
+        ),
+        2,
+    )
+    ni = np.zeros_like(income_tax)
+    return UKYearResults(
+        net_income=income - income_tax,
+        total_tax=income_tax,
+        income_tax=income_tax,
+        employee_ni=ni,
+        non_savings_income_tax=np.round(_taxed_in_bands(taxable_non_savings), 2),
+    )
+
+
+STEPPED = DrawdownEngines(
+    tax=stand_in_stepped_tax,
+    pension_credit=stand_in_credit,
+    tax_citations=STAND_INS.tax_citations,
+)
 
 
 def person(**overrides) -> UKDrawdownYearInput:
@@ -973,6 +1045,149 @@ class TestBandsAndMarkersOnWholeRuns:
     def test_sweep_stops_at_the_balance_when_the_allowance_outlasts_it(self):
         result = run(person(sipp_balance=900_000.0, draw_amount=400_000.0))
         assert result.sweep[-1].draw == 900_000.0
+
+
+def _stepped_tax(inputs: UKDrawdownYearInput, draws) -> np.ndarray:
+    """The stepped stand-in's income tax at each draw."""
+    calculation = drawdown_uk._Calculation(inputs, STEPPED)
+    return calculation.evaluate(np.asarray(draws, dtype=float)).income_tax
+
+
+def _jump_sizes(result: UKDrawdownYearResult) -> list[tuple[float, float]]:
+    rows = {row.draw: row for row in result.sweep}
+    return [
+        (
+            band.draw_from,
+            round(rows[band.draw_to].income_tax - rows[band.draw_from].income_tax, 2),
+        )
+        for band in result.bands
+        if band.jump
+    ]
+
+
+class TestStepsInIncomeTax:
+    """R3 and R7 (2026-11-16 review) on the stepped stand-in."""
+
+    # R3's probe: £48,000 of other pension and £1,500 of interest; a draw of
+    # £770 takes income to the higher rate, and one of £75,640 to the
+    # additional rate.
+    PROBE = {
+        "birth_date": PAST_QUALIFYING_AGE,
+        "state_pension": 0.0,
+        "other_pension_income": 48_000.0,
+        "savings_interest": 1_500.0,
+        "sipp_balance": 100_000.0,
+        "sipp_tax_free_fraction": 0.0,
+        "draw_amount": 770.0,
+    }
+
+    def test_each_savings_allowance_step_is_a_one_penny_jump(self):
+        # £500 of interest goes from nil to 20% at £770.01, and the last £500
+        # from nil to 40% at £75,640.01: £100 and £200.
+        result = run_uk_drawdown_year(UKDrawdownYearInput(**self.PROBE), STEPPED)
+        assert _jump_sizes(result) == [(770.0, 100.0), (75_640.0, 200.0)]
+        jumps = [band for band in result.bands if band.jump]
+        assert [round(b.draw_to - b.draw_from, 2) for b in jumps] == [0.01, 0.01]
+        rates = [(b.draw_from, round(b.to_tax, 4)) for b in result.bands if not b.jump]
+        assert rates == [
+            (0.0, 0.2),
+            (770.01, 0.4),
+            (1_770.0, 0.2),
+            (2_270.0, 0.4),
+            (50_501.99, 0.6),
+            (75_640.01, 0.45),
+        ]
+
+    @pytest.mark.parametrize(
+        ("state_pension", "first_step", "last_step"),
+        [
+            # 0.75 D + State Pension reaches £100,002 (the allowance's first
+            # pound gone) and £125,140 (its last).
+            (12_547.60, 116_605.87, 150_123.20),
+            (9_410.70, 120_788.40, 154_305.74),
+        ],
+    )
+    def test_the_taper_ends_sit_on_its_first_and_last_steps(
+        self, state_pension, first_step, last_step
+    ):
+        # R7: a £2 million pot, so a £10,000 grid.
+        inputs = person(
+            state_pension=state_pension, sipp_balance=2_000_000.0, draw_amount=10_000.0
+        )
+        before, at = _stepped_tax(inputs, [first_step - 0.01, first_step])
+        assert at - before == pytest.approx(0.4 + 0.003, abs=0.011)
+        result = run_uk_drawdown_year(inputs, STEPPED)
+        starts = [band.draw_from for band in result.bands]
+        assert round(first_step - 0.01, 2) in starts
+        assert last_step in starts
+        inside = [b for b in result.bands if 100_000.0 < b.draw_from < 1_073_100.0]
+        assert all(b.draw_to - b.draw_from >= 1_000.0 for b in inside)
+        assert not any(b.jump for b in result.bands)
+
+    @given(pot_draws(), st.floats(600.0, 20_000.0).map(lambda value: round(value, 2)))
+    def test_no_band_hides_a_step(self, inputs, interest):
+        """Every band without ``jump`` stays within £1 of a straight line, so
+        no step of £2 or more hides in it, and it charges between 0p and
+        60p a pound; every jump band is one penny across which tax moves £1
+        or more."""
+        inputs = inputs.model_copy(update={"savings_interest": interest})
+        result = run_uk_drawdown_year(inputs, STEPPED)
+        for band in result.bands:
+            if band.jump:
+                assert round(band.draw_to - band.draw_from, 2) == 0.01
+                assert abs(band.to_tax) * 0.01 >= 1.0
+                continue
+            assert -1e-6 <= band.to_tax <= 0.62
+            inside = np.round(np.linspace(band.draw_from, band.draw_to, 66), 2)
+            tax = _stepped_tax(inputs, inside)
+            chord = np.interp(inside, [inside[0], inside[-1]], [tax[0], tax[-1]])
+            assert np.max(np.abs(tax - chord)) <= 1.0, (band.draw_from, band.draw_to)
+
+    # Hypothesis found this one: the grid's piece after the £42.80 jump at
+    # the higher rate holds 30p a pound to £66,360 and 15p after it (the
+    # Personal Savings Allowance's £500 slice still fills the basic rate),
+    # and it passed for a second jump.
+    BESIDE_A_JUMP = {
+        "birth_date": date(1972, 1, 1),
+        "savings_interest": 714.0,
+        "sipp_balance": 799_884.0,
+        "draw_amount": 399_942.0,
+        "sipp_draw_pattern": "one_off",
+    }
+
+    def test_a_change_of_rate_beside_a_jump_keeps_its_edge(self):
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(**self.BESIDE_A_JUMP), STEPPED
+        )
+        near = [
+            (band.draw_from, round(band.to_tax, 4), band.jump)
+            for band in result.bands
+            if 66_000.0 < band.draw_to and band.draw_from < 67_100.0
+        ]
+        assert [jump for _, _, jump in near] == [False, True, False, False, False]
+        assert _jump_sizes(result)[0][1] == 42.80
+        assert near[2][0] == pytest.approx(near[1][0] + 0.01, abs=1e-9)
+        # Changes of rate of 15p: within a cent plus half a penny over 15p.
+        assert near[3][0] == pytest.approx(66_360.0, abs=0.01 + 0.005 / 0.15)
+        assert near[4][0] == pytest.approx(67_026.6667, abs=0.01 + 0.005 / 0.15)
+        assert [rate for _, rate, _ in near[2:]] == [0.3, 0.15, 0.3]
+
+    def test_a_run_evaluates_the_year_at_most_six_times(self, monkeypatch):
+        # The grid, a closer look, three rounds placing changes in income tax
+        # to the penny (the first with any edge no run has evaluated), and
+        # one more only where a band is not straight.
+        calls = []
+        evaluate = drawdown_uk._Calculation.evaluate
+
+        def counted(self, draws):
+            calls.append(len(draws))
+            return evaluate(self, draws)
+
+        monkeypatch.setattr(drawdown_uk._Calculation, "evaluate", counted)
+        for case in (self.PROBE, self.BESIDE_A_JUMP):
+            calls.clear()
+            run_uk_drawdown_year(UKDrawdownYearInput(**case), STEPPED)
+            assert len(calls) <= 6
 
 
 class TestPotLockedAllYear:

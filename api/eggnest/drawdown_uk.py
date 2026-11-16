@@ -38,6 +38,15 @@ pays from the first full benefit week, which turns on the claimant's payday
 reaching pensionable age from 6 April 2010 (reg 26BA). With the tax year 52
 weeks and a day long, DWP's count can be about a week more or less. Neither
 the payday nor an earlier benefit is an input, so the caveats say so.
+
+The bands of draw where each extra pound splits the same way come from the
+helpers in ``drawdown_bands``. Income tax changes all at once where the
+Personal Savings Allowance falls, from £1,000 to £500 once any income is
+taxed at the higher rate and to nothing at the additional rate (ITA 2007
+s.12B), so each such penny gets a band of its own with ``jump`` set. Through
+the Personal Allowance taper the allowance rounds up to the pound (s.35(3)),
+so tax rises 40p at a time; that band runs from the last penny before the
+first step to the penny of the last.
 """
 
 from __future__ import annotations
@@ -100,6 +109,24 @@ _SWEEP_FINE_STEP = 250.0
 _BAND_TAX_TOLERANCE = 1.0
 _BAND_CREDIT_TOLERANCE = 60.0
 _BAND_MIN_WIDTH = 1.0
+# Adjacent bands whose rates differ by less than this are one band.
+_SAME_RATE = 0.0005
+
+# Income tax jumps inside an interval when it moves faster than £1.05 per
+# pound of draw plus £5, or when a window of intervals moves £5 beyond what
+# the rates on either side give (drawdown_bands.JumpRule). Income tax alone
+# is tested: Pension Credit's deemed income moves it in £1 steps.
+_JUMPS = drawdown_bands.JumpRule(rate=1.05, minimum=5.0)
+# Each change in income tax is then placed to the penny in at most this many
+# more runs (drawdown_bands.pin_changes). A straight line holds to within 5p,
+# room for figures rounded to the penny, and a move of £1 or more in one
+# penny is a jump. Rounding the tapered Personal Allowance up to a whole
+# pound (ITA 2007 s.35(3)) moves tax 40p at a time, which stays in the rate.
+# One more run evaluates any edge found in a band whose income tax still
+# strays more than _BAND_TAX_TOLERANCE from straight.
+_PIN_ROUNDS = 3
+_PIN_TOLERANCE = 0.05
+_STEP_MIN = 1.0
 
 _GAD_FACTORS_PATH = Path(__file__).parent / "data" / "gad_drawdown_factors.json"
 
@@ -305,6 +332,18 @@ class _Evaluated:
             pension_credit_citations=self.pension_credit_citations,
         )
 
+    def take(self, keep: np.ndarray) -> _Evaluated:
+        """The draws ``keep`` marks, in their order."""
+        return _Evaluated(
+            **{name: getattr(self, name)[keep] for name in _PER_DRAW_FIELDS},
+            weekly_minimum_guarantee=self.weekly_minimum_guarantee,
+            pension_credit_citations=self.pension_credit_citations,
+        )
+
+    @property
+    def direct_tax(self) -> np.ndarray:
+        return self.income_tax + self.employee_ni
+
     def outcome(self, index: int) -> UKDrawdownOutcome:
         return UKDrawdownOutcome(
             draw=_money(self.draws[index]),
@@ -332,11 +371,6 @@ _PER_DRAW_FIELDS = (
     "capital_last_week",
     "annual_annuity_income",
 )
-
-# Each band edge the grid finds is placed again on this many points across the
-# grid intervals beside it, so a rate change near another one is not averaged
-# across a whole interval.
-_REFINE_POINTS = 24
 
 
 def _money(value: float) -> float:
@@ -574,7 +608,7 @@ def _slice(evaluated: _Evaluated, low: int, high: int) -> UKDrawdownSlice:
     """Where the pounds between two draw amounts go."""
     width = float(evaluated.draws[high] - evaluated.draws[low])
     kept = float(evaluated.money_to_spend[high] - evaluated.money_to_spend[low]) / width
-    direct_tax = evaluated.income_tax + evaluated.employee_ni
+    direct_tax = evaluated.direct_tax
     return UKDrawdownSlice(
         draw_from=_money(evaluated.draws[low]),
         draw_to=_money(evaluated.draws[high]),
@@ -584,6 +618,13 @@ def _slice(evaluated: _Evaluated, low: int, high: int) -> UKDrawdownSlice:
             float(evaluated.pension_credit[low] - evaluated.pension_credit[high])
             / width
         ),
+    )
+
+
+def _same_rates(left: UKDrawdownSlice, right: UKDrawdownSlice) -> bool:
+    return all(
+        abs(getattr(left, name) - getattr(right, name)) < _SAME_RATE
+        for name in ("kept", "to_tax", "to_pension_credit")
     )
 
 
@@ -635,27 +676,96 @@ def _markers(
     return markers
 
 
-def _refinement_draws(draws: np.ndarray, edges: np.ndarray) -> np.ndarray:
-    """Evenly spaced draws across the grid intervals either side of each edge."""
-    points = []
-    for edge in edges[1:-1]:
-        right = int(np.searchsorted(draws, edge, side="right"))
-        low = draws[max(right - 2, 0)]
-        high = draws[min(right + 1, len(draws) - 1)]
-        if high > low:
-            points.append(np.linspace(low, high, 2 * _REFINE_POINTS + 1)[1:-1])
-    if not points:
-        return np.array([], dtype=float)
-    refined = np.unique(np.round(np.concatenate(points), 2))
-    return refined[~np.isin(refined, draws)]
+def _band_series(evaluated: _Evaluated) -> drawdown_bands.Series:
+    return [
+        (evaluated.direct_tax, _BAND_TAX_TOLERANCE),
+        (evaluated.pension_credit, _BAND_CREDIT_TOLERANCE),
+    ]
 
 
 def _band_edges_of(evaluated: _Evaluated) -> np.ndarray:
-    return band_edges(
-        evaluated.draws,
-        evaluated.income_tax + evaluated.employee_ni,
-        evaluated.pension_credit,
+    return band_edges(evaluated.draws, evaluated.direct_tax, evaluated.pension_credit)
+
+
+def _new_draws(evaluated: _Evaluated, points: np.ndarray) -> np.ndarray:
+    """Points to the penny that ``evaluated`` doesn't hold yet."""
+    points = np.unique(np.round(np.asarray(points, dtype=float), 2))
+    return points[~np.isin(points, np.round(evaluated.draws, 2))]
+
+
+def _place_bands(
+    calculation: _Calculation, first: _Evaluated
+) -> tuple[_Evaluated, list[float], list[tuple[float, float]]]:
+    """The year at every draw the bands rest on, the band edges, and the
+    pennies where income tax jumps.
+
+    A second run cuts into 24 pieces each grid interval that may hold a jump
+    in income tax, that holds a change of rate or lies next to one, or where
+    Pension Credit reaches zero, and evaluates where the first run placed each
+    change of rate (drawdown_bands.refined_intervals). A grid of round draws
+    can step in time with the taper's 40p steps, which only those pieces
+    show. Edges then come from all those
+    points, with each jump the pieces show cut out. Up to three more runs
+    place each change in income tax to the penny (drawdown_bands.pin_changes);
+    the first also evaluates every edge no run has. One more runs only where
+    a band's income tax, at every draw run so far, strays more than
+    _BAND_TAX_TOLERANCE from straight, to evaluate the edges found in it.
+    """
+    refined = drawdown_bands.refined_intervals(
+        first.draws,
+        _band_series(first),
+        [first.direct_tax],
+        _JUMPS,
+        reaching_zero=[first.pension_credit],
+        beside=1,
     )
+    points = _new_draws(
+        first,
+        np.concatenate(
+            [
+                _band_edges_of(first),
+                drawdown_bands.subdivide(refined, _JUMPS.subdivisions),
+            ]
+        ),
+    )
+    merged = first.merged_with(calculation.evaluate(points)) if points.size else first
+    tax = merged.direct_tax
+    jumps = sorted(
+        jump
+        for low, high in drawdown_bands.stretches(refined)
+        for jump in drawdown_bands.locate_jumps(merged.draws, [tax], low, high, _JUMPS)
+    )
+    edges = drawdown_bands.edges_between_jumps(
+        merged.draws, _band_series(merged), jumps, _BAND_MIN_WIDTH
+    )
+
+    runs: list[_Evaluated] = []
+
+    def evaluate(draws: np.ndarray) -> np.ndarray:
+        run = calculation.evaluate(draws)
+        runs.append(run)
+        return run.direct_tax
+
+    edges, jumps, rests_on = drawdown_bands.pin_changes(
+        merged.draws,
+        tax,
+        edges,
+        jumps,
+        evaluate,
+        tolerance=_PIN_TOLERANCE,
+        step_min=_STEP_MIN,
+        min_width=_BAND_MIN_WIDTH,
+        rounds=_PIN_ROUNDS,
+        also=_new_draws(merged, edges),
+        others_moving=[merged.pension_credit],
+        straight_within=_BAND_TAX_TOLERANCE,
+    )
+    wanted = np.round(rests_on, 2)
+    for run in runs:
+        keep = np.isin(np.round(run.draws, 2), wanted)
+        if keep.any():
+            merged = merged.merged_with(run.take(keep))
+    return merged, edges, jumps
 
 
 def _refs(citations: list[Citation]) -> list[UKCitationRef]:
@@ -678,18 +788,15 @@ def run_uk_drawdown_year(
     grid = np.unique(
         np.concatenate([_sweep_draws(inputs), [0.0, inputs.draw_amount, next_draw]])
     )
-    evaluated = calculation.evaluate(grid)
-
-    # Second pass: evaluate finely around each change of rate the grid shows,
-    # then place the edges again on the finer points.
-    refined = _refinement_draws(evaluated.draws, _band_edges_of(evaluated))
-    if refined.size:
-        evaluated = evaluated.merged_with(calculation.evaluate(refined))
-    edge_draws = _band_edges_of(evaluated)
-    missing = edge_draws[~np.isin(edge_draws, evaluated.draws)]
-    if missing.size:
-        evaluated = evaluated.merged_with(calculation.evaluate(missing))
-    edge_index = [evaluated.index_of(edge) for edge in edge_draws]
+    evaluated, edges, jumps = _place_bands(calculation, calculation.evaluate(grid))
+    pieces = drawdown_bands.band_pieces(
+        evaluated.draws,
+        edges,
+        jumps,
+        lambda left, right: _same_rates(
+            _slice(evaluated, *left), _slice(evaluated, *right)
+        ),
+    )
 
     chosen = evaluated.index_of(inputs.draw_amount)
     upcoming = evaluated.index_of(next_draw)
@@ -757,8 +864,8 @@ def run_uk_drawdown_year(
         ),
         sweep=[evaluated.outcome(i) for i in range(len(evaluated.draws))],
         bands=[
-            _slice(evaluated, low, high)
-            for low, high in zip(edge_index[:-1], edge_index[1:], strict=True)
+            _slice(evaluated, low, high).model_copy(update={"jump": jump})
+            for low, high, jump in pieces
         ],
         markers=_markers(inputs, evaluated),
         assumptions=UKDrawdownAssumptions(

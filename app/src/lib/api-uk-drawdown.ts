@@ -60,6 +60,16 @@ export interface DrawdownSlice {
   to_pension_credit: number;
 }
 
+export interface DrawdownBand extends DrawdownSlice {
+  /**
+   * The one penny where income tax changes all at once, as when a draw takes
+   * income into the higher or additional rate and the Personal Savings
+   * Allowance falls (ITA 2007 s.12B); its rates spread the jump over that
+   * penny.
+   */
+  jump: boolean;
+}
+
 export interface DrawdownMarker {
   kind: DrawMarkerKind;
   draw: number;
@@ -105,7 +115,7 @@ export interface UKDrawdownYearResult {
   next_1000: DrawdownSlice | null;
   pension_credit_working: DrawdownPensionCreditWorking;
   sweep: DrawdownOutcome[];
-  bands: DrawdownSlice[];
+  bands: DrawdownBand[];
   markers: DrawdownMarker[];
   assumptions: {
     tax_free_fraction_applied: number;

@@ -139,10 +139,14 @@ class TestScenariosByHand:
         assert result.pension_credit.amount == 0.0
         assert result.money_to_spend == pytest.approx(38_052.08, abs=0.01)
         edges = [b.draw_to for b in result.bands]
-        # 0.75 D reaches the higher-rate threshold at D = £50,296.53.
-        assert any(abs(edge - 50_296.53) <= 3 for edge in edges)
-        # And the Personal Allowance taper at D = £116,603.20.
-        assert any(abs(edge - 116_603.20) <= 3 for edge in edges)
+        # 0.75 D reaches the higher-rate threshold at D = £50,296.53, a change
+        # of rate from 15p to 30p, so within 1p plus 0.5p / 0.15.
+        assert any(abs(edge - 50_296.5333) <= 0.01 + 0.005 / 0.15 for edge in edges)
+        # Adjusted net income passes £100,000 at D = £116,603.20, but the
+        # allowance rounds up to the pound (ITA 2007 s.35(3)), so its first
+        # pound goes at £100,002, D = £116,605.87, and the edge is the penny
+        # before.
+        assert 116_605.86 in edges
 
     def test_employee_ni_stops_at_state_pension_age(self):
         # 66th birthday on 15 June 2026; qualifying date in the same year.
@@ -260,10 +264,12 @@ class TestIndependentReviewCounterexamples:
         rates = [round(band.to_tax, 2) for band in result.bands]
         assert rates == [0.0, 0.2, 0.4, 0.6, 0.45]
         assert result.bands[-1].to_tax == pytest.approx(0.45, abs=1e-6)
-        # Within £5: the £2 bound on edges is fixed with the shared band code.
+        # The allowance's first pound goes at £100,002 (s.35(3)), a draw of
+        # £187,454.40, so the 60p band starts the penny before; its last goes
+        # at £125,140, where the additional rate starts.
         starts = dict(zip(rates, (b.draw_from for b in result.bands), strict=True))
-        assert starts[0.6] == pytest.approx(187_452.40, abs=5.0)
-        assert starts[0.45] == pytest.approx(212_592.40, abs=5.0)
+        assert starts[0.6] == 187_454.39
+        assert starts[0.45] == 212_592.40
 
     @pytest.mark.parametrize("investment", ["savings_interest", "dividend_income"])
     def test_tax_off_counted_income_keeps_the_tapered_allowance(self, investment):
@@ -324,6 +330,137 @@ class TestIndependentReviewCounterexamples:
             86.0 / 52, abs=0.01
         )
         assert result.pension_credit.amount == pytest.approx(422.0, abs=0.01)
+
+
+def _jumps(result) -> list[tuple[float, float, float]]:
+    """Each jump band's ends and how far income tax moves across it."""
+    rows = {row.draw: row for row in result.sweep}
+    return [
+        (
+            band.draw_from,
+            band.draw_to,
+            round(rows[band.draw_to].income_tax - rows[band.draw_from].income_tax, 2),
+        )
+        for band in result.bands
+        if band.jump
+    ]
+
+
+class TestStepsInIncomeTax:
+    """R3 and R7 from the 2026-11-16 independent review, by hand from the law.
+
+    The Personal Savings Allowance is £1,000, £500 once any income is taxed at
+    the higher rate, and nothing at the additional rate (ITA 2007 s.12B), so
+    income tax jumps where a draw crosses either threshold. Through the taper
+    the allowance rounds up to the pound (s.35(3)), so tax rises 40p at a time.
+    """
+
+    def test_each_savings_allowance_step_is_a_one_penny_jump(self):
+        # R3's probe: £48,000 of other pension and £1,500 of interest. At a
+        # draw of £770.01, taxable income passes £37,700, so £500 of interest
+        # is taxed at 20%: £100. At £75,640.01 it passes £125,140, so the last
+        # £500 is taxed at 40%: £200.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=0.0,
+                other_pension_income=48_000.0,
+                savings_interest=1_500.0,
+                sipp_balance=100_000.0,
+                sipp_tax_free_fraction=0.0,
+                draw_amount=770.0,
+            )
+        )
+        assert _jumps(result) == [(770.0, 770.01, 100.0), (75_640.0, 75_640.01, 200.0)]
+        # Between them: 40p while the £500 left of the allowance still fills
+        # the basic rate, 20p once it reaches £37,700 (£1,770), 40p from
+        # £2,270, and 60p from the penny before the allowance's first pound
+        # goes at £100,002 (£50,502).
+        rates = [
+            (band.draw_from, round(band.to_tax, 4))
+            for band in result.bands
+            if not band.jump
+        ]
+        assert rates == [
+            (0.0, 0.2),
+            (770.01, 0.4),
+            (1_770.0, 0.2),
+            (2_270.0, 0.4),
+            (50_501.99, 0.6),
+            (75_640.01, 0.45),
+        ]
+
+    def test_a_jump_beside_a_change_of_rate(self):
+        # £800 of interest on the full new State Pension: at a draw of
+        # £49,229.87 taxable income passes £37,700 and £300 of interest is
+        # taxed at 20%, £60. Then 30p a pound until the £500 left of the
+        # allowance reaches £37,700 at £49,629.87, 15p to £50,296.53, and 30p.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_547.60,
+                savings_interest=800.0,
+                sipp_balance=200_000.0,
+                draw_amount=10_000.0,
+            )
+        )
+        jumps = _jumps(result)
+        assert jumps[0] == (49_229.86, 49_229.87, 60.0)
+        starts = [band.draw_from for band in result.bands]
+        assert any(abs(start - 49_629.8667) <= 0.01 + 0.005 / 0.15 for start in starts)
+        assert any(abs(start - 50_296.5333) <= 0.01 + 0.005 / 0.15 for start in starts)
+
+    def test_a_change_of_rate_the_grid_took_for_a_jump(self):
+        # The stand-in counterexample (test_drawdown_uk.py): £714 of interest
+        # and a one-off draw with a quarter tax free. £214 is taxed at 20%
+        # from £66,074.67, then 30p a pound to £66,360, 15p to £67,026.67.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=0.0,
+                savings_interest=714.0,
+                sipp_balance=799_884.0,
+                draw_amount=399_942.0,
+                sipp_draw_pattern="one_off",
+            )
+        )
+        assert _jumps(result)[0] == (66_074.66, 66_074.67, 42.8)
+        near = [
+            (band.draw_from, round(band.to_tax, 4))
+            for band in result.bands
+            if 66_074.67 <= band.draw_from < 67_100.0
+        ]
+        assert [rate for _, rate in near] == [0.3, 0.15, 0.3]
+        assert near[1][0] == pytest.approx(66_360.0, abs=0.01 + 0.005 / 0.15)
+        assert near[2][0] == pytest.approx(67_026.6667, abs=0.01 + 0.005 / 0.15)
+
+    @pytest.mark.parametrize(
+        ("state_pension", "pot", "first_step", "last_step"),
+        [
+            # R7: the allowance's first pound goes where 0.75 D plus the State
+            # Pension reaches £100,002, its last at £125,140.
+            (12_547.60, 2_000_000.0, 116_605.87, 150_123.20),
+            (9_410.70, 2_000_000.0, 120_788.40, 154_305.74),
+            (0.0, 400_000.0, 133_336.0, 166_853.34),
+        ],
+    )
+    def test_the_taper_band_runs_from_its_first_step_to_its_last(
+        self, state_pension, pot, first_step, last_step
+    ):
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=state_pension,
+                sipp_balance=pot,
+                draw_amount=10_000.0,
+            )
+        )
+        starts = [band.draw_from for band in result.bands]
+        assert round(first_step - 0.01, 2) in starts
+        assert last_step in starts
+        inside = [b for b in result.bands if 100_000.0 < b.draw_from < 1_073_100.0]
+        assert all(b.draw_to - b.draw_from >= 1_000.0 for b in inside)
+        assert not any(band.jump for band in result.bands)
 
 
 class TestEnvelope:
