@@ -28,6 +28,7 @@ import {
   comparedWithNoDraw,
   coverageAt,
   coverageLost,
+  describeAccountLeft,
   describeCoverageEnds,
   describeMedicare,
   describeNextStep,
@@ -45,7 +46,6 @@ import {
   requiredMinimumAt,
   sliceBetween,
   sourceBalance,
-  sourceName,
   splitCents,
   taxesOf,
   type USDrawdownForm,
@@ -399,7 +399,7 @@ function Results({
           <TurningPoints run={run} draw={inputs.draw_amount} />
         </div>
       ) : (
-        <p className="text-lg">{emptySourceMessage(inputs.draw_source, inputs.draw_owner)}</p>
+        <p className="text-lg">{emptySourceMessage(inputs)}</p>
       )}
 
       <section className="grid gap-8 md:grid-cols-2" aria-label="Your 2026">
@@ -407,9 +407,7 @@ function Results({
           <YearLedger income={cashIncome(inputs)} chosen={chosen} none={none} />
           {balance > 0 && (
             <p className="mt-2 text-[0.95rem] text-[var(--color-text-muted)]">
-              {dollars(balance - inputs.draw_amount)} stays in{" "}
-              {sourceName(inputs.draw_source, inputs.draw_owner)} after your draw, before any
-              growth.
+              {describeAccountLeft(inputs)}
             </p>
           )}
           <CoverageTable

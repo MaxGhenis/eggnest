@@ -16,7 +16,9 @@ Invariants held for every input:
   benefits, at every point of the sweep.
 - Bands tile the sweep, from nothing to its top, in order.
 - The chosen and no-draw outcomes are points of the sweep, and the account
-  left is the balance less the draw.
+  left is what the source holds for the draw, less the draw. For a
+  traditional draw that is the owner's balance less their other traditional
+  withdrawals and Roth conversion, which come out of the same accounts.
 - Every marker lies inside the sweep.
 - The same inputs give the same result.
 
@@ -244,6 +246,14 @@ def _assert_invariants(inputs: USDrawdownYearInput, result) -> None:
     assert result.account_left == pytest.approx(
         source_balance(inputs) - inputs.draw_amount, abs=0.005
     )
+    if inputs.draw_source == "traditional":
+        owner = inputs.person(inputs.draw_owner)
+        assert source_balance(inputs) == max(
+            owner.traditional_balance
+            - owner.other_traditional_withdrawals
+            - owner.roth_conversion,
+            0.0,
+        )
     for marker in result.markers:
         assert 0.0 <= marker.draw <= draws[-1] + 0.005
 
@@ -581,6 +591,33 @@ def test_coverage_end_is_marked():
     (marker,) = [m for m in result.markers if m.kind == "coverage_ends"]
     assert marker.program == "medicaid"
     assert 6_000.0 <= marker.draw <= 6_000.0 + 250.0 / 24 + 0.01
+
+
+def test_other_withdrawals_and_conversions_come_out_of_the_traditional_balance():
+    """$50,000 in traditional accounts, $20,000 of other withdrawals and a
+    $20,000 Roth conversion leave $10,000 to draw: a $5,000 draw leaves
+    $5,000, the sweep stops at $10,000 and a larger draw is refused."""
+    person = {
+        "birth_year": 1950,
+        "social_security": 24_000.0,
+        "traditional_balance": 50_000.0,
+        "other_traditional_withdrawals": 20_000.0,
+        "roth_conversion": 20_000.0,
+        "roth_balance": 30_000.0,
+    }
+    inputs = _inputs(you=person, draw_amount=5_000.0)
+    assert source_balance(inputs) == 10_000.0
+    result = _run(inputs)
+    assert result.account_left == 5_000.0
+    assert result.sweep[-1].draw == 10_000.0
+    with pytest.raises(ValidationError, match="exceeds"):
+        _inputs(you=person, draw_amount=10_000.01)
+    # A Roth draw leaves the traditional withdrawals aside.
+    roth = _inputs(you=person, draw_source="roth", draw_amount=0.0)
+    assert source_balance(roth) == 30_000.0
+    # Withdrawals beyond the balance leave nothing to draw.
+    spent = _inputs(you={**person, "roth_conversion": 40_000.0}, draw_amount=0.0)
+    assert source_balance(spent) == 0.0
 
 
 def test_next_1000_stops_at_the_end_of_the_account():

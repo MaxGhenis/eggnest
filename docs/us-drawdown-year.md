@@ -118,7 +118,10 @@ money to spend.
 - `coverage_at_chosen_draw` and `coverage_with_no_draw`: whether PolicyEngine-US
   finds the household eligible for Medicaid and a Medicare Savings Program.
 - `sweep`: the same at every draw the calculator evaluates, from nothing to the
-  larger of $250,000 and 125% of the draw, within the account. A grid of at
+  larger of $250,000 and 125% of the draw, within what the account holds for
+  the draw. A traditional draw can take the owner's balance less their other
+  traditional withdrawals and Roth conversion, and `account_left` is what
+  remains after all three. A grid of at
   most 400 round steps covers that range, with $250 steps up to $40,000, where
   benefits for older households end. The page reads between rows in a straight
   line, so it answers as the slider moves, and asks the API again 300 ms after
@@ -178,7 +181,9 @@ rules put them:
   benefits, at every point of the sweep.
 - Bands run from nothing to the top of the sweep, in order and without gaps.
 - The chosen and no-draw outcomes fall on the sweep, and the account left
-  equals the balance less the draw.
+  equals what the source holds for the draw, less the draw. For a traditional
+  draw, the owner's other traditional withdrawals and Roth conversion come out
+  of the same balance first.
 - Every marker lies inside the sweep.
 - The same inputs give the same result.
 - On piecewise-linear series whose kinks sit apart, the search for jumps never

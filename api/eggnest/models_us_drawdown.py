@@ -140,9 +140,14 @@ class USDrawdownYearInput(BaseModel):
             raise ValueError("A draw from the spouse's account needs a spouse")
         balance = source_balance(self)
         if self.draw_amount > balance:
+            after = (
+                " after other traditional withdrawals and Roth conversions"
+                if self.draw_source == "traditional"
+                else ""
+            )
             raise ValueError(
                 f"draw_amount (${self.draw_amount:,.2f}) exceeds the "
-                f"{self.draw_source} balance (${balance:,.2f})"
+                f"{self.draw_source} balance{after} (${balance:,.2f})"
             )
         return self
 
@@ -162,7 +167,9 @@ class USDrawdownYearInput(BaseModel):
 
 
 def source_balance(inputs: USDrawdownYearInput) -> float:
-    """What the chosen source holds at the start of the year."""
+    """What the chosen source holds for the draw: its balance at the start of
+    the year, less, for a traditional draw, the owner's other traditional
+    withdrawals and Roth conversion, which come out of the same accounts."""
     if inputs.draw_source == "taxable":
         return inputs.taxable_balance
     if inputs.draw_source == "cash":
@@ -171,7 +178,13 @@ def source_balance(inputs: USDrawdownYearInput) -> float:
     if owner is None:
         return 0.0
     if inputs.draw_source == "traditional":
-        return owner.traditional_balance
+        # The page subtracts in the same order, so both get the same float.
+        return max(
+            owner.traditional_balance
+            - owner.other_traditional_withdrawals
+            - owner.roth_conversion,
+            0.0,
+        )
     return owner.roth_balance
 
 
@@ -332,7 +345,11 @@ class USDrawdownYearResult(BaseModel):
     draw_source: USDrawdownSource
     draw_owner: USDrawdownOwner
     account_left: float = Field(
-        description="Balance of the source after the draw, before any growth."
+        description=(
+            "Balance of the source after the draw, before any growth. For a "
+            "traditional draw, the owner's other traditional withdrawals and "
+            "Roth conversion come out of it too."
+        )
     )
     federal_income_tax: USDrawdownFigure
     state_income_tax: USDrawdownFigure

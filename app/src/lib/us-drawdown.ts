@@ -577,12 +577,38 @@ export interface USDrawdownForm extends Omit<USDrawdownYearInput, "spouse"> {
 
 export const EXAMPLE_FORM: USDrawdownForm = { ...EXAMPLE_INPUTS, spouse: NEW_SPOUSE };
 
+/**
+ * What the chosen source holds for the draw, as the API's source_balance
+ * works it out: the balance at the start of 2026, less, for a traditional
+ * draw, the owner's other traditional withdrawals and Roth conversion.
+ */
 export function sourceBalance(inputs: USDrawdownYearInput): number {
   if (inputs.draw_source === "taxable") return inputs.taxable_balance;
   if (inputs.draw_source === "cash") return inputs.cash_savings;
   const owner = inputs.draw_owner === "spouse" ? inputs.spouse : inputs.you;
   if (!owner) return 0;
-  return inputs.draw_source === "traditional" ? owner.traditional_balance : owner.roth_balance;
+  if (inputs.draw_source === "roth") return owner.roth_balance;
+  // The same order of subtraction as the API, so both get the same number.
+  return Math.max(
+    owner.traditional_balance - owner.other_traditional_withdrawals - owner.roth_conversion,
+    0,
+  );
+}
+
+/** Whether other traditional withdrawals or a Roth conversion come out of the draw's account. */
+function sharesTraditionalAccount(inputs: USDrawdownYearInput): boolean {
+  if (inputs.draw_source !== "traditional") return false;
+  const owner = inputs.draw_owner === "spouse" ? inputs.spouse : inputs.you;
+  return !!owner && owner.other_traditional_withdrawals + owner.roth_conversion > 0;
+}
+
+/** What stays in the source once the year's draw, and any other withdrawals from it, are out. */
+export function describeAccountLeft(inputs: USDrawdownYearInput): string {
+  const left = dollars(sourceBalance(inputs) - inputs.draw_amount);
+  const after = sharesTraditionalAccount(inputs)
+    ? "after your draw, other withdrawals and Roth conversions"
+    : "after your draw";
+  return `${left} stays in ${sourceName(inputs.draw_source, inputs.draw_owner)} ${after}, before any growth.`;
 }
 
 /** Keeps the draw inside what the chosen source holds. */
@@ -682,7 +708,13 @@ export function inputProblem(inputs: USDrawdownYearInput): string | null {
 }
 
 /** What to do when the chosen source holds nothing to draw. */
-export function emptySourceMessage(source: USDrawSource, owner: USDrawOwner): string {
+export function emptySourceMessage(inputs: USDrawdownYearInput): string {
+  const { draw_source: source, draw_owner: owner } = inputs;
+  const account = owner === "spouse" ? inputs.spouse : inputs.you;
+  if (sharesTraditionalAccount(inputs) && account && account.traditional_balance > 0) {
+    const whose = owner === "spouse" ? "your spouse’s" : "your";
+    return `The other withdrawals and Roth conversions you entered take all of ${whose} traditional balance, so nothing is left to draw.`;
+  }
   const spouses = owner === "spouse" && (source === "traditional" || source === "roth");
   return spouses
     ? `Enter how much your spouse has in ${SOURCE_NAMES[source]("their")} to see what you’d keep.`

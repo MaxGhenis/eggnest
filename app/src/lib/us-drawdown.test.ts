@@ -21,6 +21,7 @@ import {
   compactDollars,
   coverageAt,
   coverageLost,
+  describeAccountLeft,
   describeCoverageEnds,
   describeDollar,
   describeMedicare,
@@ -62,7 +63,9 @@ import {
 // - Coverage only ever ends as the draw grows.
 // - A required minimum's shortfall never goes below zero, and withdrawals plus
 //   the shortfall always reach the minimum.
-// - The draw never exceeds what the chosen source holds; only a joint return
+// - The draw never exceeds what the chosen source holds, which for a traditional
+//   draw is the balance less the owner's other withdrawals and Roth conversion,
+//   as the API works it out; only a joint return
 //   carries a spouse or draws from a spouse's account.
 // Differential: the page reads amounts off the sweep, the API computes them
 // directly; on recorded real-engine runs the two agree.
@@ -468,6 +471,49 @@ describe("withDrawInBounds", () => {
     expect(withDrawInBounds({ ...EXAMPLE_INPUTS, draw_amount: 400_000 }).draw_amount).toBe(250_000);
     expect(withDrawInBounds(EXAMPLE_INPUTS)).toBe(EXAMPLE_INPUTS);
   });
+
+  it("leaves room for the owner's other traditional withdrawals and Roth conversion, as the API does", () => {
+    // $50,000 less $20,000 of other withdrawals and a $20,000 conversion
+    // leaves $10,000 to draw (models_us_drawdown.source_balance).
+    const inputs: USDrawdownYearInput = {
+      ...EXAMPLE_INPUTS,
+      you: {
+        ...EXAMPLE_INPUTS.you,
+        traditional_balance: 50_000,
+        other_traditional_withdrawals: 20_000,
+        roth_conversion: 20_000,
+        roth_balance: 30_000,
+      },
+      draw_amount: 50_000,
+    };
+    expect(sourceBalance(inputs)).toBe(10_000);
+    expect(withDrawInBounds(inputs).draw_amount).toBe(10_000);
+    expect(describeAccountLeft({ ...inputs, draw_amount: 5_000 })).toBe(
+      "$5,000 stays in your traditional IRA or 401(k) after your draw, other withdrawals and Roth conversions, before any growth.",
+    );
+    // A Roth draw leaves the traditional accounts aside.
+    expect(sourceBalance({ ...inputs, draw_source: "roth" })).toBe(30_000);
+  });
+
+  it("matches the API's source balance for any traditional figures", () => {
+    const amount = fc.integer({ min: 0, max: 100_000_000 }).map((cents) => cents / 100);
+    fc.assert(
+      fc.property(amount, amount, amount, (balance, other, conversion) => {
+        const inputs: USDrawdownYearInput = {
+          ...EXAMPLE_INPUTS,
+          you: {
+            ...EXAMPLE_INPUTS.you,
+            traditional_balance: balance,
+            other_traditional_withdrawals: other,
+            roth_conversion: conversion,
+          },
+        };
+        // models_us_drawdown.source_balance: max(balance - other - conversion, 0).
+        expect(sourceBalance(inputs)).toBe(Math.max(balance - other - conversion, 0));
+        expect(withDrawInBounds(inputs).draw_amount).toBeLessThanOrEqual(sourceBalance(inputs));
+      }),
+    );
+  });
 });
 
 describe("chartTop", () => {
@@ -865,8 +911,28 @@ describe("wording", () => {
   });
 
   it("asks for a balance when the source holds nothing", () => {
-    expect(emptySourceMessage("roth", "spouse")).toBe(
+    const joint: USDrawdownYearInput = {
+      ...EXAMPLE_INPUTS,
+      filing_status: "married_filing_jointly",
+      spouse: NEW_SPOUSE,
+      draw_source: "roth",
+      draw_owner: "spouse",
+      draw_amount: 0,
+    };
+    expect(emptySourceMessage(joint)).toBe(
       "Enter how much your spouse has in their Roth IRA to see what you’d keep.",
+    );
+  });
+
+  it("says when other withdrawals take the whole traditional balance", () => {
+    const spent: USDrawdownYearInput = {
+      ...EXAMPLE_INPUTS,
+      you: { ...EXAMPLE_INPUTS.you, other_traditional_withdrawals: 200_000, roth_conversion: 50_000 },
+      draw_amount: 0,
+    };
+    expect(sourceBalance(spent)).toBe(0);
+    expect(emptySourceMessage(spent)).toBe(
+      "The other withdrawals and Roth conversions you entered take all of your traditional balance, so nothing is left to draw.",
     );
   });
 });
