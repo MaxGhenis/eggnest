@@ -8,7 +8,11 @@ from typing import Any
 from eggnest import __version__, axiom_uk
 from eggnest.citations import Citation
 from eggnest.drawdown_uk import run_uk_drawdown_year
-from eggnest.models_uk_drawdown import UKDrawdownYearInput, UKDrawdownYearResult
+from eggnest.models_uk_drawdown import (
+    UKDrawdownYearInput,
+    UKDrawdownYearResult,
+    minimum_pension_age_date,
+)
 from eggnest.state_pension_age import state_pension_age_date
 from eggnest.tax_uk import AXIOM_UK_TAX_ENGINE
 
@@ -25,6 +29,10 @@ ENGINE_COUNTRY = "GBR"
 ENGINE_VERSION = "0.1.0"
 OUTPUT_KEY = "uk_drawdown_year_result"
 SAVINGS_CREDIT_CUTOFF = date(2016, 4, 6)  # State Pension Credit Act 2002 s.3(1)
+
+
+def _day(value: date) -> str:
+    return f"{value.day} {value:%B %Y}"
 
 
 def build_uk_drawdown_year_scenario(
@@ -148,7 +156,12 @@ def _sources(versions: dict[str, str]) -> list[ModelSource]:
             version=versions.get("axiom-rules-engine"),
             notes=(
                 "Computes income tax, employee National Insurance and guarantee "
-                "credit from rulespec-uk encodings."
+                "credit from rulespec-uk encodings. Eggnest applies by hand the "
+                "rules those encodings don't yet cover: which money counts as "
+                "income or capital for Pension Credit, notional income from an "
+                "undrawn pot, the £5 earnings disregard, tax off counted income, "
+                "the State Pension paid from State Pension age, tax-free cash "
+                "and the minimum pension age."
             ),
         ),
         ModelSource(
@@ -173,24 +186,71 @@ def caveats_for(inputs: UKDrawdownYearInput) -> list[str]:
     caveats = [
         "We give educational estimates, not financial, tax or legal advice or a benefits decision.",
         "We cover one person living alone, and leave out couples, additional amounts for severe disability or caring, and Savings Credit.",
-        "We leave out Housing Benefit and Council Tax Reduction. People on Guarantee Credit pass the income and capital tests for both automatically (SI 2006/214 reg 26; SI 2012/2885 Sch 1 para 13), so losing it can cost more than this result shows.",
+        _local_help_caveat(inputs),
         "We don’t cover Scottish taxpayers, who pay the income tax rates the Scottish Parliament sets.",
         "We count Pension Credit for every eligible week of the tax year; a claim that starts part way through pays less.",
         "We assume you spend the money you draw evenly through the year. DWP can treat someone as still holding money they spent or gave away to get or increase Pension Credit (SI 2002/1792 regs 18(6) and 21).",
         "We value an undrawn pot from the Government Actuary’s table, and DWP decision makers also weigh evidence from the pension provider (DMG 85470-85471). DWP decides whether withdrawals count as regular or one-off (DMG 85456-85457).",
-        "We count all of a regular withdrawal as income, tax-free part included (DMG 85456, 85476).",
+        "We count all of a regular withdrawal as income, its tax-free part included, reading DMG 85456 and 85476 that way. DMG 85472 treats a lump sum of up to 25% taken when income starts as capital; if DWP treats your tax-free part that way, Pension Credit here may be too low.",
         "We take the tax payable on counted income off that income (SI 2002/1792 reg 17(10)) and take no tax off income DWP only assumes a pot produces.",
     ]
+    caveats += _state_pension_caveats(inputs)
+    if inputs.draw_source == "sipp":
+        turns_55 = minimum_pension_age_date(inputs.birth_date)
+        if turns_55 > date(inputs.tax_year, 4, 6):
+            caveats.append(
+                f"You turn 55 on {_day(turns_55)}, and pension rules let a pot pay you only from then (Finance Act 2004 s.165 pension rule 1 and s.279), so take this draw on or after that day."
+            )
     if inputs.draw_source == "gia" or inputs.gia_balance > 0:
         caveats.append(
             "We leave out Capital Gains Tax on selling investments outside ISAs."
         )
+        caveats.append(
+            "We count investments outside an ISA at full value. DWP takes 10% off shares for the cost of selling them (SI 2002/1792 reg 19; DMG 84763), though not off unit trusts (DMG 84772), so if you hold shares, Pension Credit here may be too low."
+        )
+    # Women born before 6 April 1953 reached State Pension age before 6 April
+    # 2016; men born before 6 April 1951 did. The page doesn't ask sex, so the
+    # caveat shows for anyone born before the later date and names both.
     if state_pension_age_date(inputs.birth_date, "female") < SAVINGS_CREDIT_CUTOFF:
         caveats.append(
-            "Someone who reached State Pension age before 6 April 2016 can qualify for Savings Credit (State Pension Credit Act 2002 s.3), so Pension Credit here may be too low."
+            "Women born before 6 April 1953 and men born before 6 April 1951 reached State Pension age before 6 April 2016 and can qualify for Savings Credit (State Pension Credit Act 2002 s.3), so for them Pension Credit here may be too low."
         )
     if inputs.region == "Northern Ireland":
         caveats.append(
             "We apply Great Britain’s Pension Credit regulations; Northern Ireland has its own (SR 2003 No. 28)."
+        )
+    return caveats
+
+
+def _local_help_caveat(inputs: UKDrawdownYearInput) -> str:
+    """Help with rent and council tax or rates, which the result leaves out."""
+    if inputs.region == "Northern Ireland":
+        return "We leave out Housing Benefit and help with rates, which Northern Ireland runs under its own rules. Both are means-tested, so losing Guarantee Credit can cost more than this result shows."
+    if inputs.region == "Wales":
+        return "We leave out Housing Benefit and Council Tax Reduction. People on Guarantee Credit pass the income and capital tests for Housing Benefit automatically (SI 2006/214 reg 26), and Wales sets its own Council Tax Reduction rules, so losing Guarantee Credit can cost more than this result shows."
+    return "We leave out Housing Benefit and Council Tax Reduction. People on Guarantee Credit pass the income and capital tests for both automatically (SI 2006/214 reg 26; SI 2012/2885 Sch 1 para 13), so losing Guarantee Credit can cost more than this result shows."
+
+
+def _state_pension_caveats(inputs: UKDrawdownYearInput) -> list[str]:
+    """When the State Pension starts, and what deferring it changes."""
+    if inputs.state_pension <= 0:
+        return []
+    # Births from 6 December 1953 share one State Pension age; everyone born
+    # earlier reached both before this tax year.
+    reached = state_pension_age_date(inputs.birth_date, "female")
+    starts = date(inputs.tax_year, 4, 6)
+    ends = date(inputs.tax_year + 1, 4, 5)
+    if reached > ends:
+        return [
+            f"You reach State Pension age on {_day(reached)}, after this tax year, so we count no State Pension."
+        ]
+    caveats = []
+    if inputs.state_pension_deferred:
+        caveats.append(
+            "You haven't claimed your State Pension, so we leave it out of tax and money to spend. Pension Credit still counts it from State Pension age as if you had claimed it (SI 2002/1792 reg 18(1)). For an older State Pension deferred 12 months or more, DWP counts the lump sum you could take instead (reg 18(1B))."
+        )
+    elif reached > starts:
+        caveats.append(
+            f"You reach State Pension age on {_day(reached)}. We count your State Pension from that day: a share of the yearly rate for tax and money to spend, and the weekly rate in each week Pension Credit covers."
         )
     return caveats

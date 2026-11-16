@@ -162,6 +162,80 @@ class TestScenariosByHand:
         assert younger.employee_ni.amount > 0.0
 
 
+class TestReviewCounterexamples:
+    """Inputs from the 2026-11-11 review, by hand from the statutory rates."""
+
+    # State Pension age 15 November 2026 (Pensions Act 2014 s.26): 142 of the
+    # year's 365 days, and the 20 weeks that start on or after it.
+    REACHES_SPA_IN_YEAR = date(1960, 7, 15)
+
+    def test_full_state_pension_from_november_leaves_no_credit(self):
+        # £12,547.60 a year is £241.30 a week, over the £238 minimum guarantee
+        # in every eligible week (reg 17(1) weekly amounts).
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=self.REACHES_SPA_IN_YEAR, state_pension=12_547.60
+            )
+        )
+        paid = 12_547.60 * 142 / 365
+        assert result.state_pension_paid == pytest.approx(paid, abs=0.01)
+        assert result.pension_credit_working.eligible_weeks == 20
+        assert result.pension_credit.amount == 0.0
+        assert result.income_tax.amount == 0.0
+        assert result.money_to_spend == pytest.approx(paid, abs=0.01)
+
+    def test_lower_state_pension_from_november_earns_credit_in_20_weeks(self):
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=self.REACHES_SPA_IN_YEAR, state_pension=9_360.0
+            )
+        )
+        assert result.pension_credit.amount == pytest.approx(20 * 58.0, abs=0.01)
+
+    def test_deferred_state_pension_still_counts_for_credit(self):
+        claimed = run_uk_drawdown_year(
+            UKDrawdownYearInput(birth_date=BORN, state_pension=9_360.0)
+        )
+        deferred = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN, state_pension=9_360.0, state_pension_deferred=True
+            )
+        )
+        assert claimed.pension_credit.amount == pytest.approx(52 * 58.0, abs=0.01)
+        assert deferred.pension_credit.amount == claimed.pension_credit.amount
+        assert deferred.money_to_spend == pytest.approx(52 * 58.0, abs=0.01)
+
+    def test_tax_free_cash_first_pays_no_tax_on_a_quarter_of_the_pot(self):
+        # uk-law-5: £25,000 of a £100,000 pot as a pension commencement lump
+        # sum is tax free; £12,547.60 of State Pension sits under the allowance.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=date(1956, 1, 10),
+                state_pension=12_547.60,
+                sipp_balance=100_000.0,
+                draw_amount=25_000.0,
+                sipp_draw_pattern="one_off",
+                sipp_tax_free_cash_first=True,
+            )
+        )
+        assert result.income_tax.amount == 0.0
+        assert result.money_to_spend == pytest.approx(37_547.60, abs=0.01)
+
+    def test_two_credit_kinks_276_apart(self):
+        # uk-law-3: aged 90 (GAD £155 per £1,000), so £3,100 of annuity
+        # income; credit of £276 runs out at £3,376; tax from £4,760.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=date(1936, 1, 10),
+                state_pension=9_000.0,
+                sipp_balance=20_000.0,
+            )
+        )
+        edges = [band.draw_to for band in result.bands]
+        assert edges == pytest.approx([3_100.0, 3_376.0, 4_760.0, 20_000.0], abs=2.0)
+        assert result.bands[1].to_pension_credit == pytest.approx(1.0, abs=0.01)
+
+
 class TestEnvelope:
     def test_citations_come_from_the_engine_traces(self):
         inputs = UKDrawdownYearInput(
@@ -294,9 +368,6 @@ class TestFrontendFixture:
             assert saved["inputs"] == run["inputs"], name
             fresh = run["envelope"]["outputs"]["uk_drawdown_year_result"]
             old = saved["envelope"]["outputs"]["uk_drawdown_year_result"]
-            for field in ("sweep", "at_chosen_draw", "with_no_draw", "markers"):
-                assert fresh[field] == old[field], f"{name}: {field}"
-            assert [b["draw_from"] for b in fresh["bands"]] == [
-                b["draw_from"] for b in old["bands"]
-            ], name
+            for field in sorted(set(fresh) | set(old)):
+                assert fresh.get(field) == old.get(field), f"{name}: {field}"
             assert run["envelope"]["caveats"] == saved["envelope"]["caveats"], name

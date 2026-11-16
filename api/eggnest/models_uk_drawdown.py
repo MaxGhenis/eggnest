@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from .models_uk import UKCitationRef
+from .state_pension_age import anniversary
 
 UKDrawdownSource = Literal["sipp", "isa", "gia", "cash"]
 UKDrawdownPattern = Literal["regular", "one_off"]
@@ -23,6 +24,11 @@ LUMP_SUM_ALLOWANCE = 268_275.0  # gov.uk/tax-on-your-private-pension/lump-sum-al
 MAX_TAX_FREE_FRACTION = 0.25
 
 _MAX_POUNDS = 100_000_000.0
+
+
+def minimum_pension_age_date(birth_date: date) -> date:
+    """The day someone reaches the minimum pension age (Finance Act 2004 s.279)."""
+    return anniversary(birth_date, MINIMUM_PENSION_AGE)
 
 
 class UKDrawdownYearInput(BaseModel):
@@ -49,8 +55,19 @@ class UKDrawdownYearInput(BaseModel):
         ge=0.0,
         le=_MAX_POUNDS,
         description=(
-            "Annual State Pension, claimed or not: Pension Credit counts one "
-            "not yet claimed from the qualifying age (SI 2002/1792 reg 18(1))."
+            "State Pension for a full year at the 2026/27 rate (52 weekly "
+            "payments), even for someone who reaches State Pension age during "
+            "the tax year. Income tax and money to spend count only the share of "
+            "the year from State Pension age; Pension Credit counts the weekly "
+            "rate in each week from the qualifying age."
+        ),
+    )
+    state_pension_deferred: bool = Field(
+        default=False,
+        description=(
+            "True when the person defers (doesn't claim) their State Pension. "
+            "It is then neither taxed nor spent, but Pension Credit still counts "
+            "it from the qualifying age (SI 2002/1792 reg 18(1))."
         ),
     )
     other_pension_income: float = Field(
@@ -108,6 +125,16 @@ class UKDrawdownYearInput(BaseModel):
             "funds, 0 when the tax-free cash has already been taken."
         ),
     )
+    sipp_tax_free_cash_first: bool = Field(
+        default=False,
+        description=(
+            "For a one-off pot draw: take the tax-free cash first, as a pension "
+            "commencement lump sum of up to a quarter of the pot (and no more "
+            "than the Lump Sum Allowance left), with any more drawn taxable "
+            "(Finance Act 2004 s.166 and Sch 29 paras 1-3). Needs a tax-free "
+            "fraction of 0.25."
+        ),
+    )
     lump_sum_allowance_remaining: float = Field(
         default=LUMP_SUM_ALLOWANCE,
         ge=0.0,
@@ -157,13 +184,27 @@ class UKDrawdownYearInput(BaseModel):
         age = tax_year_start.year - self.birth_date.year - (not had_birthday)
         if not 18 <= age <= 120:
             raise ValueError("birth_date must give an age from 18 to 120")
+        # Pension rule 1 bars a payment before the minimum pension age, not a
+        # payment in the tax year someone reaches it (Finance Act 2004 ss.165,
+        # 279), so someone who turns 55 by 5 April 2027 can draw after the
+        # birthday.
         if (
             self.draw_source == "sipp"
             and self.draw_amount > 0
-            and age < (MINIMUM_PENSION_AGE)
+            and minimum_pension_age_date(self.birth_date)
+            > date(self.tax_year + 1, 4, 5)
         ):
             raise ValueError(
                 f"A pension pot can't be drawn before age {MINIMUM_PENSION_AGE}"
+            )
+        if self.sipp_tax_free_cash_first and not (
+            self.draw_source == "sipp"
+            and self.sipp_draw_pattern == "one_off"
+            and self.sipp_tax_free_fraction == MAX_TAX_FREE_FRACTION
+        ):
+            raise ValueError(
+                "sipp_tax_free_cash_first needs a one-off draw from a pension pot "
+                "with a tax-free fraction of 0.25"
             )
         return self
 
@@ -223,9 +264,19 @@ class UKDrawdownPensionCreditWorking(BaseModel):
     annual_annuity_income: float = Field(
         description="What the pot could pay as an annuity, a year."
     )
-    annuity_income_per_1000: float
-    annuity_age: int
-    state_pension: float
+    annuity_income_per_1000: float | None = Field(
+        description=(
+            "Annual annuity income per £1,000 of pot: the caller's figure, or "
+            "GAD Table 1 at annuity_age. Null when no week is eligible, since "
+            "only Pension Credit uses it."
+        )
+    )
+    annuity_age: int | None = Field(
+        description="Age at the first eligible week, which GAD Table 1 is read at."
+    )
+    state_pension: float = Field(
+        description="State Pension counted in each eligible week: the yearly rate / 52."
+    )
     other_pension_income: float
     earnings_counted: float
     regular_pot_income: float = Field(description="Regular withdrawals from the pot.")
@@ -247,6 +298,7 @@ class UKDrawdownAssumptions(BaseModel):
     """The modeling choices behind this result."""
 
     tax_free_fraction_applied: float
+    tax_free_cash_first: bool = False
     money_spent_evenly_through_year: bool = True
     gilt_yield_percent_used: float | None = Field(
         default=None,
@@ -263,6 +315,14 @@ class UKDrawdownYearResult(BaseModel):
     pot_left: float = Field(
         description="Balance of the source pot after the draw, before any growth."
     )
+    state_pension_paid: float = Field(
+        description=(
+            "State Pension paid in the tax year: the yearly rate times the share "
+            "of the year from State Pension age, or 0 when deferred."
+        )
+    )
+    state_pension_age_date: date
+    minimum_pension_age_date: date
     income_tax: UKDrawdownFigure
     employee_ni: UKDrawdownFigure
     pension_credit: UKDrawdownFigure

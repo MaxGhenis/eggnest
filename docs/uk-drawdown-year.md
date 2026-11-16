@@ -27,28 +27,42 @@ draw_amount: 2500
 ## What decides each number
 
 The [Axiom rules engine](uk-axiom-engine.md) computes income tax, employee
-National Insurance and guarantee credit from rulespec-uk. Eggnest holds no tax
-or benefit formulas here. `api/eggnest/drawdown_uk.py` decides what each rule
-receives, and each decision follows a cited provision.
+National Insurance and guarantee credit from rulespec-uk. rulespec-uk doesn't
+yet encode how DWP counts pension pots and savings, when the State Pension
+starts, or how pension tax-free cash works, so `api/eggnest/drawdown_uk.py`
+applies those rules by hand before the engine runs, each with a cited
+provision: which money counts as income or capital for Pension Credit, notional
+income from an undrawn pot, the £5 earnings disregard, tax off counted income,
+the State Pension from State Pension age, the tax-free part of a pot draw and
+the minimum pension age. Each is a capability rulespec-uk lacks today.
 
-Income tax sees the State Pension, other pensions, earnings, interest,
-dividends and the taxable part of a pension draw. A quarter of each pot
-withdrawal comes tax free unless someone has already taken their tax-free cash,
-up to the Lump Sum Allowance. ISA, investment and cash draws add no taxable
-income; the calculator leaves out Capital Gains Tax.
+Income tax sees the State Pension paid in the year, other pensions, earnings,
+interest, dividends and the taxable part of a pension draw. The State Pension
+paid is the yearly rate for the share of the tax year from State Pension age,
+and nothing while someone defers it.
+
+A quarter of each pot withdrawal comes tax free unless someone has already
+taken their tax-free cash, up to the Lump Sum Allowance. A one-off withdrawal
+can instead take the tax-free cash first, as a pension commencement lump sum:
+up to a quarter of the pot, within the Lump Sum Allowance left, comes tax free
+and the rest is taxable (Finance Act 2004 s.166 and Sch 29 paras 1-3). A pot
+pays out from age 55 (s.165 pension rule 1 and s.279), so the calculator draws
+from it for anyone 55 by 5 April 2027 and names the day they turn 55. ISA,
+investment and cash draws add no taxable income; the calculator leaves out
+Capital Gains Tax.
 
 Pension Credit assesses each of the 52 weeks separately:
 
 | Money | How DWP counts it | Authority |
 | --- | --- | --- |
-| State Pension | In full, claimed or not, from the qualifying age | SI 2002/1792 reg 18(1) |
+| State Pension | At its weekly rate in each week from the qualifying age, claimed or deferred | SI 2002/1792 regs 17(1), 18(1) |
 | Other pensions | In full | SPCA 2002 s.16(1)(f) |
 | Regular withdrawals from a pot | In full as income, tax-free part included | DMG 85456, 85476 |
 | One-off withdrawals from a pot | As capital, and DWP values what's left again | DMG 85457-85458 |
-| An undrawn pot | The annuity it could buy, less regular withdrawals | Reg 18(2)-(3); DMG 85460 |
+| An undrawn pot | The annuity it could buy at the age of the first eligible week, less regular withdrawals | Reg 18(2)-(3); DMG 85460 |
 | Earnings | Above £5 a week | Sch VI para 5(a) |
 | Tax on counted income | Taken off that income | Reg 17(10) |
-| Savings over £10,000 | £1 a week per £500 or part | Reg 15(6) |
+| Savings over £10,000 | £1 a week per £500 or part, at full value (DWP takes 10% off shares; the calculator doesn't) | Regs 15(6), 19 |
 | Actual interest and dividends | Not counted | Sch IV para 18 |
 | The pot itself | Not capital | Sch V para 22 |
 
@@ -67,11 +81,16 @@ carries the table, and `api/scripts/build_gad_drawdown_factors.py` rebuilds it.
 - `at_chosen_draw` and `with_no_draw`: the full year at the chosen draw and at
   none.
 - `sweep`: the same at every draw on a grid up to the pot, or at least far
-  enough to pass the additional-rate threshold. The page reads between rows in
-  a straight line, so it answers as the slider moves and refreshes from the API
-  when the slider stops.
-- `bands`: the ranges of draw where each extra pound splits the same way, with
-  edges placed to the penny where the rate changes.
+  enough to pass the additional-rate threshold and the draw where the Lump Sum
+  Allowance runs out. The page reads between rows in a straight line, so it
+  answers as the slider moves and refreshes from the API when the slider stops.
+- `bands`: the ranges of draw where each extra pound splits the same way. A
+  second pass runs extra draws around each edge, and tests hold each edge
+  within £2 of the true turning point on the real engine, whose figures round
+  to the penny.
+- `state_pension_paid`, `state_pension_age_date` and
+  `minimum_pension_age_date`: the State Pension counted for tax, and the days
+  behind it and behind a pot draw.
 - `markers`: the draw where a pot's regular withdrawals pass its annuity income,
   so Pension Credit starts to fall, and the draw where guarantee credit ends.
 - `pension_credit_working`: the weekly amounts behind the result.
@@ -100,8 +119,10 @@ The calculator has no fallback engine. Without `EGGNEST_AXIOM_ENGINE_BIN` and
 `api/tests/test_drawdown_uk.py` states these properties at its top and tests
 them with stand-in rules and Hypothesis:
 
-- Money to spend equals all income, plus the draw, plus Pension Credit, less
-  income tax and National Insurance.
+- Money to spend equals the State Pension paid, other income, the draw and
+  Pension Credit, less income tax and National Insurance.
+- Pension Credit counts the State Pension's weekly rate in each eligible week,
+  claimed or deferred; tax and money to spend count only what is paid.
 - Each pound of draw goes somewhere: kept, tax and lost credit sum to 1.
 - For regular pot draws, tax never falls as the draw rises, and Pension Credit
   never falls below its no-draw level up to the pot's annuity income and never

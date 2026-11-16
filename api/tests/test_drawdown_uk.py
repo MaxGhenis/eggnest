@@ -5,8 +5,12 @@ what the calculator gives each rule and how it reports the answers. The real
 rules run in test_drawdown_uk_axiom.py.
 
 Invariants, for every input:
-- Every sweep row accounts for every pound: money to spend equals all income
-  plus the draw plus Pension Credit, less income tax and NI.
+- Every sweep row accounts for every pound: money to spend equals the State
+  Pension paid in the year plus other income, the draw and Pension Credit,
+  less income tax and NI.
+- State Pension paid is the yearly rate times the share of the tax year from
+  State Pension age, and nothing while deferred. Pension Credit counts the
+  weekly rate in each eligible week, claimed or deferred (reg 18(1)).
 - Each band and next_1000 splits the pound in full: kept + tax + Pension
   Credit == 1. Bands run from 0 to the top of the sweep without gaps, and
   their rates add back up to the sweep's total change.
@@ -16,8 +20,14 @@ Invariants, for every input:
   falls below its no-draw level up to the pot's annuity income, and never
   rises beyond it. Without interest or dividends, money to spend never falls.
 - ISA, GIA and cash draws leave tax unchanged and never lower Pension Credit.
+- One-off draws taking tax-free cash first: the taxable part is the draw less
+  the smaller of a quarter of the pot and the Lump Sum Allowance left.
 - The same input gives the same output; the chosen draw equals its sweep row.
-- Band edges land within £1 of the true kink of a piecewise-linear function.
+- On a coarse grid, band_edges places each kink of a piecewise-linear series
+  within £1. A whole run, after its refinement pass, places each turning
+  point within 2p on these stand-in rules (two credit kinks £200 or more
+  apart included); on the real engine, whose figures round to the penny,
+  within £2 (test_drawdown_uk_axiom.py).
 """
 
 from __future__ import annotations
@@ -143,17 +153,27 @@ def scenarios(draw, sources=("sipp", "isa", "gia", "cash"), investment_income=Tr
     key = "cash_savings" if source == "cash" else f"{source}_balance"
     share = draw(st.floats(min_value=0.0, max_value=1.0))
     income = pounds if investment_income else st.just(0.0)
+    pattern = draw(st.sampled_from(["regular", "one_off"]))
+    fraction = draw(st.sampled_from([0.0, 0.25]))
+    cash_first = (
+        source == "sipp"
+        and pattern == "one_off"
+        and fraction == 0.25
+        and draw(st.booleans())
+    )
     return UKDrawdownYearInput(
-        birth_date=draw(st.dates(date(1935, 1, 1), date(1971, 4, 5))),
+        birth_date=draw(st.dates(date(1935, 1, 1), date(1972, 4, 5))),
         state_pension=draw(pounds),
+        state_pension_deferred=draw(st.booleans()),
         other_pension_income=draw(pounds),
         employment_income=draw(pounds),
         savings_interest=draw(income),
         dividend_income=draw(income),
         draw_source=source,
         draw_amount=round(balances[key] * share * 0.999, 2),
-        sipp_draw_pattern=draw(st.sampled_from(["regular", "one_off"])),
-        sipp_tax_free_fraction=draw(st.sampled_from([0.0, 0.25])),
+        sipp_draw_pattern=pattern,
+        sipp_tax_free_fraction=fraction,
+        sipp_tax_free_cash_first=cash_first,
         gilt_yield_percent=draw(st.floats(min_value=0.0, max_value=12.0)),
         **balances,
     )
@@ -164,7 +184,7 @@ class TestAccounting:
     def test_every_row_accounts_for_every_pound(self, inputs):
         result = run(inputs)
         income = (
-            inputs.state_pension
+            result.state_pension_paid
             + inputs.other_pension_income
             + inputs.employment_income
             + inputs.savings_interest
@@ -265,7 +285,7 @@ class TestRegularPotDraws:
         result = run(inputs)
         annuity = (
             inputs.sipp_balance
-            * result.pension_credit_working.annuity_income_per_1000
+            * (result.pension_credit_working.annuity_income_per_1000 or 0.0)
             / 1_000
         )
         for row in result.sweep:
@@ -277,7 +297,7 @@ class TestRegularPotDraws:
         result = run(inputs)
         annuity = (
             inputs.sipp_balance
-            * result.pension_credit_working.annuity_income_per_1000
+            * (result.pension_credit_working.annuity_income_per_1000 or 0.0)
             / 1_000
         )
         above = [r.pension_credit for r in result.sweep if r.draw >= annuity]
@@ -439,6 +459,75 @@ class TestPensionCreditCounting:
         )
 
 
+class TestStatePension:
+    # Born 15 July 1960: State Pension age 66 years 4 months, 15 November 2026
+    # (Pensions Act 2014 s.26), 142 of the year's 365 days.
+    REACHES_SPA_IN_YEAR = date(1960, 7, 15)
+    FULL_RATE = 12_547.60
+
+    def test_paid_from_state_pension_age_for_the_rest_of_the_year(self):
+        result = run(
+            person(birth_date=self.REACHES_SPA_IN_YEAR, state_pension=self.FULL_RATE)
+        )
+        assert result.state_pension_age_date == date(2026, 11, 15)
+        assert result.state_pension_paid == pytest.approx(
+            self.FULL_RATE * 142 / 365, abs=0.01
+        )
+        assert result.money_to_spend == pytest.approx(
+            result.state_pension_paid, abs=0.01
+        )
+
+    def test_pension_credit_counts_the_weekly_rate_in_each_eligible_week(self):
+        # £241.30 a week of State Pension clears the £238 minimum guarantee in
+        # each of the 20 weeks from 15 November, so no credit is due.
+        result = run(
+            person(birth_date=self.REACHES_SPA_IN_YEAR, state_pension=self.FULL_RATE)
+        )
+        working = result.pension_credit_working
+        assert working.eligible_weeks == 20
+        assert working.state_pension == pytest.approx(self.FULL_RATE / 52, abs=0.01)
+        assert result.pension_credit.amount == 0.0
+
+    def test_a_lower_rate_earns_credit_only_in_eligible_weeks(self):
+        result = run(person(birth_date=self.REACHES_SPA_IN_YEAR, state_pension=9_360.0))
+        assert result.pension_credit.amount == pytest.approx(20 * (238 - 180), abs=0.01)
+
+    def test_under_state_pension_age_all_year_nothing_is_paid(self):
+        result = run(person(birth_date=UNDER_QUALIFYING_AGE, state_pension=9_360.0))
+        assert result.state_pension_paid == 0.0
+        assert result.money_to_spend == 0.0
+
+    def test_deferred_state_pension_is_not_paid_but_counts_for_credit(self):
+        # SI 2002/1792 reg 18(1): a State Pension not claimed counts as
+        # notional income from State Pension age.
+        claimed = run(person(state_pension=9_360.0))
+        deferred = run(person(state_pension=9_360.0, state_pension_deferred=True))
+        assert deferred.state_pension_paid == 0.0
+        assert claimed.state_pension_paid == 9_360.0
+        assert deferred.pension_credit == claimed.pension_credit
+        assert deferred.money_to_spend == pytest.approx(
+            claimed.money_to_spend - 9_360.0, abs=0.01
+        )
+
+    @pytest.mark.parametrize("year_of_birth", [2004, 2005, 2006, 2007, 2008])
+    def test_young_adults_with_a_pot_need_no_annuity_rate(self, year_of_birth):
+        # Aged 18 to 22, past no qualifying age: the GAD table is never read.
+        result = run(
+            UKDrawdownYearInput(
+                birth_date=date(year_of_birth, 1, 1),
+                sipp_balance=10_000.0,
+                isa_balance=5_000.0,
+                draw_source="isa",
+                draw_amount=1_000.0,
+            )
+        )
+        working = result.pension_credit_working
+        assert working.eligible_weeks == 0
+        assert working.annuity_age is None
+        assert working.annuity_income_per_1000 is None
+        assert result.money_to_spend == 1_000.0
+
+
 class TestTaxFreeCash:
     def test_a_quarter_of_each_withdrawal_is_tax_free(self):
         result = run(person(sipp_balance=100_000.0, draw_amount=40_000.0))
@@ -468,6 +557,48 @@ class TestTaxFreeCash:
         )
         assert result.at_chosen_draw.taxable_draw == 0.0
         assert result.assumptions.tax_free_fraction_applied == 0.0
+
+
+class TestTaxFreeCashFirst:
+    @staticmethod
+    def one_off(**overrides) -> UKDrawdownYearInput:
+        return person(
+            sipp_balance=100_000.0,
+            sipp_draw_pattern="one_off",
+            sipp_tax_free_cash_first=True,
+            **overrides,
+        )
+
+    def test_a_quarter_of_the_pot_comes_out_tax_free(self):
+        result = run(self.one_off(draw_amount=25_000.0))
+        assert result.at_chosen_draw.taxable_draw == 0.0
+        assert result.assumptions.tax_free_cash_first
+
+    def test_what_is_drawn_past_the_quarter_is_taxable(self):
+        result = run(self.one_off(draw_amount=40_000.0))
+        assert result.at_chosen_draw.taxable_draw == 15_000.0
+
+    def test_the_lump_sum_allowance_caps_the_tax_free_cash(self):
+        result = run(
+            self.one_off(draw_amount=25_000.0, lump_sum_allowance_remaining=4_000.0)
+        )
+        assert result.at_chosen_draw.taxable_draw == 21_000.0
+
+    def test_the_band_edge_sits_where_the_tax_free_cash_runs_out(self):
+        # A State Pension that fills the personal allowance: every taxable
+        # pound pays basic rate.
+        result = run(self.one_off(draw_amount=25_000.0, state_pension=12_570.0))
+        assert result.bands[0].draw_to == 25_000.0
+        assert result.bands[0].to_tax == 0.0
+        assert result.bands[1].to_tax == pytest.approx(0.2, abs=1e-6)
+
+    @given(scenarios(sources=("sipp",)))
+    def test_taxable_part_is_what_passes_the_tax_free_cash(self, inputs):
+        if not inputs.sipp_tax_free_cash_first:
+            return
+        cap = min(inputs.sipp_balance * 0.25, inputs.lump_sum_allowance_remaining)
+        for row in run(inputs).sweep:
+            assert row.taxable_draw == pytest.approx(max(row.draw - cap, 0.0), abs=0.01)
 
 
 class TestBandEdges:
@@ -527,6 +658,26 @@ class TestBandEdges:
         edges = band_edges(draws, np.zeros_like(draws), credit)
         assert edges == pytest.approx([0.0, 1_600.0, 3_016.0, draws[-1]], abs=0.01)
 
+    def test_two_credit_kinks_inside_neighbouring_spans_are_both_placed(self):
+        # uk-law-3: credit flat to £3,100, falls £1 per £1 to £3,376, then
+        # tax from £4,760. The second kink sits inside the span the first
+        # kink's crossing used to read.
+        draws = np.unique(
+            np.concatenate(
+                [
+                    [0.0, 1.0],
+                    np.arange(0.0, 20_100.0, 100.0),
+                    np.arange(0.0, 20_250.0, 250.0),
+                ]
+            )
+        )
+        credit = np.clip(276.0 - np.maximum(draws - 3_100.0, 0.0), 0.0, None)
+        tax = 0.15 * np.maximum(draws - 4_760.0, 0.0)
+        edges = band_edges(draws, tax, credit)
+        assert edges == pytest.approx(
+            [0.0, 3_100.0, 3_376.0, 4_760.0, 20_000.0], abs=0.01
+        )
+
     def test_steps_in_deemed_income_do_not_fragment_bands(self):
         draws = np.arange(0.0, 20_250.0, 50.0)
         # 52 weeks of a £1 step per £500, spread as capital falls.
@@ -579,6 +730,53 @@ class TestBandsAndMarkersOnWholeRuns:
             [1_000.0, 3_016.0], abs=1
         )
 
+    def test_two_credit_kinks_276_apart_get_their_own_band(self):
+        # uk-law-3's counterexample: aged 90, GAD factor 155, so a £20,000 pot
+        # has £3,100 of annuity income; credit of £276 runs out at £3,376.
+        result = run(
+            UKDrawdownYearInput(
+                birth_date=date(1936, 1, 10),
+                state_pension=9_000.0,
+                sipp_balance=20_000.0,
+            )
+        )
+        edges = [band.draw_from for band in result.bands] + [result.bands[-1].draw_to]
+        assert edges == pytest.approx(
+            [0.0, 3_100.0, 3_376.0, 4_760.0, 20_000.0], abs=0.01
+        )
+        middle = result.bands[1]
+        assert middle.to_pension_credit == pytest.approx(1.0, abs=1e-6)
+        assert middle.kept == pytest.approx(0.0, abs=1e-6)
+
+    @given(
+        state_pension=st.floats(min_value=6_000.0, max_value=11_500.0).map(
+            lambda value: round(value, 2)
+        ),
+        pot=st.floats(min_value=2_000.0, max_value=40_000.0).map(
+            lambda value: round(value, 2)
+        ),
+    )
+    def test_each_turning_point_of_a_regular_draw_is_an_edge(self, state_pension, pot):
+        # Aged 90 at £155 per £1,000: credit is flat to the annuity income,
+        # falls a pound per pound to 12,376 - State Pension, and tax starts
+        # where three quarters of the draw fills the personal allowance.
+        annuity = pot * 0.155
+        credit_ends = 12_376.0 - state_pension
+        if credit_ends - annuity < 200.0:
+            return
+        result = run(
+            UKDrawdownYearInput(
+                birth_date=date(1936, 1, 10),
+                state_pension=state_pension,
+                sipp_balance=pot,
+            )
+        )
+        tax_starts = (12_570.0 - state_pension) / 0.75
+        turns = [annuity, credit_ends, tax_starts]
+        expected = [0.0, *(turn for turn in turns if turn < pot), pot]
+        edges = [band.draw_from for band in result.bands] + [result.bands[-1].draw_to]
+        assert edges == pytest.approx(expected, abs=0.02)
+
     def test_savings_draw_earns_credit_on_each_pound_spent(self):
         result = run(
             person(
@@ -624,9 +822,29 @@ class TestBandsAndMarkersOnWholeRuns:
         assert result.markers == []
 
     def test_sweep_reaches_past_a_large_draw(self):
-        result = run(person(sipp_balance=900_000.0, draw_amount=400_000.0))
+        result = run(
+            person(
+                sipp_balance=900_000.0,
+                draw_amount=400_000.0,
+                sipp_tax_free_fraction=0.0,
+            )
+        )
         assert result.sweep[-1].draw == 500_000.0
         assert 400_000.0 in {r.draw for r in result.sweep}
+
+    def test_sweep_reaches_past_the_end_of_the_lump_sum_allowance(self):
+        # A quarter of each draw is tax free until £268,275 of tax-free cash
+        # is used, at a draw of £1,073,100; the sweep runs a quarter past it.
+        result = run(person(sipp_balance=2_000_000.0, draw_amount=10_000.0))
+        assert result.sweep[-1].draw == pytest.approx(1_073_100.0 * 1.25)
+        assert 1_073_100.0 in {r.draw for r in result.sweep}
+        last = result.bands[-1]
+        assert last.draw_from == pytest.approx(1_073_100.0)
+        assert last.to_tax == pytest.approx(0.45, abs=1e-6)
+
+    def test_sweep_stops_at_the_balance_when_the_allowance_outlasts_it(self):
+        result = run(person(sipp_balance=900_000.0, draw_amount=400_000.0))
+        assert result.sweep[-1].draw == 900_000.0
 
 
 class TestGadTable:
@@ -686,6 +904,35 @@ class TestInputRules:
     def test_pension_pot_locked_before_minimum_pension_age(self):
         with pytest.raises(ValidationError, match="before age 55"):
             person(birth_date=date(1975, 1, 1), sipp_balance=1_000.0, draw_amount=1.0)
+
+    def test_pot_can_be_drawn_by_someone_turning_55_during_the_year(self):
+        inputs = person(
+            birth_date=date(1971, 8, 1), sipp_balance=1_000.0, draw_amount=1.0
+        )
+        assert run(inputs).minimum_pension_age_date == date(2026, 8, 1)
+
+    def test_the_year_ends_on_5_april_2027(self):
+        assert person(
+            birth_date=date(1972, 4, 5), sipp_balance=1_000.0, draw_amount=1.0
+        )
+        with pytest.raises(ValidationError, match="before age 55"):
+            person(birth_date=date(1972, 4, 6), sipp_balance=1_000.0, draw_amount=1.0)
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"sipp_draw_pattern": "regular"},
+            {"sipp_draw_pattern": "one_off", "sipp_tax_free_fraction": 0.0},
+            {
+                "sipp_draw_pattern": "one_off",
+                "draw_source": "isa",
+                "isa_balance": 1_000.0,
+            },
+        ],
+    )
+    def test_tax_free_cash_first_needs_a_one_off_pot_draw(self, overrides):
+        with pytest.raises(ValidationError, match="sipp_tax_free_cash_first"):
+            person(sipp_balance=1_000.0, sipp_tax_free_cash_first=True, **overrides)
 
     def test_savings_can_be_drawn_before_minimum_pension_age(self):
         assert person(
@@ -808,8 +1055,50 @@ class TestCaveats:
         assert "SR 2003 No. 28" in self.text(person(region="Northern Ireland"))
 
     def test_flags_savings_credit_for_older_claimants(self):
-        assert "may be too low" in self.text(person(birth_date=date(1945, 1, 1)))
-        assert "may be too low" not in self.text(person())
+        older = self.text(person(birth_date=date(1945, 1, 1)))
+        assert "Savings Credit (State Pension Credit Act" in older
+        assert "men born before 6 April 1951" in older
+        assert "Savings Credit (State Pension Credit Act" not in self.text(person())
+
+    def test_names_the_state_pension_age_reached_in_the_year(self):
+        text = self.text(person(birth_date=date(1960, 7, 15)))
+        assert "State Pension age on 15 November 2026" in text
+
+    def test_says_no_state_pension_is_counted_before_state_pension_age(self):
+        text = self.text(person(birth_date=UNDER_QUALIFYING_AGE))
+        assert "after this tax year, so we count no State Pension" in text
+
+    def test_explains_a_deferred_state_pension(self):
+        text = self.text(person(state_pension_deferred=True))
+        assert "reg 18(1)" in text
+        assert "reg 18(1)" not in self.text(person())
+
+    def test_names_the_day_someone_turns_55(self):
+        inputs = person(
+            birth_date=date(1971, 8, 1), sipp_balance=1_000.0, draw_amount=1.0
+        )
+        assert "You turn 55 on 1 August 2026" in self.text(inputs)
+        assert "You turn 55" not in self.text(person(sipp_balance=1_000.0))
+
+    def test_flags_the_sale_deduction_on_shares_only_with_a_gia(self):
+        assert "DMG 84763" not in self.text(person())
+        assert "DMG 84763" in self.text(person(gia_balance=1_000.0))
+
+    def test_flags_the_dmg_85472_reading_of_tax_free_cash(self):
+        assert "DMG 85472" in self.text(person())
+
+    @pytest.mark.parametrize(
+        ("region", "needed", "absent"),
+        [
+            ("England", "SI 2012/2885", "help with rates"),
+            ("Wales", "Wales sets its own", "SI 2012/2885"),
+            ("Northern Ireland", "help with rates", "SI 2006/214"),
+        ],
+    )
+    def test_local_help_is_worded_for_each_nation(self, region, needed, absent):
+        text = self.text(person(region=region))
+        assert needed in text
+        assert absent not in text
 
 
 class TestApi:
