@@ -196,9 +196,15 @@ and leaves it out of taxes and money to spend.
   the figures stop changing.
 - `bands`: the ranges of draw where each extra dollar splits the same way
   between what the household keeps, pays in tax and loses in benefits. A second
-  run evaluates each place the grid finds the rate changing, so edges land on
-  the dollar. It also cuts into 24 each grid interval where a tax or benefit
-  jumps, which places the jump within 1/24 of that interval.
+  run cuts into 24 each grid interval that may hold a jump in a tax or benefit
+  or a change of coverage, the one or two around each place the grid finds the
+  rate changing, and each where a benefit reaches zero. A jump that shares an
+  interval with a change of rate, or ends a phase-out, shows only on that
+  closer look. Band edges then come from every draw evaluated, with each
+  located jump cut out so no line runs through it, and an edge that lands more
+  than $1 from every draw evaluated gets a third run. A band with `jump` set is
+  the 1/24 of an interval that holds a jump; its rates spread the jump over
+  that width.
 - `markers`: the draws where a benefit ends (`benefit_ends`), where Medicaid or
   a Medicare Savings Program ends (`coverage_ends`), where 2026 income crosses a
   Medicare line and the 2028 premium steps up (`medicare_surcharge_step`), and
@@ -262,9 +268,22 @@ rules put them:
   that line's step alone, so the steps add up to the surcharge at the top of
   the sweep.
 - The same inputs give the same result.
-- On piecewise-linear series whose kinks sit apart, the search for jumps never
-  takes a change of rate for one. It finds any jump of $30 or more, and any two
-  side by side of $60 or more.
+- On a piecewise-linear series whose kinks sit four or more grid intervals
+  apart, the grid's test for jumps never flags a change of rate. It flags any
+  jump of $30 or more with no kink in its interval or the ones either side,
+  and any two side by side of $60 or more.
+- Over a whole run on such a series in the draw, changes of rate alone give no
+  jump band, and each change of 5 cents a dollar or more lands on a band edge
+  within $1. A jump of $30 or more gets the one jump band, no wider than 1/24
+  of its grid interval, wherever it sits, unless it lies within 1/12 of an
+  interval of a change of rate and is no larger than $25 plus that change times
+  1/24 of the interval. The reviewers' cases also hold: a change of rate keeps
+  its own edge beside a jump or a change of coverage, kinks a $50,000 grid
+  can't separate get their own edges, and a cliff where a phase-out ends gets
+  its jump band.
+- The band helpers both calculators share (`api/tests/test_drawdown_bands.py`)
+  place each change of rate that sits three or more grid intervals from the
+  next within a cent.
 
 `api/tests/test_drawdown_us_policyengine.py` runs the real engine. It checks
 federal tax and taxable Social Security against hand calculations under 2026

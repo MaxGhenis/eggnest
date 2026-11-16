@@ -283,6 +283,14 @@ class USDrawdownSlice(BaseModel):
     social_security_taxed: float = Field(
         description="Extra Social Security made taxable by each dollar of draw."
     )
+    jump: bool = Field(
+        default=False,
+        description=(
+            "Whether this band is the narrow range where the calculator located "
+            "a tax or benefit changing all at once. Its rates then hold the jump "
+            "spread over the band's width. False for next_1000."
+        ),
+    )
 
 
 class USDrawdownMarker(BaseModel):

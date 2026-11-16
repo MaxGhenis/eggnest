@@ -11,10 +11,18 @@ marks the draw amounts where a benefit or health coverage ends, where the
 later Medicare premium steps up and where withdrawals reach the required
 minimum distribution.
 
-It evaluates the year twice. The first run covers a grid of round draw
-amounts. The second runs where the first found the rate on the next dollar
-changing, so band edges land on the dollar, and inside any interval where a
-benefit or tax jumps, so it places each cliff to within a few dollars.
+It evaluates the year two or three times. The first run covers a grid of
+round draw amounts. The second cuts into 24 pieces each grid interval that may
+hold a jump or a change of coverage, that holds a change of rate, or where a
+benefit reaches zero, and evaluates where the first run placed each change of
+rate. Band edges then come from all those points, with each located jump cut
+out so no line runs through it. An edge that lands more than $1 from every
+evaluated draw gets a third run. On the stand-in rules of
+``tests/test_drawdown_us.py``, which are piecewise linear, each change of rate
+of 5 cents a dollar or more then lands on an edge within $1, and a jump of $30
+or more gets a band 1/24 of its grid interval wide, unless it sits within
+1/12 of an interval of a change of rate and is no larger than $25 plus that
+change times 1/24 of the interval.
 
 It counts each draw as spent through the year and holds savings at their
 balances on January 1, 2026, the figures SSI, Medicaid and SNAP test against.
@@ -388,26 +396,27 @@ def _band_series(evaluated: _Evaluated) -> drawdown_bands.Series:
 
 
 def _neighbours(
-    width: np.ndarray, size: int
+    width: np.ndarray, size: int, passed_over: np.ndarray | None = None
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """For the window of ``size`` intervals starting at each interval: its
     width, and the nearest interval on each side wide enough to give a rate
-    (-1 where none is)."""
+    and not ``passed_over`` (-1 where none is)."""
     count = len(width) - size + 1
     if count <= 0:
         none = np.zeros(0, dtype=int)
         return np.zeros(0), none, none
     window = np.convolve(width, np.ones(size), mode="valid")
     need = np.maximum(_NEIGHBOUR_MIN_WIDTH, _NEIGHBOUR_MIN_SHARE * window)
+    usable = width if passed_over is None else np.where(passed_over, -1.0, width)
     left = np.full(count, -1)
     right = np.full(count, -1)
     for start in range(count):
         for j in range(start - 1, max(start - 1 - _NEIGHBOUR_REACH, -1), -1):
-            if width[j] >= need[start]:
+            if usable[j] >= need[start]:
                 left[start] = j
                 break
         for j in range(start + size, min(start + size + _NEIGHBOUR_REACH, len(width))):
-            if width[j] >= need[start]:
+            if usable[j] >= need[start]:
                 right[start] = j
                 break
     return window, left, right
@@ -439,7 +448,12 @@ def _window_scores(
     return scores
 
 
-def _jump_scores(evaluated: _Evaluated, windows: tuple[int, ...]) -> np.ndarray:
+def _jump_scores(
+    evaluated: _Evaluated,
+    windows: tuple[int, ...],
+    coverage: bool = True,
+    passed_over: np.ndarray | None = None,
+) -> np.ndarray:
     """How far each interval's largest move exceeds what a phase-out could do, $.
 
     A score of zero or more marks a jump, found two ways. A tax or benefit can
@@ -447,20 +461,21 @@ def _jump_scores(evaluated: _Evaluated, windows: tuple[int, ...]) -> np.ndarray:
     what the rates on either side of it give: a change of rate inside the
     window leaves its move between those rates, so only a jump takes it more
     than ``_CLIFF_MIN`` beyond them, however small the jump is beside the
-    window's width. A change of coverage scores zero.
+    window's width. With ``coverage``, a change of coverage scores zero.
+    Intervals ``passed_over`` give no window its rates.
     """
     width = np.diff(evaluated.draws)
     scores = np.full(len(width), -np.inf)
     if not len(width):
         return scores
     allowed = _CLIFF_RATE * width + _CLIFF_MIN
-    neighbours = {size: _neighbours(width, size) for size in windows}
+    neighbours = {size: _neighbours(width, size, passed_over) for size in windows}
     for values in [evaluated.taxes, *evaluated.programs.values()]:
         change = np.diff(values)
         scores = np.maximum(scores, np.abs(change) - allowed)
         for size, around in neighbours.items():
             scores = np.maximum(scores, _window_scores(change, width, size, around))
-    for covered in evaluated.coverage.values():
+    for covered in evaluated.coverage.values() if coverage else ():
         changed = covered[:-1] != covered[1:]
         scores = np.where(changed, np.maximum(scores, 0.0), scores)
     return scores
@@ -482,23 +497,60 @@ def _refinement(intervals: list[tuple[float, float]]) -> np.ndarray:
     return np.concatenate(points) if points else np.zeros(0)
 
 
+def refined_intervals(first: _Evaluated) -> list[tuple[float, float]]:
+    """Grid intervals the second run cuts into pieces for a closer look.
+
+    Those that may hold a jump or a change of coverage (``cliff_intervals``);
+    the one or two that hold each change of rate, since a jump beside one can
+    move its interval no further than a change of rate could; and those where
+    a benefit reaches zero, since a phase-out that ends in a small cliff looks
+    from the grid like one that runs on to zero.
+    """
+    draws = first.draws
+    chosen = set(cliff_intervals(first))
+    for low, high in drawdown_bands.change_intervals(draws, _band_series(first)):
+        for i in range(
+            int(np.searchsorted(draws, low)), int(np.searchsorted(draws, high))
+        ):
+            chosen.add((float(draws[i]), float(draws[i + 1])))
+    for program, values in first.programs.items():
+        if program in _UNMARKED_PROGRAMS:
+            continue
+        for i in np.flatnonzero((values[:-1] > CENT) & (values[1:] <= CENT)):
+            chosen.add((float(draws[i]), float(draws[i + 1])))
+    return sorted(chosen)
+
+
 def _locate_jumps(
     merged: _Evaluated, low: float, high: float
 ) -> list[tuple[float, float]]:
-    """The neighbouring draw amounts between which each jump inside an interval
-    falls; none if a closer look finds only changes of rate."""
+    """The neighbouring draw amounts between which each jump of a tax or
+    benefit inside an interval falls; none if a closer look finds only changes
+    of rate (or of coverage, which moves no money)."""
     inside = np.flatnonzero((merged.draws >= low) & (merged.draws <= high))
     # One more point on each side gives the outermost pieces a neighbour.
     span = np.arange(max(inside[0] - 1, 0), min(inside[-1] + 2, len(merged.draws)))
     part = _Evaluated(
         **{name: getattr(merged, name)[span] for name in _Evaluated._ARRAYS},
         programs={k: v[span] for k, v in merged.programs.items()},
-        coverage={k: v[span] for k, v in merged.coverage.items()},
     )
     draws = part.draws
+    # A piece holding a jump gives its neighbours a rate no phase-out has, so
+    # a piece beside it, holding only a change of rate, can look like a jump
+    # too. So the piece that moves furthest beyond its neighbours is taken
+    # first, and the rest are scored again without it as a neighbour, until
+    # none is left that moves beyond its neighbours.
+    jumps = np.zeros(len(draws) - 1, dtype=bool)
+    while True:
+        scores = _jump_scores(part, _REFINED_WINDOWS, coverage=False, passed_over=jumps)
+        scores[jumps] = -np.inf
+        strongest = int(np.argmax(scores))
+        if scores[strongest] < 0.0:
+            break
+        jumps[strongest] = True
     return [
         (float(draws[i]), float(draws[i + 1]))
-        for i in np.flatnonzero(_jump_scores(part, _REFINED_WINDOWS) >= 0.0)
+        for i in np.flatnonzero(jumps)
         if low <= draws[i] and draws[i + 1] <= high
     ]
 
@@ -527,29 +579,79 @@ def _same_rates(left: USDrawdownSlice, right: USDrawdownSlice) -> bool:
     )
 
 
-def _bands(merged: _Evaluated, edges: list[float]) -> list[USDrawdownSlice]:
-    """Slices between edges, with neighbours that share their rates joined."""
-    indices = [merged.index_of(edge) for edge in edges]
+def _bands(
+    merged: _Evaluated, edges: list[float], jumps: list[tuple[float, float]]
+) -> list[USDrawdownSlice]:
+    """Slices between edges, each located jump on its own, with neighbours
+    that share their rates joined."""
+    indices = sorted({merged.index_of(edge) for edge in edges})
     if len(indices) < 2:
         return []  # An empty account has nothing to draw.
-    joined = [indices[0], indices[1]]
-    for index in indices[2:]:
-        if _same_rates(
-            _slice(merged, joined[-2], joined[-1]), _slice(merged, joined[-1], index)
+    jump_starts = {merged.index_of(low) for low, _ in jumps}
+    pieces = [
+        (low, high, low in jump_starts)
+        for low, high in zip(indices, indices[1:], strict=False)
+    ]
+    joined = [pieces[0]]
+    for low, high, jump in pieces[1:]:
+        start, end, last_jump = joined[-1]
+        if (
+            not jump
+            and not last_jump
+            and _same_rates(_slice(merged, start, end), _slice(merged, low, high))
         ):
-            joined[-1] = index
+            joined[-1] = (start, high, False)
         else:
-            joined.append(index)
+            joined.append((low, high, jump))
     return [
-        _slice(merged, low, high) for low, high in zip(joined, joined[1:], strict=False)
+        _slice(merged, low, high).model_copy(update={"jump": jump})
+        for low, high, jump in joined
     ]
 
 
 def band_edges(first: _Evaluated) -> np.ndarray:
-    """Draw amounts, to the cent, where the rate on the next dollar changes."""
+    """Draw amounts where the rate on the next dollar changes, where the lines
+    on either side cross (drawdown_bands.band_edges)."""
     return drawdown_bands.band_edges(
         first.draws, _band_series(first), min_width=_BAND_MIN_WIDTH
     )
+
+
+def _edges_between_jumps(
+    merged: _Evaluated, jumps: list[tuple[float, float]]
+) -> list[float]:
+    """Band edges on the merged grid: each located jump's ends, and where the
+    rate changes in each stretch between jumps, from that stretch alone, so no
+    line through a jump moves the edge of a change of rate beside it."""
+    series = _band_series(merged)
+    edges = {float(merged.draws[0]), float(merged.draws[-1])}
+    start = 0
+    for low, high in [*sorted(jumps), (None, None)]:
+        stop = len(merged.draws) - 1 if low is None else merged.index_of(low)
+        if stop > start:
+            part = slice(start, stop + 1)
+            edges.update(
+                float(edge)
+                for edge in drawdown_bands.band_edges(
+                    merged.draws[part],
+                    [(values[part], tolerance) for values, tolerance in series],
+                    min_width=_BAND_MIN_WIDTH,
+                )
+            )
+        if low is not None:
+            edges.update((low, high))
+            start = merged.index_of(high)
+    return sorted(edges)
+
+
+def _unevaluated(merged: _Evaluated, edges: list[float]) -> np.ndarray:
+    """Edges more than the narrowest band's width from any evaluated draw."""
+    points = np.asarray(edges, dtype=float)
+    at = np.clip(np.searchsorted(merged.draws, points), 1, len(merged.draws) - 1)
+    nearest = np.minimum(
+        np.abs(merged.draws[at] - points), np.abs(merged.draws[at - 1] - points)
+    )
+    return points[nearest > _BAND_MIN_WIDTH]
 
 
 def _ends(draws: np.ndarray, values: np.ndarray, first_zero: int) -> float:
@@ -775,25 +877,34 @@ def run_us_drawdown_year(
     first_run = _evaluate(engine, inputs, grid)
     first = first_run.evaluated
     edges = band_edges(first)
-    cliffs = cliff_intervals(first)
+    refined = refined_intervals(first)
     medicare_points = _medicare_points(first, first_run.medicare_lines)
     second = _evaluate(
         engine,
         inputs,
-        np.concatenate([edges, _refinement(cliffs), medicare_points]),
+        np.concatenate([edges, _refinement(refined), medicare_points]),
     ).evaluated
     merged = first.merge(second)
 
-    final_edges = {float(edge) for edge in edges}
-    for low, high in cliffs:
-        jumps = _locate_jumps(merged, low, high)
-        if not jumps:
-            continue  # Only changes of rate, which the band edges place.
-        # Edges the first run put near a jump are artefacts of it.
-        final_edges = {edge for edge in final_edges if not low < edge < high}
-        for jump in jumps:
-            final_edges.update(jump)
-    bands = _bands(merged, sorted(final_edges))
+    # Refined intervals that touch are looked at together, so a jump in one
+    # can't pass for a neighbour's rate in the other.
+    stretches: list[tuple[float, float]] = []
+    for low, high in refined:
+        if stretches and stretches[-1][1] == low:
+            stretches[-1] = (stretches[-1][0], high)
+        else:
+            stretches.append((low, high))
+    jumps = sorted(
+        jump for low, high in stretches for jump in _locate_jumps(merged, low, high)
+    )
+    final_edges = _edges_between_jumps(merged, jumps)
+    # An edge the merged grid moves away from every evaluated draw (beside a
+    # jump, or between changes of rate the grid alone couldn't separate) gets
+    # a run of its own, so its band's rates come from the engine.
+    missing = _unevaluated(merged, final_edges)
+    if missing.size:
+        merged = merged.merge(_evaluate(engine, inputs, missing).evaluated)
+    bands = _bands(merged, final_edges, jumps)
 
     chosen = merged.index_of(inputs.draw_amount)
     upcoming = merged.index_of(next_draw)

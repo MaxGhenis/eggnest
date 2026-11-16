@@ -28,16 +28,34 @@ Invariants held for every input:
   top of the sweep (tested on a stand-in with Medicare's five lines).
 - The same inputs give the same result.
 
-And for the test that tells jumps from changes of rate, on any continuous
-piecewise-linear series whose kinks sit apart and away from the ends:
+For the grid's test for intervals that may hold a jump (cliff_intervals), on
+a continuous piecewise-linear series on an even grid, moving at most a dollar
+per dollar, with kinks four or more intervals apart and away from the ends:
 
-- Changes of rate alone are never taken for jumps.
-- A jump of $30 or more is found, and so are two side by side of $60 or more.
+- Changes of rate alone are never flagged.
+- A jump of $30 or more is flagged when no kink sits in its interval or the
+  ones either side, and so are two side by side of $60 or more.
+
+For a whole run, on a stand-in whose benefit is such a series in the draw
+(the sweep steps $250 to $40,000 and $1,000 above), with kinks four or more
+grid intervals apart:
+
+- Changes of rate alone give no jump band, and each change of 5 cents a
+  dollar or more lands on a band edge within $1.
+- A jump of $30 or more gets the one jump band, holding it and no wider than
+  1/24 of its grid interval, wherever it sits; within 1/12 of an interval of
+  a kink it must exceed $25 plus the kink's change of rate times 1/24 of the
+  interval. A smaller one there may be missed or have its band put on the
+  neighbouring 24th; no jump band lies further from a jump.
+- Worked cases from the review: a kink keeps its own edge beside a jump or a
+  change of coverage in its interval or the next, kinks a $50,000 grid can't
+  separate get their own edges, and a cliff where a phase-out ends is found.
 """
 
 from __future__ import annotations
 
 import itertools
+
 import numpy as np
 import pytest
 from hypothesis import assume, given
@@ -315,7 +333,8 @@ def households(draw):
     inputs = USDrawdownYearInput.model_validate({**values, "draw_amount": 0.0})
     share = draw(st.floats(0, 1))
     return USDrawdownYearInput.model_validate(
-        {**values, "draw_amount": round(share * source_balance(inputs), 2)}
+        # Whole cents, rounded down so the draw stays within the balance.
+        {**values, "draw_amount": np.floor(share * source_balance(inputs) * 100) / 100}
     )
 
 
@@ -366,7 +385,10 @@ def test_a_couple_splits_household_income_evenly(inputs, share):
     people = [situation["people"][f"{who}_0"] for who, _ in inputs.people]
     gain = draw * inputs.taxable_gain_share if inputs.draw_source == "taxable" else 0.0
     totals = {
-        **{variable: getattr(inputs, field) for variable, field in _HOUSEHOLD_INCOME.items()},
+        **{
+            variable: getattr(inputs, field)
+            for variable, field in _HOUSEHOLD_INCOME.items()
+        },
         "long_term_capital_gains": gain,
     }
     for variable, total in totals.items():
@@ -553,6 +575,298 @@ def test_neighbouring_jumps_are_both_found(series, data):
     found = cliff_intervals(_series(draws, jumped))
     assert (draws[at], draws[at + 1]) in found
     assert (draws[at + 1], draws[at + 2]) in found
+
+
+class FunctionEngine:
+    """A stand-in whose federal tax, benefits and coverage are plain functions
+    of the draw, so a test can put a kink and a jump wherever it likes."""
+
+    name = "functions"
+
+    def __init__(self, tax=None, programs=None, coverage=None) -> None:
+        self.tax = tax or (lambda d: np.zeros(len(d)))
+        self.programs = programs or {}
+        self.coverage = coverage or {}
+        self.calls: list[np.ndarray] = []
+
+    def label(self) -> str:
+        return "functions 1"
+
+    def evaluate(self, inputs: USDrawdownYearInput, draws: np.ndarray) -> USYearArrays:
+        draws = np.asarray(draws, dtype=float)
+        self.calls.append(draws)
+        zeros = np.zeros(len(draws))
+        programs = {name: f(draws) for name, f in self.programs.items()}
+        return USYearArrays(
+            federal_income_tax=self.tax(draws),
+            state_income_tax=zeros,
+            other_taxes=zeros,
+            benefits=sum(programs.values(), zeros),
+            programs=programs,
+            taxable_social_security=zeros,
+            medicare_income=draws,
+            later_medicare_surcharge=zeros,
+            coverage={name: f(draws) for name, f in self.coverage.items()},
+            people_on_medicare=1,
+            medicare_lines=[],
+            medicare_rates_year=2026,
+        )
+
+
+def _function_run(engine: FunctionEngine, balance=600_000.0, draw=40_000.0):
+    """A traditional draw, so the sweep steps $250 to $40,000 and $1,000 above
+    for a $600,000 balance (and $50,000 for $12m)."""
+    inputs = _inputs(
+        you={"birth_year": 1955, "traditional_balance": balance}, draw_amount=draw
+    )
+    result = run_us_drawdown_year(inputs, engine)
+    _assert_invariants(inputs, result)
+    return result
+
+
+def _edge_near(result, draw: float) -> float:
+    edges = [band.draw_from for band in result.bands] + [result.bands[-1].draw_to]
+    return min(edges, key=lambda edge: abs(edge - draw))
+
+
+def _band_at(result, draw: float):
+    return next(b for b in result.bands if b.draw_from < draw <= b.draw_to)
+
+
+@pytest.mark.parametrize(
+    ("kink", "coverage_ends"),
+    [(30_200.0, 30_100.0), (100_700.0, 100_200.0)],
+)
+def test_a_change_of_coverage_leaves_the_kink_in_its_interval_on_its_edge(
+    kink, coverage_ends
+):
+    """us-jumps-1: tax of 20% from the kink; Medicaid ends earlier in the same
+    grid interval ($250 wide, then $1,000). A change of coverage moves no
+    money, so the kink keeps its edge."""
+    engine = FunctionEngine(
+        tax=lambda d: 0.2 * np.maximum(d - kink, 0.0),
+        coverage={"medicaid": lambda d: d < coverage_ends},
+    )
+    result = _function_run(engine)
+    assert _edge_near(result, kink) == pytest.approx(kink, abs=0.01)
+    assert _band_at(result, kink).to_tax == pytest.approx(0.0, abs=1e-6)
+    assert _band_at(result, kink + 1.0).to_tax == pytest.approx(0.2, abs=1e-6)
+    assert not any(band.jump for band in result.bands)
+
+
+def test_a_jump_leaves_a_kink_in_its_interval_on_its_edge():
+    """us-jumps-1 with money: a benefit of $300 ends at a draw of $100,200 and
+    tax of 20% starts at $100,700, both in the grid interval from $100,000 to
+    $101,000. The jump gets a band of its own and the kink keeps its edge."""
+    engine = FunctionEngine(
+        tax=lambda d: 0.2 * np.maximum(d - 100_700.0, 0.0),
+        programs={"snap": lambda d: np.where(d < 100_200.0, 300.0, 0.0)},
+    )
+    result = _function_run(engine)
+    assert _edge_near(result, 100_700.0) == pytest.approx(100_700.0, abs=0.01)
+    (jump,) = [band for band in result.bands if band.jump]
+    assert jump.draw_from < 100_200.0 <= jump.draw_to
+    assert jump.draw_to - jump.draw_from <= 1_000.0 / 24 + 0.01
+    assert jump.to_benefits * (jump.draw_to - jump.draw_from) == pytest.approx(300.0)
+
+
+@pytest.mark.parametrize(
+    ("kink", "cliff"),
+    [
+        (30_000.0, 30_400.0),
+        (60_000.0, 61_500.0),
+        (60_300.0, 61_500.0),
+        (61_500.0, 60_500.0),
+    ],
+)
+def test_a_kink_beside_a_jump_keeps_its_own_edge(kink, cliff):
+    """us-jumps-7: a benefit falls half a dollar per dollar until it ends at
+    the kink, and tax jumps by $200 at the cliff, in the grid interval next to
+    the kink's (or the kink's own). The band before the kink loses half of
+    each dollar to benefits; the one after loses nothing."""
+    engine = FunctionEngine(
+        tax=lambda d: np.where(d >= cliff, 200.0, 0.0),
+        programs={"snap": lambda d: 0.5 * np.maximum(kink - d, 0.0)},
+    )
+    result = _function_run(engine)
+    assert _edge_near(result, kink) == pytest.approx(kink, abs=0.01)
+    assert _band_at(result, kink).to_benefits == pytest.approx(0.5, abs=1e-6)
+    after = _band_at(result, kink + 1.0)
+    assert after.jump or after.to_benefits == pytest.approx(0.0, abs=1e-6)
+    (jump,) = [band for band in result.bands if band.jump]
+    assert jump.draw_from < cliff <= jump.draw_to
+    assert jump.to_tax * (jump.draw_to - jump.draw_from) == pytest.approx(200.0)
+
+
+def test_close_kinks_on_a_coarse_grid_get_their_own_edges():
+    """us-jumps-8: drawing up to $10m of a $12m balance steps the grid
+    $50,000. Federal-style rates of 22% to $149,500, 22.56% to $194,000, 32%
+    to $249,000, 35% to $633,250 and 37% after: each change gets its edge,
+    and each band its rate."""
+    knots = [
+        (0.0, 0.22),
+        (149_500.0, 0.2256),
+        (194_000.0, 0.32),
+        (249_000.0, 0.35),
+        (633_250.0, 0.37),
+    ]
+
+    def tax(d):
+        total = np.zeros(len(d))
+        for (start, rate), (stop, _) in zip(
+            knots, [*knots[1:], (np.inf, 0.0)], strict=True
+        ):
+            total += rate * np.clip(d - start, 0.0, stop - start)
+        return total
+
+    result = _function_run(
+        FunctionEngine(tax=tax), balance=12_000_000.0, draw=10_000_000.0
+    )
+    for start, rate in knots[1:]:
+        assert _edge_near(result, start) == pytest.approx(start, abs=0.01)
+        assert _band_at(result, start + 1.0).to_tax == pytest.approx(rate, abs=1e-6)
+
+
+@pytest.mark.parametrize("cliff", [60_020.0, 60_500.0, 60_980.0])
+@pytest.mark.parametrize("size", [50.0, 100.0])
+def test_a_cliff_where_a_phase_out_ends_is_located(cliff, size):
+    """us-jumps-2: a benefit of $700 falls 30 cents per dollar to `size`, then
+    drops to nothing at the cliff, inside a $1,000 interval of the grid. From
+    the grid alone that looks like a phase-out that runs to zero; the
+    interval where the benefit reaches zero gets a closer look."""
+    start = cliff - (700.0 - size) / 0.3
+    engine = FunctionEngine(
+        programs={
+            "snap": lambda d: np.where(
+                d < start, 700.0, np.where(d < cliff, 700.0 - 0.3 * (d - start), 0.0)
+            )
+        }
+    )
+    result = _function_run(engine)
+    (jump,) = [band for band in result.bands if band.jump]
+    width = jump.draw_to - jump.draw_from
+    assert jump.draw_from < cliff <= jump.draw_to
+    assert width <= 1_000.0 / 24 + 0.01
+    assert jump.to_benefits * width == pytest.approx(
+        size + 0.3 * (cliff - jump.draw_from), abs=0.01
+    )
+    (end,) = [m for m in result.markers if m.kind == "benefit_ends"]
+    assert cliff <= end.draw <= cliff + 1_000.0 / 24 + 0.01
+    # The phase-out's own band, its start rounded to the cent.
+    assert _band_at(result, cliff - width - 1.0).to_benefits == pytest.approx(
+        0.3, abs=1e-5
+    )
+
+
+def test_a_jump_where_a_phase_out_flattens_is_located():
+    """us-words-2: a benefit falls a dollar per dollar to a draw of $2,625,
+    the middle of the grid interval from $2,500 to $2,750, then runs flat; it
+    also drops $30 there. The grid sees what a phase-out ending a little later
+    would give; the interval holding the change of rate gets a closer look."""
+    engine = FunctionEngine(
+        programs={
+            "ssi": lambda d: 10_000.0
+            - np.minimum(d, 2_625.0)
+            - np.where(d >= 2_625.0, 30.0, 0.0)
+        }
+    )
+    result = _function_run(engine)
+    (jump,) = [band for band in result.bands if band.jump]
+    assert jump.draw_from < 2_625.0 <= jump.draw_to
+    assert jump.draw_to - jump.draw_from <= 250.0 / 24 + 0.01
+
+
+# The grid _function_run sweeps: $250 steps to $40,000, $1,000 steps to
+# $250,000.
+def _grid_step(draw: float) -> float:
+    return 250.0 if draw <= 40_000.0 else 1_000.0
+
+
+@st.composite
+def kinked_benefit(draw):
+    """A benefit continuous and piecewise linear in the draw, falling or
+    rising at most a dollar per dollar, with changes of rate at least four
+    grid intervals apart."""
+    kinks: list[float] = []
+    at = draw(st.floats(500.0, 3_000.0))
+    while at < 240_000.0:
+        kinks.append(round(at, 2))
+        at += draw(st.floats(4.0, 40.0)) * _grid_step(at) + _grid_step(at)
+    rates = [draw(st.floats(-1.0, 1.0)) for _ in range(len(kinks) + 1)]
+    return kinks, rates
+
+
+def _piecewise(kinks: list[float], rates: list[float]):
+    edges = np.array([0.0, *kinks])
+    widths = np.diff(np.array([*edges, np.inf]))
+
+    def values(d):
+        pieces = np.clip(np.asarray(d)[:, None] - edges, 0.0, widths)
+        return 300_000.0 + pieces @ np.asarray(rates)
+
+    return values
+
+
+def _rate_change_near(kinks, rates, draw: float, reach: float) -> float:
+    return max(
+        (
+            abs(after - before)
+            for kink, before, after in zip(kinks, rates, rates[1:], strict=False)
+            if abs(kink - draw) <= reach
+        ),
+        default=0.0,
+    )
+
+
+@given(kinked_benefit())
+def test_a_run_takes_no_change_of_rate_for_a_jump(rules):
+    """Over the whole run, with its closer looks inside intervals, changes of
+    rate alone give no jump band, and each change of 5 cents a dollar or more
+    lands on an edge within $1. (A smaller one can stay within the $15 a
+    benefit's line may stray before the bands notice it.)"""
+    kinks, rates = rules
+    result = _function_run(FunctionEngine(programs={"ssi": _piecewise(kinks, rates)}))
+    assert not any(band.jump for band in result.bands)
+    edges = np.array([band.draw_from for band in result.bands])
+    for kink, before, after in zip(kinks, rates, rates[1:], strict=False):
+        if abs(after - before) >= 0.05:
+            assert np.min(np.abs(edges - kink)) <= 1.0, kink
+
+
+@given(kinked_benefit(), st.data(), st.floats(5.0, 2_000.0), st.booleans())
+def test_a_run_locates_a_jump_wherever_it_sits(rules, data, size, falls):
+    """A jump of $30 or more gets the one jump band, no wider than 1/24 of its
+    grid interval, wherever it sits. Within 1/12 of an interval of a change of
+    rate it needs to exceed $25 plus that change times 1/24 of the interval:
+    a smaller one there moves its piece no further than a change of rate
+    could, so it may be missed, or its band may go to the neighbouring 24th.
+    No jump band ever lies further from a jump."""
+    kinks, rates = rules
+    if data.draw(st.booleans()):
+        at = data.draw(st.floats(500.0, 240_000.0))
+    else:  # Beside a change of rate, or on it.
+        kink = data.draw(st.sampled_from(kinks))
+        at = kink + data.draw(st.floats(-3.0, 3.0)) * _grid_step(kink) / 24
+    at = round(at, 2)
+    piece = _grid_step(at) / 24
+    change = _rate_change_near(kinks, rates, at, 2 * piece)
+    jump = -size if falls else size
+    base = _piecewise(kinks, rates)
+    engine = FunctionEngine(
+        programs={"ssi": lambda d: base(d) + np.where(d >= at, jump, 0.0)}
+    )
+    result = _function_run(engine)
+    located = [band for band in result.bands if band.jump]
+    for band in located:
+        assert band.draw_from - 2 * piece <= at <= band.draw_to + 2 * piece
+    if size < 30.0 or size <= 25.0 + change * piece + 0.5:
+        return
+    (band,) = located
+    width = band.draw_to - band.draw_from
+    assert band.draw_from < at <= band.draw_to
+    assert width <= piece + 0.01
+    moved = -band.to_benefits * width
+    assert abs(moved - jump) <= width + 0.01  # The jump plus at most $1 a dollar.
 
 
 def test_ssi_keeps_paying_through_a_draw_from_a_counted_account():
@@ -1081,9 +1395,9 @@ def test_state_tax_cites_the_variable_it_comes_from(state, draw, variable, statu
     )
     ids = _ids(result.state_income_tax.citations)
     assert ids[0] == f"policyengine-us:variables/{variable}"
-    assert ("Wis. Stat. 71.05(6)(b)54m.a" in _sources(
-        result.state_income_tax.citations
-    )) is statute
+    assert (
+        "Wis. Stat. 71.05(6)(b)54m.a" in _sources(result.state_income_tax.citations)
+    ) is statute
 
 
 def test_the_money_to_spend_definition_names_the_wisconsin_exception():
@@ -1145,7 +1459,9 @@ def test_the_joint_table_caveat_names_the_owner_with_a_younger_spouse(
     )
     caveats = caveats_for(inputs, _run(inputs))
     found = [c for c in caveats if "Joint and Last Survivor" in c]
-    assert [c[: len(start)] for c, start in zip(found, expected)] == expected
+    assert [
+        c[: len(start)] for c, start in zip(found, expected, strict=False)
+    ] == expected
     assert len(found) == len(expected)
 
 
