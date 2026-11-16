@@ -6,6 +6,7 @@ import type {
   USDrawSource,
   USDrawdownPerson,
   USFilingStatus,
+  USTraditionalAccount,
 } from "../../lib/api-us-drawdown";
 import { STATES, type USDrawdownForm } from "../../lib/us-drawdown";
 import { Choice, Group, INPUT_CLASS, Label, NumberField, hintId } from "../drawdown/fields";
@@ -16,6 +17,35 @@ const SOURCES: { value: USDrawSource; label: string }[] = [
   { value: "taxable", label: "Investments" },
   { value: "cash", label: "Cash" },
 ];
+
+const ACCOUNTS: { value: USTraditionalAccount; label: string }[] = [
+  { value: "ira", label: "IRA" },
+  { value: "workplace_plan", label: "Workplace plan" },
+];
+
+/** Where a person's other traditional withdrawals come from, once they have some. */
+function WithdrawalsFrom({
+  legend,
+  name,
+  person,
+  onChange,
+}: {
+  legend: string;
+  name: string;
+  person: USDrawdownPerson;
+  onChange: (update: Partial<USDrawdownPerson>) => void;
+}) {
+  if (person.other_traditional_withdrawals <= 0) return null;
+  return (
+    <Choice<USTraditionalAccount>
+      legend={legend}
+      name={name}
+      value={person.other_withdrawals_account}
+      options={ACCOUNTS}
+      onChange={(other_withdrawals_account) => onChange({ other_withdrawals_account })}
+    />
+  );
+}
 
 function YearField({
   label,
@@ -129,6 +159,16 @@ export function DrawdownForm({
               { value: "spouse", label: "Your spouse’s" },
             ]}
             onChange={(draw_owner) => onChange({ draw_owner })}
+          />
+        )}
+        {form.draw_source === "traditional" && (
+          <Choice<USTraditionalAccount>
+            legend="Kind of account"
+            hint="A workplace plan is a 401(k), 403(b) or similar plan from an employer. Some states tax withdrawals from the two differently."
+            name="draw_account"
+            value={form.draw_account}
+            options={ACCOUNTS}
+            onChange={(draw_account) => onChange({ draw_account })}
           />
         )}
         <NumberField
@@ -281,6 +321,12 @@ export function DrawdownForm({
             value={form.you.other_traditional_withdrawals}
             onChange={(other_traditional_withdrawals) => you({ other_traditional_withdrawals })}
           />
+          <WithdrawalsFrom
+            legend={`${yours}${joint ? "other" : "Other"} withdrawals come from`}
+            name="you_other_withdrawals_account"
+            person={form.you}
+            onChange={you}
+          />
           <NumberField
             label={`${yours}Roth conversions`}
             hint="Money you move from traditional accounts to a Roth IRA in 2026. It adds taxable income but no money to spend."
@@ -297,6 +343,12 @@ export function DrawdownForm({
                 onChange={(other_traditional_withdrawals) =>
                   spouse({ other_traditional_withdrawals })
                 }
+              />
+              <WithdrawalsFrom
+                legend="Your spouse’s other withdrawals come from"
+                name="spouse_other_withdrawals_account"
+                person={form.spouse}
+                onChange={spouse}
               />
               <NumberField
                 label="Your spouse’s Roth conversions"

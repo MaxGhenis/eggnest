@@ -13,6 +13,8 @@ from .constants import STATE_FIPS
 USDrawdownSource = Literal["traditional", "roth", "taxable", "cash"]
 USDrawdownFilingStatus = Literal["single", "married_filing_jointly"]
 USDrawdownOwner = Literal["you", "spouse"]
+# A traditional account: an IRA, or a workplace plan such as a 401(k) or 403(b).
+USTraditionalAccount = Literal["ira", "workplace_plan"]
 USDrawdownMarkerKind = Literal[
     "benefit_ends",
     "coverage_ends",
@@ -65,6 +67,15 @@ class USDrawdownPerson(BaseModel):
     other_traditional_withdrawals: float = _dollars(
         "Withdrawals from traditional IRAs and 401(k)s in 2026 besides the draw "
         "being tested, such as a required minimum distribution already planned."
+    )
+    other_withdrawals_account: USTraditionalAccount = Field(
+        default="ira",
+        description=(
+            "Where the other traditional withdrawals come from: an IRA, or a "
+            "workplace plan such as a 401(k) or 403(b). Some states treat them "
+            "differently: Maryland's and Rhode Island's retirement subtractions "
+            "cover workplace plans but not IRAs."
+        ),
     )
     roth_conversion: float = _dollars(
         "Amount converted from traditional accounts to a Roth IRA in 2026. It "
@@ -119,6 +130,15 @@ class USDrawdownYearInput(BaseModel):
     draw_owner: USDrawdownOwner = Field(
         default="you",
         description="Whose IRA or 401(k) a traditional or Roth draw comes from.",
+    )
+    draw_account: USTraditionalAccount = Field(
+        default="ira",
+        description=(
+            "For a traditional draw, the kind of account: an IRA, or a workplace "
+            "plan such as a 401(k) or 403(b). Some states treat them differently: "
+            "Maryland's and Rhode Island's retirement subtractions cover "
+            "workplace plans but not IRAs."
+        ),
     )
     draw_amount: float = _dollars("Amount to take from the source in 2026.")
 

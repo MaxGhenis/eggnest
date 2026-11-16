@@ -36,6 +36,38 @@ describe("DrawdownForm", () => {
     expect(onChange).toHaveBeenCalledWith({ draw_owner: "spouse" });
   });
 
+  it("asks what kind of account a traditional draw comes from", () => {
+    const { onChange } = renderForm();
+    const kind = screen.getByRole("group", { name: "Kind of account" });
+    expect(within(kind).getByRole("radio", { name: "IRA" })).toBeChecked();
+    fireEvent.click(within(kind).getByRole("radio", { name: "Workplace plan" }));
+    expect(onChange).toHaveBeenCalledWith({ draw_account: "workplace_plan" });
+  });
+
+  it("skips the kind of account for a Roth draw", () => {
+    renderForm({ draw_source: "roth" });
+    expect(screen.queryByRole("group", { name: "Kind of account" })).not.toBeInTheDocument();
+  });
+
+  it("asks where other traditional withdrawals come from once there are some", () => {
+    renderForm();
+    expect(
+      screen.queryByRole("group", { name: "Other withdrawals come from" }),
+    ).not.toBeInTheDocument();
+    const { onChange } = renderForm({
+      you: { ...EXAMPLE_FORM.you, other_traditional_withdrawals: 5_000 },
+    });
+    const from = screen.getByRole("group", { name: "Other withdrawals come from" });
+    fireEvent.click(within(from).getByRole("radio", { name: "Workplace plan" }));
+    expect(onChange).toHaveBeenCalledWith({
+      you: {
+        ...EXAMPLE_FORM.you,
+        other_traditional_withdrawals: 5_000,
+        other_withdrawals_account: "workplace_plan",
+      },
+    });
+  });
+
   it("skips whose account for investments and cash, which the couple holds together", () => {
     renderForm({ ...JOINT, draw_source: "cash" });
     expect(screen.queryByRole("group", { name: "Whose account" })).not.toBeInTheDocument();

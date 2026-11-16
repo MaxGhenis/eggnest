@@ -107,7 +107,7 @@ def _normalize_scenario(
 
 _DRAW_TREATMENT = {
     "traditional": (
-        "taxable IRA distribution of the owner (taxable_ira_distributions); "
+        "taxable distribution of the owner from {account}; "
         "unearned income for SNAP; for SSI and the programs that use its income "
         "rules, a change of form of a counted resource, not income "
         "(20 CFR 416.1103(c))"
@@ -126,6 +126,14 @@ _DRAW_TREATMENT = {
 }
 
 
+_TRADITIONAL_ACCOUNTS = {
+    "ira": "an IRA (taxable_ira_distributions)",
+    "workplace_plan": (
+        "a workplace plan such as a 401(k) or 403(b) (taxable_401k_distributions)"
+    ),
+}
+
+
 def _assumptions(
     inputs: USDrawdownYearInput, result: USDrawdownYearResult
 ) -> dict[str, Any]:
@@ -140,7 +148,9 @@ def _assumptions(
             else "one person filing single"
         ),
         "tax_and_benefit_engine": "policyengine-us",
-        "draw_treatment": _DRAW_TREATMENT[inputs.draw_source],
+        "draw_treatment": _DRAW_TREATMENT[inputs.draw_source].format(
+            account=_TRADITIONAL_ACCOUNTS[inputs.draw_account]
+        ),
         "taxable_gain_share": result.assumptions.taxable_gain_share_applied,
         "money_to_spend_definition": (
             "the income the household enters plus the draw, less taxes before "

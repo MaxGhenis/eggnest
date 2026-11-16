@@ -12,7 +12,8 @@
   unchanged (20 CFR 416.1103(c)), while SNAP still counts it as income.
 - One simulation of many households gives each household the result it gets
   in a simulation of its own.
-- Each kind of draw reaches the programs the way ``us_year_engine`` says.
+- Each kind of draw reaches the programs the way ``us_year_engine`` says, and
+  a workplace plan draw gets the state subtractions an IRA draw doesn't.
 - Benefit steps far smaller than a grid interval's width are placed to
   within 1/24 of the interval.
 - Each outcome's benefits by program add up to its benefits.
@@ -406,6 +407,42 @@ def test_only_ssi_income_leaves_retirement_withdrawals_out():
     assert "retirement_distributions" not in ssi
     assert set(ssi) == set(before.unearned("2026-01-01")) - {"retirement_distributions"}
     assert "retirement_distributions" in snap
+
+
+@pytest.mark.parametrize("state", ["MD", "RI"])
+def test_a_workplace_plan_withdrawal_gets_the_state_retirement_subtraction(state):
+    """Maryland's pension subtraction (Md. Code Tax-Gen. 10-209) and Rhode
+    Island's retirement income subtraction (R.I. Gen. Laws 44-30-12(c)(9))
+    cover 401(k) and 403(b) withdrawals but not IRA withdrawals, as
+    PolicyEngine-US's source lists for them say. Single, born 1956, $24,000 of
+    Social Security: $20,000 from an IRA raises state tax, and the same from a
+    workplace plan adds none, whether it is the draw or another withdrawal."""
+
+    def state_tax(draw: float, draw_account: str, other: float, kind: str) -> float:
+        inputs = USDrawdownYearInput.model_validate(
+            {
+                "state": state,
+                "you": {
+                    "birth_year": 1956,
+                    "social_security": 24_000.0,
+                    "traditional_balance": 300_000.0,
+                    "other_traditional_withdrawals": other,
+                    "other_withdrawals_account": kind,
+                },
+                "draw_account": draw_account,
+                "draw_amount": draw,
+            }
+        )
+        return float(ENGINE.evaluate(inputs, np.array([draw])).state_income_tax[0])
+
+    assert state_tax(20_000.0, "ira", 0.0, "ira") > 100.0
+    assert state_tax(20_000.0, "workplace_plan", 0.0, "ira") == pytest.approx(
+        0.0, abs=CENT
+    )
+    assert state_tax(0.0, "ira", 20_000.0, "ira") > 100.0
+    assert state_tax(0.0, "ira", 20_000.0, "workplace_plan") == pytest.approx(
+        0.0, abs=CENT
+    )
 
 
 def test_retirement_balances_count_for_ssi():

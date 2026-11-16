@@ -501,7 +501,7 @@ describe("withDrawInBounds", () => {
     expect(sourceBalance(inputs)).toBe(10_000);
     expect(withDrawInBounds(inputs).draw_amount).toBe(10_000);
     expect(describeAccountLeft({ ...inputs, draw_amount: 5_000 })).toBe(
-      "$5,000 stays in your traditional IRA or 401(k) after your draw, other withdrawals and Roth conversions, before any growth.",
+      "$5,000 stays in your traditional IRA after your draw, other withdrawals and Roth conversions, before any growth.",
     );
     // A Roth draw leaves the traditional accounts aside.
     expect(sourceBalance({ ...inputs, draw_source: "roth" })).toBe(30_000);
@@ -767,7 +767,10 @@ describe("wording", () => {
 
   it("writes the headline for each source and for no draw", () => {
     expect(headline("traditional", "you", 30_000, 51_473.73)).toBe(
-      "Draw $30,000 from your traditional IRA or 401(k) in 2026 and you’ll have $51,474 to spend.",
+      "Draw $30,000 from your traditional IRA in 2026 and you’ll have $51,474 to spend.",
+    );
+    expect(headline("traditional", "spouse", 30_000, 51_473.73, "workplace_plan")).toBe(
+      "Draw $30,000 from your spouse’s 401(k) or other workplace plan in 2026 and you’ll have $51,474 to spend.",
     );
     expect(headline("roth", "spouse", 5_000, 30_000)).toBe(
       "Draw $5,000 from your spouse’s Roth IRA in 2026 and you’ll have $30,000 to spend.",

@@ -5,6 +5,8 @@ import { apiFetch, LONG_TIMEOUT_MS } from "./api";
 export type USDrawSource = "traditional" | "roth" | "taxable" | "cash";
 export type USFilingStatus = "single" | "married_filing_jointly";
 export type USDrawOwner = "you" | "spouse";
+/** An IRA, or a workplace plan such as a 401(k) or 403(b). */
+export type USTraditionalAccount = "ira" | "workplace_plan";
 export type USMarkerKind =
   "benefit_ends" | "coverage_ends" | "medicare_surcharge_step" | "required_minimum_reached";
 export type USCoverage = "medicaid" | "msp";
@@ -18,6 +20,8 @@ export interface USDrawdownPerson {
   traditional_balance: number;
   roth_balance: number;
   other_traditional_withdrawals: number;
+  /** Where the other traditional withdrawals come from. */
+  other_withdrawals_account: USTraditionalAccount;
   roth_conversion: number;
 }
 
@@ -35,6 +39,8 @@ export interface USDrawdownYearInput {
   cash_savings: number;
   draw_source: USDrawSource;
   draw_owner: USDrawOwner;
+  /** For a traditional draw, the kind of account it comes from. */
+  draw_account: USTraditionalAccount;
   draw_amount: number;
 }
 

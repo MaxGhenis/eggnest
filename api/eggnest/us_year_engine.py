@@ -6,8 +6,11 @@ single simulation, so a whole sweep costs about as much as one household.
 
 It decides what each PolicyEngine-US input holds (``build_situation``):
 
-- A traditional IRA or 401(k) draw is the owner's ``taxable_ira_distributions``,
-  on top of their other traditional withdrawals.
+- A traditional draw is the owner's ``taxable_ira_distributions`` from an IRA
+  or ``taxable_401k_distributions`` from a workplace plan (401(k), 403(b)),
+  by ``draw_account``. Each person's other traditional withdrawals go the same
+  way by their ``other_withdrawals_account``. PolicyEngine-US treats 401(k) and
+  403(b) withdrawals alike, and some states treat them unlike IRA ones.
 - A Roth draw is the owner's ``tax_exempt_ira_distributions``: a qualified
   distribution, untaxed but counted by SNAP as unearned income.
 - Selling taxable investments realizes ``long_term_capital_gains`` on the gain
@@ -179,9 +182,13 @@ def _person_inputs(
     year = str(inputs.tax_year)
     later = str(inputs.tax_year + MEDICARE_PREMIUM_LAG_YEARS)
     owns_draw = inputs.draw_owner == who
-    traditional = person.other_traditional_withdrawals + (
-        draw if owns_draw and inputs.draw_source == "traditional" else 0.0
+    # Traditional withdrawals by kind of account.
+    traditional = {"ira": 0.0, "workplace_plan": 0.0}
+    traditional[person.other_withdrawals_account] += (
+        person.other_traditional_withdrawals
     )
+    if owns_draw and inputs.draw_source == "traditional":
+        traditional[inputs.draw_account] += draw
     roth = draw if owns_draw and inputs.draw_source == "roth" else 0.0
     role = "is_tax_unit_head" if who == "you" else "is_tax_unit_spouse"
     values: dict = {
@@ -191,7 +198,8 @@ def _person_inputs(
         "taxable_private_pension_income": {year: person.pension_income},
         "taxable_public_pension_income": {year: person.government_pension_income},
         "employment_income": {year: person.earnings},
-        "taxable_ira_distributions": {year: traditional},
+        "taxable_ira_distributions": {year: traditional["ira"]},
+        "taxable_401k_distributions": {year: traditional["workplace_plan"]},
         "tax_exempt_ira_distributions": {year: roth},
         "taxable_roth_conversions": {year: person.roth_conversion},
     }

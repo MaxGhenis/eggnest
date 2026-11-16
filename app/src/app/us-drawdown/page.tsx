@@ -363,6 +363,7 @@ function Results({
             inputs.draw_owner,
             inputs.draw_amount,
             chosen.money_to_spend,
+            inputs.draw_account,
           )}
         </p>
         {comparison && <p className="mt-3 text-lg">{comparison}</p>}

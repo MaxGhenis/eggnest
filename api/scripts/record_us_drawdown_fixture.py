@@ -34,6 +34,7 @@ _NOBODY: dict[str, Any] = {
     "traditional_balance": 0.0,
     "roth_balance": 0.0,
     "other_traditional_withdrawals": 0.0,
+    "other_withdrawals_account": "ira",
     "roth_conversion": 0.0,
 }
 
@@ -57,6 +58,7 @@ EXAMPLE: dict[str, Any] = {
     "cash_savings": 15000.0,
     "draw_source": "traditional",
     "draw_owner": "you",
+    "draw_account": "ira",
     "draw_amount": 30000.0,
 }
 

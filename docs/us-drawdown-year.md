@@ -43,10 +43,21 @@ draw amounts and reads the results.
 
 | Draw | What PolicyEngine-US receives |
 | --- | --- |
-| Traditional IRA or 401(k) | The owner's `taxable_ira_distributions`, on top of their other traditional withdrawals |
+| Traditional IRA | The owner's `taxable_ira_distributions` |
+| Traditional workplace plan, such as a 401(k) or 403(b) | The owner's `taxable_401k_distributions` |
 | Roth IRA | The owner's `tax_exempt_ira_distributions`, which add no federal tax and no Medicare income |
 | Taxable investments | `long_term_capital_gains` on the gain share of each sale; the rest returns what the household paid, and PolicyEngine-US never sees it |
 | Cash | Nothing, since spending savings adds no income |
+
+A traditional draw's `draw_account` says which kind of account it comes from,
+`ira` (the default) or `workplace_plan`. Each person's other traditional
+withdrawals have their own `other_withdrawals_account`, since they can come from
+a different account than the draw; the calculator adds them to the same two
+variables. PolicyEngine-US's rules treat 401(k) and 403(b) withdrawals alike, so
+`taxable_401k_distributions` stands for both, and some states treat them unlike
+IRA withdrawals: Maryland's pension subtraction (Md. Code Tax-Gen. 10-209) and
+Rhode Island's retirement income subtraction (R.I. Gen. Laws 44-30-12(c)(9))
+cover workplace plans but not IRAs.
 
 The calculator counts each draw as spent evenly through the year and holds
 savings at their January 1, 2026 balances for the whole year. It puts each

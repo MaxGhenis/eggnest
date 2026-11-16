@@ -14,6 +14,7 @@ import type {
   USDrawdownYearInput,
   USMedicareSurcharge,
   USRequiredMinimum,
+  USTraditionalAccount,
 } from "./api-us-drawdown";
 import { bandRangeIn, joined, rowAt } from "./drawdown";
 
@@ -340,15 +341,25 @@ export function ladderRange(rows: readonly LadderRow[], index: number, balance: 
   return bandRangeIn(dollars, rows, index, balance);
 }
 
-const SOURCE_NAMES: Record<USDrawSource, (whose: string) => string> = {
-  traditional: (whose) => `${whose} traditional IRA or 401(k)`,
+const SOURCE_NAMES: Record<
+  USDrawSource,
+  (whose: string, account: USTraditionalAccount) => string
+> = {
+  traditional: (whose, account) =>
+    account === "workplace_plan"
+      ? `${whose} 401(k) or other workplace plan`
+      : `${whose} traditional IRA`,
   roth: (whose) => `${whose} Roth IRA`,
   taxable: () => "your investments",
   cash: () => "your cash savings",
 };
 
-export function sourceName(source: USDrawSource, owner: USDrawOwner): string {
-  return SOURCE_NAMES[source](owner === "spouse" ? "your spouse’s" : "your");
+export function sourceName(
+  source: USDrawSource,
+  owner: USDrawOwner,
+  account: USTraditionalAccount = "ira",
+): string {
+  return SOURCE_NAMES[source](owner === "spouse" ? "your spouse’s" : "your", account);
 }
 
 export function headline(
@@ -356,9 +367,10 @@ export function headline(
   owner: USDrawOwner,
   draw: number,
   moneyToSpend: number,
+  account: USTraditionalAccount = "ira",
 ): string {
   return draw > 0
-    ? `Draw ${dollars(draw)} from ${sourceName(source, owner)} in 2026 and you’ll have ${dollars(moneyToSpend)} to spend.`
+    ? `Draw ${dollars(draw)} from ${sourceName(source, owner, account)} in 2026 and you’ll have ${dollars(moneyToSpend)} to spend.`
     : `Draw nothing in 2026 and you’ll have ${dollars(moneyToSpend)} to spend.`;
 }
 
@@ -589,6 +601,7 @@ const NOBODY: Omit<USDrawdownPerson, "birth_year"> = {
   traditional_balance: 0,
   roth_balance: 0,
   other_traditional_withdrawals: 0,
+  other_withdrawals_account: "ira",
   roth_conversion: 0,
 };
 
@@ -607,6 +620,7 @@ export const EXAMPLE_INPUTS: USDrawdownYearInput = {
   cash_savings: 15_000,
   draw_source: "traditional",
   draw_owner: "you",
+  draw_account: "ira",
   draw_amount: 30_000,
 };
 
@@ -651,7 +665,8 @@ export function describeAccountLeft(inputs: USDrawdownYearInput): string {
   const after = sharesTraditionalAccount(inputs)
     ? "after your draw, other withdrawals and Roth conversions"
     : "after your draw";
-  return `${left} stays in ${sourceName(inputs.draw_source, inputs.draw_owner)} ${after}, before any growth.`;
+  const source = sourceName(inputs.draw_source, inputs.draw_owner, inputs.draw_account);
+  return `${left} stays in ${source} ${after}, before any growth.`;
 }
 
 /** Keeps the draw inside what the chosen source holds. */
@@ -688,6 +703,7 @@ export function isExamplePerson(inputs: USDrawdownYearInput): boolean {
       draw_amount: 0,
       draw_source: "traditional",
       draw_owner: "you",
+      draw_account: "ira",
       taxable_gain_share: 0,
     });
   return aboutThePerson(inputs) === aboutThePerson(EXAMPLE_INPUTS);
@@ -760,8 +776,8 @@ export function emptySourceMessage(inputs: USDrawdownYearInput): string {
   }
   const spouses = owner === "spouse" && (source === "traditional" || source === "roth");
   return spouses
-    ? `Enter how much your spouse has in ${SOURCE_NAMES[source]("their")} to see what you’d keep.`
-    : `Enter how much you have in ${sourceName(source, owner)} to see what you’d keep.`;
+    ? `Enter how much your spouse has in ${SOURCE_NAMES[source]("their", inputs.draw_account)} to see what you’d keep.`
+    : `Enter how much you have in ${sourceName(source, owner, inputs.draw_account)} to see what you’d keep.`;
 }
 
 /** Labels for the chart's markers. */

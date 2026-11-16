@@ -11,7 +11,7 @@ function wholeDollars(amount: number) {
 function headlineAt(draw: number) {
   const row = sweep.find((candidate) => candidate.draw === draw);
   if (!row) throw new Error(`The recorded sweep has no row at ${draw}`);
-  return `Draw ${wholeDollars(draw)} from your traditional IRA or 401(k) in 2026 and you’ll have ${wholeDollars(row.money_to_spend)} to spend.`;
+  return `Draw ${wholeDollars(draw)} from your traditional IRA in 2026 and you’ll have ${wholeDollars(row.money_to_spend)} to spend.`;
 }
 
 /** Serves the run recorded from the real engine and fails on console errors. */

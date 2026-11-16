@@ -62,7 +62,7 @@ from eggnest.models_us_drawdown import (
     USDrawdownYearInput,
     source_balance,
 )
-from eggnest.us_year_engine import USYearArrays
+from eggnest.us_year_engine import USYearArrays, build_situation
 
 # Stand-in rules, single filer; a joint return doubles each line.
 SS_FIRST_TIER = 25_000.0
@@ -282,6 +282,7 @@ people = st.fixed_dictionaries(
         "traditional_balance": st.floats(0, 2_000_000),
         "roth_balance": st.floats(0, 500_000),
         "other_traditional_withdrawals": st.sampled_from([0.0, 5_000.0]),
+        "other_withdrawals_account": st.sampled_from(["ira", "workplace_plan"]),
         "roth_conversion": st.sampled_from([0.0, 20_000.0]),
     }
 )
@@ -305,6 +306,7 @@ def households(draw):
             st.sampled_from(["traditional", "roth", "taxable", "cash"])
         ),
         "draw_owner": draw(st.sampled_from(["you", "spouse"])) if joint else "you",
+        "draw_account": draw(st.sampled_from(["ira", "workplace_plan"])),
     }
     inputs = USDrawdownYearInput.model_validate({**values, "draw_amount": 0.0})
     share = draw(st.floats(0, 1))
@@ -316,6 +318,47 @@ def households(draw):
 @given(households())
 def test_invariants_hold_for_any_household(inputs):
     _assert_invariants(inputs, _run(inputs))
+
+
+@given(households(), st.floats(0, 1))
+def test_each_traditional_withdrawal_reaches_its_account_kind(inputs, share):
+    """Every traditional dollar reaches PolicyEngine-US once, as an IRA
+    distribution or a workplace plan (401(k)) distribution by the kind of
+    account it comes from; nothing else does."""
+    draw = round(share * source_balance(inputs), 2)
+    situation = build_situation(inputs, np.array([draw]))
+    year = str(inputs.tax_year)
+    for who, person in inputs.people:
+        values = situation["people"][f"{who}_0"]
+        expected = {"ira": 0.0, "workplace_plan": 0.0}
+        expected[person.other_withdrawals_account] += (
+            person.other_traditional_withdrawals
+        )
+        if inputs.draw_source == "traditional" and inputs.draw_owner == who:
+            expected[inputs.draw_account] += draw
+        assert values["taxable_ira_distributions"][year] == pytest.approx(
+            expected["ira"]
+        )
+        assert values["taxable_401k_distributions"][year] == pytest.approx(
+            expected["workplace_plan"]
+        )
+
+
+def test_a_workplace_plan_draw_reaches_taxable_401k_distributions():
+    inputs = _inputs(
+        you={
+            "birth_year": 1956,
+            "social_security": 24_000.0,
+            "traditional_balance": 300_000.0,
+            "other_traditional_withdrawals": 5_000.0,
+        },
+        draw_account="workplace_plan",
+        draw_amount=20_000.0,
+    )
+    (person,) = build_situation(inputs, np.array([20_000.0]))["people"].values()
+    assert person["taxable_401k_distributions"]["2026"] == 20_000.0
+    assert person["taxable_ira_distributions"]["2026"] == 5_000.0
+    assert _inputs().draw_account == "ira"
 
 
 @given(households())

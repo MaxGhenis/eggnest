@@ -55,7 +55,7 @@ function runFor(inputs: USDrawdownYearInput): USDrawdownRun {
 }
 
 const HEADLINE =
-  "Draw $30,000 from your traditional IRA or 401(k) in 2026 and you’ll have $51,474 to spend.";
+  "Draw $30,000 from your traditional IRA in 2026 and you’ll have $51,474 to spend.";
 const BANNER = /These figures describe an example person/;
 
 async function openPage() {
@@ -191,7 +191,7 @@ describe("USDrawdownPage", () => {
     expect(rowText(table, "Money to spend")).toBe("$24,290$51,474");
     expect(
       screen.getByText(
-        "$220,000 stays in your traditional IRA or 401(k) after your draw, before any growth.",
+        "$220,000 stays in your traditional IRA after your draw, before any growth.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "Health coverage" })).not.toBeInTheDocument();
@@ -249,7 +249,7 @@ describe("USDrawdownPage", () => {
     const atDraw = outcomeAt(runOf("example").result.sweep, 8_000);
     expect(
       screen.getByText(
-        `Draw $8,000 from your traditional IRA or 401(k) in 2026 and you’ll have ${dollars(atDraw.money_to_spend)} to spend.`,
+        `Draw $8,000 from your traditional IRA in 2026 and you’ll have ${dollars(atDraw.money_to_spend)} to spend.`,
       ),
     ).toBeInTheDocument();
     expect(runMock).not.toHaveBeenCalled();
@@ -348,7 +348,7 @@ describe("USDrawdownPage", () => {
   it("shows where a low-income household loses SNAP, CSFP food boxes and health coverage", async () => {
     await openScenario(
       "low_income",
-      "Draw $3,000 from your traditional IRA or 401(k) in 2026 and you’ll have $16,019 to spend.",
+      "Draw $3,000 from your traditional IRA in 2026 and you’ll have $16,019 to spend.",
     );
     expect(
       screen.getByText(
@@ -404,7 +404,7 @@ describe("USDrawdownPage", () => {
   it("shows a couple's Medicare surcharge between the two of them", async () => {
     await openScenario(
       "couple",
-      "Draw $150,000 from your traditional IRA or 401(k) in 2026 and you’ll have $205,884 to spend.",
+      "Draw $150,000 from your traditional IRA in 2026 and you’ll have $205,884 to spend.",
     );
     expect(
       screen.getByText(
