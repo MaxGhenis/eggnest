@@ -2,7 +2,8 @@
 
 The stand-in applies simple piecewise-linear rules shaped like the real ones:
 Social Security taxed in two tiers, two income tax brackets, an SSI-like
-benefit that falls a dollar per dollar of income, a SNAP-like benefit with a
+benefit that falls a dollar per dollar of income other than withdrawals from
+the retirement accounts it counts as resources, a SNAP-like benefit with a
 cliff, on request a benefit that falls in two small steps, and Medicare
 surcharges that step up at income lines. Its kinks and cliffs sit where the
 rules put them, so tests can check that the calculator finds them.
@@ -133,13 +134,21 @@ class StandInEngine:
         unearned = ordinary + social_security
         if inputs.draw_source == "roth":
             unearned = unearned + draws
+        # SSI counts retirement balances as resources, so withdrawals from
+        # them are not its income; SNAP and Medicaid here count them.
+        withdrawals = sum(p.other_traditional_withdrawals for p in people) + (
+            draws if inputs.draw_source in ("traditional", "roth") else 0.0
+        )
+        ssi_unearned = unearned - withdrawals
         resources = (
             inputs.cash_savings
             + inputs.taxable_balance
             + sum(p.traditional_balance + p.roth_balance for p in people)
         )
         ssi = (
-            np.maximum(SSI_MAX * scale - np.maximum(unearned - SSI_DISREGARD, 0.0), 0.0)
+            np.maximum(
+                SSI_MAX * scale - np.maximum(ssi_unearned - SSI_DISREGARD, 0.0), 0.0
+            )
             if resources <= SSI_RESOURCE_LIMIT * scale
             else np.zeros(len(draws))
         )
@@ -467,10 +476,12 @@ def test_neighbouring_jumps_are_both_found(series, data):
     assert (draws[at + 1], draws[at + 2]) in found
 
 
-def test_ssi_falls_a_dollar_per_dollar_drawn():
+def test_ssi_keeps_paying_through_a_draw_from_a_counted_account():
     """$4,000 Social Security and $1,900 in a traditional IRA, under the
-    $2,000 resource limit: SSI is 11,928 - (4,000 - 240) = $8,168 and each
-    dollar drawn takes a dollar of it. The IRA holds too little to end it."""
+    $2,000 resource limit: SSI is 11,928 - (4,000 - 240) = $8,168. The IRA
+    counts as a resource, so drawing it is a change of form, not income
+    (20 CFR 416.1103(c)): SSI stays at $8,168 and the household keeps each
+    dollar. A pension, which is income, still takes a dollar per dollar."""
     inputs = _inputs(
         you={
             "birth_year": 1950,
@@ -481,10 +492,16 @@ def test_ssi_falls_a_dollar_per_dollar_drawn():
     )
     result = _run(inputs)
     assert result.with_no_draw.benefits_by_program["ssi"] == pytest.approx(8_168.0)
-    assert result.at_chosen_draw.benefits_by_program["ssi"] == pytest.approx(7_168.0)
-    assert result.next_1000.to_benefits == pytest.approx(1.0)
-    assert result.next_1000.kept == pytest.approx(0.0, abs=1e-9)
+    assert result.at_chosen_draw.benefits_by_program["ssi"] == pytest.approx(8_168.0)
+    assert result.next_1000.to_benefits == pytest.approx(0.0, abs=1e-9)
+    assert result.next_1000.kept == pytest.approx(1.0)
     assert not [m for m in result.markers if m.program == "ssi"]
+    pension = _run(
+        inputs.model_copy(
+            update={"you": inputs.you.model_copy(update={"pension_income": 1_000.0})}
+        )
+    )
+    assert pension.with_no_draw.benefits_by_program["ssi"] == pytest.approx(7_168.0)
 
 
 def test_medicare_steps_sit_where_income_crosses_each_line():

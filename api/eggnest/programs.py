@@ -259,6 +259,7 @@ PROGRAMS: list[ProgramSpec] = [
         caveats=[
             "Covers one person filing single or a married couple filing jointly, everyone 65 or older by the end of 2026.",
             "Counts savings at their balances on January 1, 2026, and doesn't count the value of Medicaid or the Medicare Savings Programs.",
+            "Changes one PolicyEngine-US rule: since IRA and 401(k) balances count as SSI resources, withdrawals from them aren't SSI income (20 CFR 416.1103(c)); SNAP still counts them.",
             "Applies Medicare’s 2026 income lines and amounts to 2028 premiums.",
         ],
     ),

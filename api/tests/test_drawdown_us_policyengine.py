@@ -4,9 +4,12 @@
   (Rev. Proc. 2025-32 amounts, 26 USC 86 and 151(d)(5)(C)).
 - Medicare's income-related premiums step up where 2026 income crosses CMS's
   2026 lines, by CMS's 2026 amounts.
-- Money to spend ties to PolicyEngine-US's own household_net_income: it is
-  that figure plus the part of the draw that isn't income, with Wisconsin's
-  retirement income exclusion kept (the household calculator's accounting).
+- Money to spend ties to PolicyEngine-US's own household_net_income, under
+  the calculator's SSI reform: it is that figure plus the part of the draw
+  that isn't income, with Wisconsin's retirement income exclusion kept (the
+  household calculator's accounting).
+- A withdrawal from a retirement account SSI counts as a resource leaves SSI
+  unchanged (20 CFR 416.1103(c)), while SNAP still counts it as income.
 - One simulation of many households gives each household the result it gets
   in a simulation of its own.
 - Each kind of draw reaches the programs the way ``us_year_engine`` says.
@@ -39,6 +42,8 @@ from eggnest.us_year_engine import (
     PolicyEngineUSYear,
     build_situation,
     reported_draw,
+    simulation,
+    tax_benefit_system,
 )
 from main import app
 
@@ -215,7 +220,8 @@ def test_money_to_spend_ties_to_household_net_income(name):
     arrays = ENGINE.evaluate(inputs, draws)
     money = cash_income(inputs) + draws - arrays.taxes + arrays.benefits
 
-    sim = Simulation(situation=build_situation(inputs, draws))
+    # The calculator's own PolicyEngine-US, SSI reform included.
+    sim = simulation(inputs, draws)
 
     def household(variable: str) -> np.ndarray:
         return np.asarray(
@@ -359,6 +365,47 @@ def test_a_roth_draw_counts_as_income_for_snap():
     snap = arrays.programs["snap"]
     assert snap[0] > 0
     assert snap[1] == 0.0
+
+
+@pytest.mark.parametrize("source", ["traditional", "roth"])
+def test_a_withdrawal_from_a_counted_account_leaves_ssi_unchanged(source):
+    """Texas, single, born 1950, $8,000 of Social Security and $1,500 in an
+    IRA, which counts toward SSI's $2,000 resource limit. Drawing all $1,500
+    turns one counted resource into another, which is not income (20 CFR
+    416.1103(c); POMS SI 01110.600), so SSI stays at 12 x ($994 - ($666.67 -
+    $20)) = $4,168 and the household keeps the whole draw. SNAP counts
+    retirement withdrawals as unearned income and falls."""
+    balance = "traditional_balance" if source == "traditional" else "roth_balance"
+    inputs = USDrawdownYearInput.model_validate(
+        {
+            "state": "TX",
+            "you": {"birth_year": 1950, "social_security": 8_000.0, balance: 1_500.0},
+            "draw_source": source,
+            "draw_amount": 1_500.0,
+        }
+    )
+    arrays = ENGINE.evaluate(inputs, np.array([0.0, 1_500.0]))
+    ssi = arrays.programs["ssi"]
+    assert ssi[0] == pytest.approx(4_168.0, abs=DOLLAR)
+    assert ssi[1] == pytest.approx(ssi[0], abs=DOLLAR)
+    snap = arrays.programs["snap"]
+    assert snap[1] < snap[0] - 100
+    money = cash_income(inputs) + np.array([0.0, 1_500.0]) - arrays.taxes + arrays.benefits
+    assert money[1] - money[0] == pytest.approx(1_500.0 - (snap[0] - snap[1]), abs=DOLLAR)
+
+
+def test_only_ssi_income_leaves_retirement_withdrawals_out():
+    """The reform takes retirement_distributions out of SSI's unearned income
+    sources and nothing else, so SNAP keeps it."""
+    reformed = tax_benefit_system(2026).parameters
+    ssi = reformed.gov.ssa.ssi.income.sources.unearned("2026-01-01")
+    snap = reformed.gov.usda.snap.income.sources.unearned("2026-01-01")
+    baseline = Simulation(situation=build_situation(_single_texan(), np.zeros(1)))
+    before = baseline.tax_benefit_system.parameters.gov.ssa.ssi.income.sources
+    assert "retirement_distributions" in before.unearned("2026-01-01")
+    assert "retirement_distributions" not in ssi
+    assert set(ssi) == set(before.unearned("2026-01-01")) - {"retirement_distributions"}
+    assert "retirement_distributions" in snap
 
 
 def test_retirement_balances_count_for_ssi():

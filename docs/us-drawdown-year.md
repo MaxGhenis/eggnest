@@ -35,7 +35,8 @@ draw_amount: 30000
 ## What decides each number
 
 PolicyEngine-US computes every tax and benefit, and Eggnest holds no tax or
-benefit formulas here. `api/eggnest/us_year_engine.py` builds one
+benefit formulas here. It changes one PolicyEngine-US parameter, SSI's unearned
+income sources, for the reason the next section gives. `api/eggnest/us_year_engine.py` builds one
 PolicyEngine-US household per draw amount in a single simulation and decides
 what each household's inputs hold. `api/eggnest/drawdown_us.py` chooses the
 draw amounts and reads the results.
@@ -47,17 +48,44 @@ draw amounts and reads the results.
 | Taxable investments | `long_term_capital_gains` on the gain share of each sale; the rest returns what the household paid, and PolicyEngine-US never sees it |
 | Cash | Nothing, since spending savings adds no income |
 
-SNAP and SSI count withdrawals from both kinds of IRA as unearned income,
-through PolicyEngine-US's `retirement_distributions`. The calculator counts
-each draw as spent evenly through the year and holds savings at their
-January 1, 2026 balances for the whole year. It puts each person's IRA and
-401(k) balances into `ssi_countable_resources` in full, since the owner can
-withdraw them (POMS SI 01120.210 B), along with the household's cash and
-investments. SSI's resource test reads that figure, and so do PolicyEngine-US's
-asset tests for the Medicare Savings Programs and Medicaid's senior and
-disability groups. SNAP's asset test reads bank, stock and bond assets and
-leaves retirement accounts out. The calculator assigns interest, dividends, cash
-and investments to the first person.
+The calculator counts each draw as spent evenly through the year and holds
+savings at their January 1, 2026 balances for the whole year. It puts each
+person's IRA and 401(k) balances into `ssi_countable_resources` in full, since
+the owner can withdraw them (POMS SI 01120.210 B), along with the household's
+cash and investments. SSI's resource test reads that figure, and so do
+PolicyEngine-US's asset tests for the Medicare Savings Programs and Medicaid's
+senior and disability groups. SNAP's asset test reads bank, stock and bond
+assets and leaves retirement accounts out. The calculator assigns interest,
+dividends, cash and investments to the first person.
+
+Because SSI counts those balances as resources, a withdrawal from them turns
+one resource into another, and what someone receives for a resource is not
+income (20 CFR 416.1103(c); POMS SI 01110.600 B.4). PolicyEngine-US leaves
+retirement accounts out of SSI resources and counts their withdrawals, through
+`retirement_distributions`, as SSI unearned income. To follow the rule that
+goes with counting the balances, the calculator runs PolicyEngine-US with
+`retirement_distributions` taken out of SSI's unearned income sources
+(`gov.ssa.ssi.income.sources.unearned`) from 2026 on
+(`us_year_engine.ssi_withdrawal_reform`). That is the one place Eggnest changes
+PolicyEngine-US's rules. Every variable that reads `ssi_unearned_income` follows
+it:
+
+- SSI itself, including deeming between spouses (`ssi_countable_income`,
+  `ssi_marital_unearned_income`);
+- the Medicare Savings Programs (`msp_countable_income`), which use SSI's
+  income method (42 USC 1396d(p)(1)(B));
+- Medicaid's senior and disability groups
+  (`medicaid_optional_senior_or_disabled_countable_income`);
+- state programs PolicyEngine-US builds on SSI's unearned income: California's
+  250 Percent Working Disabled Program, Connecticut's and Kentucky's state
+  supplementary payments, Maryland's Public Assistance to Adults, Minnesota
+  Supplemental Aid and Missouri's Supplemental Aid to the Blind.
+
+SNAP keeps its own list of sources, which includes `retirement_distributions`,
+so SNAP counts withdrawals from both kinds of IRA as unearned income. SSA may
+treat an account that pays regular payments differently: such a fund may not be
+a resource (POMS SI 01120.210 B), and its payments are then periodic income
+(20 CFR 416.1121(a)). The calculator doesn't model that case.
 
 The calculator takes every tax before refundable credits and counts those
 credits once, among benefits:

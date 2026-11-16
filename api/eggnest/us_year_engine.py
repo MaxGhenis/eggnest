@@ -9,7 +9,7 @@ It decides what each PolicyEngine-US input holds (``build_situation``):
 - A traditional IRA or 401(k) draw is the owner's ``taxable_ira_distributions``,
   on top of their other traditional withdrawals.
 - A Roth draw is the owner's ``tax_exempt_ira_distributions``: a qualified
-  distribution, untaxed but counted by SNAP and SSI as unearned income.
+  distribution, untaxed but counted by SNAP as unearned income.
 - Selling taxable investments realizes ``long_term_capital_gains`` on the gain
   share of the sale. The rest returns basis, which no program counts as income.
 - Spending cash savings is not income.
@@ -21,6 +21,16 @@ It decides what each PolicyEngine-US input holds (``build_situation``):
 - Household-level income and savings (interest, dividends, brokerage and
   cash balances) belong to the first person.
 
+Since SSI counts those balances as resources, a withdrawal from them turns one
+resource into another, which is not income (20 CFR 416.1103(c); POMS SI
+01110.600). PolicyEngine-US counts retirement withdrawals as SSI unearned
+income, so the calculator runs it with ``retirement_distributions`` taken out
+of SSI's unearned income sources (``ssi_withdrawal_reform``). That parameter
+reform is the one change Eggnest makes to PolicyEngine-US's rules. Everything
+that reads ``ssi_unearned_income`` follows it: SSI, the Medicare Savings
+Programs, Medicaid's senior and disability groups, and the state programs
+PolicyEngine-US builds on SSI's income. SNAP's own sources keep withdrawals.
+
 The accounting follows ``eggnest.household``: taxes before refundable
 credits, the state tax on Wisconsin's retirement income exclusion path when
 that path wins, refundable credits counted once as benefits, and Social
@@ -30,6 +40,7 @@ Security and health coverage left out of benefits.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from importlib.metadata import version as package_version
 
 import numpy as np
@@ -81,8 +92,56 @@ OTHER_TAX_PARTS = (
 )
 
 
+# SSI's unearned income sources, and the one the calculator takes out of them.
+SSI_UNEARNED_SOURCES = "gov.ssa.ssi.income.sources.unearned"
+RETIREMENT_WITHDRAWALS = "retirement_distributions"
+
+
 def engine_label() -> str:
     return f"{ENGINE} {package_version('policyengine-us')}"
+
+
+def ssi_withdrawal_reform(tax_year: int) -> dict:
+    """A PolicyEngine-US parameter reform: from ``tax_year`` on, SSI's unearned
+    income sources without retirement account withdrawals.
+
+    The calculator counts retirement balances as SSI resources, and a receipt
+    from a resource is the resource in another form, not income (20 CFR
+    416.1103(c); POMS SI 01110.600, SI 01120.210).
+    """
+    from policyengine_us.system import system
+
+    instant = f"{tax_year}-01-01"
+    sources = list(system.parameters.get_child(SSI_UNEARNED_SOURCES)(instant))
+    if RETIREMENT_WITHDRAWALS not in sources:
+        raise RuntimeError(
+            f"PolicyEngine-US no longer lists {RETIREMENT_WITHDRAWALS} among "
+            f"{SSI_UNEARNED_SOURCES}; review the SSI reform"
+        )
+    kept = [source for source in sources if source != RETIREMENT_WITHDRAWALS]
+    return {SSI_UNEARNED_SOURCES: {instant: kept}}
+
+
+@lru_cache(maxsize=1)
+def tax_benefit_system(tax_year: int):
+    """PolicyEngine-US with ``ssi_withdrawal_reform``, built once per process.
+
+    Building a system takes several seconds, so every simulation shares this
+    one, as PolicyEngine-US's household API shares its own.
+    """
+    from policyengine_us import CountryTaxBenefitSystem
+
+    return CountryTaxBenefitSystem(reform=ssi_withdrawal_reform(tax_year))
+
+
+def simulation(inputs: USDrawdownYearInput, draws: np.ndarray):
+    """The PolicyEngine-US simulation of one household per draw amount."""
+    from policyengine_us import Simulation
+
+    return Simulation(
+        situation=build_situation(inputs, draws),
+        tax_benefit_system=tax_benefit_system(inputs.tax_year),
+    )
 
 
 def _rounding(scale: np.ndarray) -> np.ndarray:
@@ -229,10 +288,8 @@ class PolicyEngineUSYear:
         return engine_label()
 
     def evaluate(self, inputs: USDrawdownYearInput, draws: np.ndarray) -> USYearArrays:
-        from policyengine_us import Simulation
-
         draws = np.asarray(draws, dtype=float)
-        sim = Simulation(situation=build_situation(inputs, draws))
+        sim = simulation(inputs, draws)
         year = inputs.tax_year
         later = year + MEDICARE_PREMIUM_LAG_YEARS
 

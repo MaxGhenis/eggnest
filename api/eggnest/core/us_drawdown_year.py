@@ -108,11 +108,15 @@ def _normalize_scenario(
 _DRAW_TREATMENT = {
     "traditional": (
         "taxable IRA distribution of the owner (taxable_ira_distributions); "
-        "unearned income for SNAP and SSI"
+        "unearned income for SNAP; for SSI and the programs that use its income "
+        "rules, a change of form of a counted resource, not income "
+        "(20 CFR 416.1103(c))"
     ),
     "roth": (
         "qualified Roth distribution of the owner (tax_exempt_ira_distributions): "
-        "untaxed, but unearned income for SNAP and SSI"
+        "untaxed, but unearned income for SNAP; for SSI and the programs that "
+        "use its income rules, a change of form of a counted resource, not "
+        "income (20 CFR 416.1103(c))"
     ),
     "taxable": (
         "sale of investments: the gain share is long-term capital gain, the rest "
@@ -148,6 +152,12 @@ def _assumptions(
             "balances on January 1, 2026; retirement accounts count toward "
             "ssi_countable_resources (POMS SI 01120.210 B), and SNAP leaves "
             "them out"
+        ),
+        "policyengine_us_reform": (
+            "retirement_distributions taken out of SSI's unearned income "
+            "sources (gov.ssa.ssi.income.sources.unearned), since withdrawals "
+            "from accounts counted as resources are not income (20 CFR "
+            "416.1103(c); POMS SI 01110.600)"
         ),
         "household_income_and_savings_owner": "the first person",
         "medicare_premium_year": inputs.tax_year + MEDICARE_PREMIUM_LAG_YEARS,
@@ -207,7 +217,8 @@ def caveats_for(
         "We don’t ask where in your state you live, so PolicyEngine-US places you in your state’s alphabetically first county and applies that county’s rules, including any local income tax.",
         "We count savings at their balances on January 1, 2026, for the whole year, so spending them down doesn’t change what you qualify for here.",
         "We count IRA and 401(k) balances as resources for SSI, and for the Medicaid and Medicare Savings Program tests that use SSI’s resource figure, because you can withdraw them (POMS SI 01120.210 B).",
-        "We count every IRA and 401(k) withdrawal as income and spread it over the year, as PolicyEngine-US does for SNAP and SSI. State SNAP agencies count a nonrecurring lump sum as a resource rather than income (7 CFR 273.9(c)(8)), so a single large withdrawal may count as savings instead.",
+        "So SSI, and the Medicare Savings Programs and Medicaid for people 65 and older that follow SSI’s income rules, don’t count a withdrawal from those accounts as income: it turns one resource into another (20 CFR 416.1103(c); POMS SI 01110.600). PolicyEngine-US counts it as SSI income, so we change that one rule when we run it. If you can take regular payments from an account rather than a lump sum, SSA may leave the account out of your resources and count the payments as income instead (POMS SI 01120.210 B).",
+        "For SNAP we count every IRA and 401(k) withdrawal as income and spread it over the year, as PolicyEngine-US does. State SNAP agencies count a nonrecurring lump sum as a resource rather than income (7 CFR 273.9(c)(8)), so a single large withdrawal may count as savings instead.",
         "We take Social Security as the amount you enter, before Medicare premiums, and don’t apply the retirement earnings test.",
         "We don’t count the value of Medicaid or the Medicare Savings Programs; we mark where you would lose them.",
         medicare,
