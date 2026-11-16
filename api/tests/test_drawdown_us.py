@@ -344,6 +344,32 @@ def test_each_traditional_withdrawal_reaches_its_account_kind(inputs, share):
         )
 
 
+_HOUSEHOLD_INCOME = {
+    "taxable_interest_income": "taxable_interest",
+    "tax_exempt_interest_income": "tax_exempt_interest",
+    "qualified_dividend_income": "dividends",
+}
+
+
+@given(households(), st.floats(0, 1))
+def test_a_couple_splits_household_income_evenly(inputs, share):
+    """Interest, dividends and the gain on investments sold belong to the
+    couple, as from jointly held accounts: each spouse gets half, so each
+    spouse's own state exclusions apply. A single filer gets all of it."""
+    draw = round(share * source_balance(inputs), 2)
+    situation = build_situation(inputs, np.array([draw]))
+    year = str(inputs.tax_year)
+    people = [situation["people"][f"{who}_0"] for who, _ in inputs.people]
+    gain = draw * inputs.taxable_gain_share if inputs.draw_source == "taxable" else 0.0
+    totals = {
+        **{variable: getattr(inputs, field) for variable, field in _HOUSEHOLD_INCOME.items()},
+        "long_term_capital_gains": gain,
+    }
+    for variable, total in totals.items():
+        for person in people:
+            assert person[variable][year] == pytest.approx(total / len(people))
+
+
 def test_a_workplace_plan_draw_reaches_taxable_401k_distributions():
     inputs = _inputs(
         you={
@@ -568,6 +594,31 @@ def test_medicare_steps_sit_where_income_crosses_each_line():
     assert surcharge.rates_year == 2026
     assert surcharge.at_chosen_draw == pytest.approx(sum(m.amount for m in steps))
     assert surcharge.with_no_draw == 0.0
+
+
+def test_each_medicare_step_carries_its_own_amount():
+    """A $7,001 pension and no Social Security make Medicare income the draw
+    plus $7,001, so it crosses $109,001 at a draw of $102,000 and $137,001 at
+    $130,000. A $12 million balance puts both in one $50,000 grid interval;
+    each marker still sits at its own line with its own step, and the steps
+    add up to the surcharge."""
+    inputs = _inputs(
+        you={
+            "birth_year": 1955,
+            "pension_income": 7_001.0,
+            "traditional_balance": 12_000_000.0,
+        },
+        draw_amount=10_000_000.0,
+    )
+    result = _run(inputs)
+    steps = [m for m in result.markers if m.kind == "medicare_surcharge_step"]
+    assert [m.draw for m in steps] == pytest.approx([102_000.0, 130_000.0], abs=0.01)
+    assert [m.amount for m in steps] == pytest.approx(
+        [PART_B_STEPS[0] + PART_D_STEPS[0], PART_B_STEPS[1] + PART_D_STEPS[1]]
+    )
+    assert sum(m.amount for m in steps) == pytest.approx(
+        result.medicare_surcharge.at_chosen_draw
+    )
 
 
 def test_required_minimum_is_marked_and_a_shortfall_is_costed():

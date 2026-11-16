@@ -66,8 +66,17 @@ the owner can withdraw them (POMS SI 01120.210 B), along with the household's
 cash and investments. SSI's resource test reads that figure, and so do
 PolicyEngine-US's asset tests for the Medicare Savings Programs and Medicaid's
 senior and disability groups. SNAP's asset test reads bank, stock and bond
-assets and leaves retirement accounts out. The calculator assigns interest,
-dividends, cash and investments to the first person.
+assets and leaves retirement accounts out.
+
+For a married couple the calculator splits interest, dividends and the gain on
+investments sold evenly between the spouses, as from accounts they hold
+together. States that exclude retirement or investment income for each person,
+such as Georgia's retirement exclusion (`ga_retirement_exclusion_person`, which
+counts interest, dividends and capital gains), then apply each spouse's own
+exclusion. Federal tax, SNAP, SSI and the Medicare Savings Programs read the
+couple's or household's total, so the split leaves them as they were. Cash and
+investment balances sit with the first person; the SSI and Medicare Savings
+Program resource tests add up the couple's resources.
 
 Because SSI counts those balances as resources, a withdrawal from them turns
 one resource into another, and what someone receives for a resource is not

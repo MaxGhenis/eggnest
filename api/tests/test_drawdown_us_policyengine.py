@@ -445,6 +445,32 @@ def test_a_workplace_plan_withdrawal_gets_the_state_retirement_subtraction(state
     )
 
 
+def test_a_couple_gets_both_spouses_georgia_retirement_exclusions():
+    """Georgia excludes up to $65,000 of retirement income, which counts
+    interest, dividends and capital gains, for each spouse 65 or older
+    (ga_retirement_exclusion_person). A Georgia couple born 1956 and 1957,
+    $20,000 of Social Security each, $10,000 of interest, $20,000 of
+    dividends and a $200,000 sale half of which is gain: split evenly, their
+    $130,000 of investment income fits both exclusions and leaves no Georgia
+    tax; all on one spouse, it overflows one exclusion and costs $1,746.50."""
+    inputs = USDrawdownYearInput.model_validate(
+        {
+            "state": "GA",
+            "filing_status": "married_filing_jointly",
+            "you": {"birth_year": 1956, "social_security": 20_000.0},
+            "spouse": {"birth_year": 1957, "social_security": 20_000.0},
+            "taxable_interest": 10_000.0,
+            "dividends": 20_000.0,
+            "taxable_balance": 400_000.0,
+            "taxable_gain_share": 0.5,
+            "draw_source": "taxable",
+            "draw_amount": 200_000.0,
+        }
+    )
+    arrays = ENGINE.evaluate(inputs, np.array([200_000.0]))
+    assert arrays.state_income_tax[0] == pytest.approx(0.0, abs=CENT)
+
+
 def test_retirement_balances_count_for_ssi():
     """$9,000 of Social Security: with $1,500 in an IRA the person passes
     SSI's $2,000 resource test and gets 12 x ($994 - ($750 - $20)) = $3,168;

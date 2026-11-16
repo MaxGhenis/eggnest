@@ -21,8 +21,11 @@ It decides what each PolicyEngine-US input holds (``build_situation``):
   That figure feeds the SSI resource test and the Medicaid and Medicare
   Savings Program tests that use SSI's method. SNAP leaves retirement accounts
   out (``snap_assets`` reads only bank, stock and bond assets).
-- Household-level income and savings (interest, dividends, brokerage and
-  cash balances) belong to the first person.
+- Household-level income (interest, dividends and the gain on investments
+  sold) is split evenly between a married couple, as from jointly held
+  accounts, so each spouse's own state exclusions apply. Household savings
+  (brokerage and cash balances) sit with the first person; the programs that
+  test them add up the couple's or household's.
 
 Since SSI counts those balances as resources, a withdrawal from them turns one
 resource into another, which is not income (20 CFR 416.1103(c); POMS SI
@@ -203,17 +206,21 @@ def _person_inputs(
         "tax_exempt_ira_distributions": {year: roth},
         "taxable_roth_conversions": {year: person.roth_conversion},
     }
+    # A couple's interest, dividends and sale gains, half each.
+    share = 0.5 if inputs.spouse is not None else 1.0
+    gain = draw * inputs.taxable_gain_share if inputs.draw_source == "taxable" else 0.0
+    values.update(
+        {
+            "taxable_interest_income": {year: share * inputs.taxable_interest},
+            "tax_exempt_interest_income": {year: share * inputs.tax_exempt_interest},
+            "qualified_dividend_income": {year: share * inputs.dividends},
+            "long_term_capital_gains": {year: share * gain},
+        }
+    )
     resources = person.traditional_balance + person.roth_balance
     if who == "you":
-        gain = (
-            draw * inputs.taxable_gain_share if inputs.draw_source == "taxable" else 0.0
-        )
         values.update(
             {
-                "taxable_interest_income": {year: inputs.taxable_interest},
-                "tax_exempt_interest_income": {year: inputs.tax_exempt_interest},
-                "qualified_dividend_income": {year: inputs.dividends},
-                "long_term_capital_gains": {year: gain},
                 "bank_account_assets": {year: inputs.cash_savings},
                 "stock_assets": {year: inputs.taxable_balance},
             }

@@ -169,7 +169,10 @@ def _assumptions(
             "from accounts counted as resources are not income (20 CFR "
             "416.1103(c); POMS SI 01110.600)"
         ),
-        "household_income_and_savings_owner": "the first person",
+        "household_income_owner": (
+            "split evenly between the spouses on a joint return; the filer otherwise"
+        ),
+        "household_savings_owner": "the first person",
         "medicare_premium_year": inputs.tax_year + MEDICARE_PREMIUM_LAG_YEARS,
         "medicare_lines_and_amounts_year": result.medicare_surcharge.rates_year,
         "medicare_part_d": "we assume everyone on Medicare has Part D",
