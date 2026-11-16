@@ -768,7 +768,12 @@ def run_us_drawdown_year(
         money_to_spend=_money(merged.money_to_spend[chosen]),
         at_chosen_draw=merged.outcome(chosen),
         with_no_draw=merged.outcome(no_draw),
-        next_1000=_slice(merged, chosen, upcoming) if upcoming != chosen else None,
+        # Under $1 left, rounding swamps the rate, as it does a band's.
+        next_1000=(
+            _slice(merged, chosen, upcoming)
+            if merged.draws[upcoming] - merged.draws[chosen] >= _BAND_MIN_WIDTH
+            else None
+        ),
         medicare_surcharge=USMedicareSurcharge(
             premium_year=inputs.tax_year + MEDICARE_PREMIUM_LAG_YEARS,
             rates_year=first_run.medicare_rates_year,

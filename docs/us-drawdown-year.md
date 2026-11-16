@@ -207,7 +207,8 @@ and leaves it out of taxes and money to spend.
   shortfall, whether 2026 is their first year with one, the day it's due and
   the excise tax on a shortfall.
 - `next_1000`: where the next $1,000 of draw goes, a smaller step near the end
-  of the account, and null at a draw that empties it.
+  of the account, and null once less than $1 is left, where rounding would
+  swamp the rate, as it would a band's.
 
 ## What it leaves out
 

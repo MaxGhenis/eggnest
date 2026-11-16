@@ -873,6 +873,39 @@ def test_next_1000_stops_at_the_end_of_the_account():
     assert emptied.account_left == 0.0
 
 
+class Float32Engine(StandInEngine):
+    """The stand-in with its taxes rounded to float32, as PolicyEngine-US
+    returns them."""
+
+    def evaluate(self, inputs: USDrawdownYearInput, draws: np.ndarray) -> USYearArrays:
+        arrays = super().evaluate(inputs, draws)
+        for name in ("federal_income_tax", "state_income_tax"):
+            values = getattr(arrays, name)
+            setattr(arrays, name, values.astype(np.float32).astype(float))
+        return arrays
+
+
+@pytest.mark.parametrize(
+    ("draw", "slice_to"), [(40_499.99, None), (40_499.5, None), (40_499.0, 40_500.0)]
+)
+def test_next_1000_needs_a_dollar_left_to_give_a_rate(draw, slice_to):
+    """Under $1 left in the account, rounding swamps the rate of what's left,
+    as it does for a band, so there's no next step to report."""
+    inputs = _inputs(
+        you={
+            "birth_year": 1955,
+            "social_security": 24_000.0,
+            "traditional_balance": 40_500.0,
+        },
+        draw_amount=draw,
+    )
+    result = run_us_drawdown_year(inputs, Float32Engine())
+    if slice_to is None:
+        assert result.next_1000 is None
+    else:
+        assert result.next_1000.draw_to == slice_to
+
+
 def test_next_1000_is_the_next_thousand():
     result = _run(_inputs(draw_amount=30_000.0))
     assert result.next_1000.draw_to - result.next_1000.draw_from == NEXT_DRAW_STEP

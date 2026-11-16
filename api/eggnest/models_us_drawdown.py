@@ -407,7 +407,8 @@ class USDrawdownYearResult(BaseModel):
     next_1000: USDrawdownSlice | None = Field(
         description=(
             "Where the next $1,000 of draw goes; a smaller step near the end of "
-            "the account; null once it is empty."
+            "the account; null once less than $1 is left, too little to give a "
+            "rate."
         )
     )
     medicare_surcharge: USMedicareSurcharge
