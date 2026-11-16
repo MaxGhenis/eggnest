@@ -16,26 +16,42 @@ It decides what each PolicyEngine-US input holds (``build_situation``):
 - Selling taxable investments realizes ``long_term_capital_gains`` on the gain
   share of the sale. The rest returns basis, which no program counts as income.
 - Spending cash savings is not income.
-- Retirement accounts count toward ``ssi_countable_resources`` at their full
-  balance, since their owners can withdraw a lump sum (POMS SI 01120.210 B).
-  That figure feeds the SSI resource test and the Medicaid and Medicare
-  Savings Program tests that use SSI's method. SNAP leaves retirement accounts
-  out (``snap_assets`` reads only bank, stock and bond assets).
+- Retirement accounts count toward ``ssi_countable_resources``, since their
+  owners can withdraw a lump sum (POMS SI 01120.210 B, D.2), at their full
+  balance: SSA counts what the owner could withdraw now less any penalty, with
+  no deduction for income tax (SI 01120.210 A.3), and the calculator takes no
+  plan surrender charge. That figure feeds the SSI resource test and the
+  Medicaid and Medicare Savings Program tests that use SSI's method. SNAP
+  leaves retirement accounts out (``snap_assets`` reads only bank, stock and
+  bond assets).
 - Household-level income (interest, dividends and the gain on investments
   sold) is split evenly between a married couple, as from jointly held
   accounts, so each spouse's own state exclusions apply. Household savings
-  (brokerage and cash balances) sit with the first person; the programs that
-  test them add up the couple's or household's.
+  (brokerage and cash balances) sit with the first person. Most programs that
+  test savings add up the couple's or household's, but two PolicyEngine-US
+  tests read each person's own figure: Colorado's Old Age Pension
+  (``co_oap_eligible``), which so can pay a spouse whose own figure is under
+  the couple limit when the couple's together is not, and Maryland's Public
+  Assistance to Adults (``md_paa_eligible``), which applies only in a care
+  facility.
 
-Since SSI counts those balances as resources, a withdrawal from them turns one
-resource into another, which is not income (20 CFR 416.1103(c); POMS SI
-01110.600). PolicyEngine-US counts retirement withdrawals as SSI unearned
-income, so the calculator runs it with ``retirement_distributions`` taken out
-of SSI's unearned income sources (``ssi_withdrawal_reform``). That parameter
-reform is the one change Eggnest makes to PolicyEngine-US's rules. Everything
-that reads ``ssi_unearned_income`` follows it: SSI, the Medicare Savings
-Programs, Medicaid's senior and disability groups, and the state programs
-PolicyEngine-US builds on SSI's income. SNAP's own sources keep withdrawals.
+Since SSI counts those balances as resources, the calculator reads a
+withdrawal from them as a resource changing form, which is not income. The
+rule is general (20 CFR 416.1103(c), 416.1207(e); POMS SI 01110.600 B.4);
+POMS applies it in words to retirement money only for Trump Accounts, a kind
+of traditional IRA (SI 01120.250 B.2), and for a deemed spouse's or parent's
+pension withdrawals (SI 01330.120 C.2, SI 01330.220 C.2). SSI also leaves out
+interest and dividends earned on countable resources (42 USC 1382a(b)(23);
+20 CFR 416.1124(c)(22)), and the calculator counts all the household's
+savings. PolicyEngine-US counts retirement withdrawals, interest and dividends
+as SSI unearned income, so the calculator runs it with those three sources
+taken out of SSI's unearned income sources (``ssi_income_reform``). That
+parameter reform is the one change Eggnest makes to PolicyEngine-US's rules.
+Everything that reads ``ssi_unearned_income`` follows it, directly or through
+``ssi_countable_income``: SSI, the Medicare Savings Programs, Medicaid's
+senior and disability and medically needy groups, and the state programs
+PolicyEngine-US builds on SSI's income. SNAP's own sources keep all three,
+and SNAP moves with any change in the SSI it counts.
 
 The accounting follows ``eggnest.household``: taxes before refundable
 credits, the state tax on Wisconsin's retirement income exclusion path when
@@ -101,46 +117,58 @@ OTHER_TAX_PARTS = (
 FEDERAL_TAX_PARTS = ("net_investment_income_tax", "alternative_minimum_tax")
 
 
-# SSI's unearned income sources, and the one the calculator takes out of them.
+# SSI's unearned income sources, and the ones the calculator takes out of them.
 SSI_UNEARNED_SOURCES = "gov.ssa.ssi.income.sources.unearned"
-RETIREMENT_WITHDRAWALS = "retirement_distributions"
+SSI_EXCLUDED_SOURCES = (
+    # Withdrawals from retirement accounts the calculator counts as resources.
+    "retirement_distributions",
+    # Interest and dividends on savings the calculator counts as resources
+    # (42 USC 1382a(b)(23); 20 CFR 416.1124(c)(22)).
+    "interest_income",
+    "dividend_income",
+)
 
 
 def engine_label() -> str:
     return f"{ENGINE} {package_version('policyengine-us')}"
 
 
-def ssi_withdrawal_reform(tax_year: int) -> dict:
+def ssi_income_reform(tax_year: int) -> dict:
     """A PolicyEngine-US parameter reform: from ``tax_year`` on, SSI's unearned
-    income sources without retirement account withdrawals.
+    income sources without ``SSI_EXCLUDED_SOURCES``.
 
-    The calculator counts retirement balances as SSI resources, and a receipt
-    from a resource is the resource in another form, not income (20 CFR
-    416.1103(c); POMS SI 01110.600, SI 01120.210).
+    The calculator counts every retirement, brokerage and cash balance as an
+    SSI resource. It reads a withdrawal from one as the resource in another
+    form, not income (20 CFR 416.1103(c), 416.1207(e); POMS SI 01110.600 B.4),
+    as POMS says in words for Trump Account distributions (SI 01120.250 B.2)
+    and a deemed spouse's pension withdrawals (SI 01330.120 C.2). SSI excludes
+    interest and dividends on countable resources (42 USC 1382a(b)(23); 20 CFR
+    416.1124(c)(22)).
     """
     from policyengine_us.system import system
 
     instant = f"{tax_year}-01-01"
     sources = list(system.parameters.get_child(SSI_UNEARNED_SOURCES)(instant))
-    if RETIREMENT_WITHDRAWALS not in sources:
+    missing = [source for source in SSI_EXCLUDED_SOURCES if source not in sources]
+    if missing:
         raise RuntimeError(
-            f"PolicyEngine-US no longer lists {RETIREMENT_WITHDRAWALS} among "
+            f"PolicyEngine-US no longer lists {', '.join(missing)} among "
             f"{SSI_UNEARNED_SOURCES}; review the SSI reform"
         )
-    kept = [source for source in sources if source != RETIREMENT_WITHDRAWALS]
+    kept = [source for source in sources if source not in SSI_EXCLUDED_SOURCES]
     return {SSI_UNEARNED_SOURCES: {instant: kept}}
 
 
 @lru_cache(maxsize=1)
 def tax_benefit_system(tax_year: int):
-    """PolicyEngine-US with ``ssi_withdrawal_reform``, built once per process.
+    """PolicyEngine-US with ``ssi_income_reform``, built once per process.
 
     Building a system takes several seconds, so every simulation shares this
     one, as PolicyEngine-US's household API shares its own.
     """
     from policyengine_us import CountryTaxBenefitSystem
 
-    return CountryTaxBenefitSystem(reform=ssi_withdrawal_reform(tax_year))
+    return CountryTaxBenefitSystem(reform=ssi_income_reform(tax_year))
 
 
 def simulation(inputs: USDrawdownYearInput, draws: np.ndarray):

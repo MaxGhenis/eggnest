@@ -758,6 +758,13 @@ export function inputProblem(inputs: USDrawdownYearInput): string | null {
     inputs.cash_savings,
   ];
   if (amounts.some((amount) => amount > LARGEST_AMOUNT)) return "Enter amounts up to $100 million.";
+  // Withdrawals and conversions come out of the traditional balance; the API
+  // refuses more than it holds, adding in the same order.
+  for (const [whose, person] of people) {
+    if (person.other_traditional_withdrawals + person.roth_conversion > person.traditional_balance) {
+      return `${whose === "your" ? "Your" : "Your spouse’s"} other traditional withdrawals and Roth conversion add up to more than ${whose === "your" ? "your" : "their"} traditional balance. Enter a balance that covers them.`;
+    }
+  }
   return null;
 }
 

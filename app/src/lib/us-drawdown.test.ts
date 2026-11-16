@@ -1043,4 +1043,28 @@ describe("inputProblem", () => {
     );
     expect(inputProblem({ ...EXAMPLE_INPUTS, cash_savings: 100_000_000 })).toBeNull();
   });
+
+  it("refuses withdrawals and conversions beyond the traditional balance, as the API does", () => {
+    const you = {
+      ...EXAMPLE_INPUTS.you,
+      traditional_balance: 50_000,
+      other_traditional_withdrawals: 30_000,
+      roth_conversion: 20_000,
+    };
+    expect(inputProblem({ ...EXAMPLE_INPUTS, you, draw_amount: 0 })).toBeNull();
+    expect(
+      inputProblem({ ...EXAMPLE_INPUTS, you: { ...you, roth_conversion: 20_000.01 }, draw_amount: 0 }),
+    ).toBe(
+      "Your other traditional withdrawals and Roth conversion add up to more than your traditional balance. Enter a balance that covers them.",
+    );
+    expect(
+      inputProblem({
+        ...EXAMPLE_INPUTS,
+        filing_status: "married_filing_jointly",
+        spouse: { ...NEW_SPOUSE, other_traditional_withdrawals: 1 },
+      }),
+    ).toBe(
+      "Your spouse’s other traditional withdrawals and Roth conversion add up to more than their traditional balance. Enter a balance that covers them.",
+    );
+  });
 });

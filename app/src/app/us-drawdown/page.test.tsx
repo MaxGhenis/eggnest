@@ -220,7 +220,7 @@ describe("USDrawdownPage", () => {
     await openPage();
     expect(
       screen.getByText(
-        "We count savings at their balances on January 1, 2026, for the whole year, so spending them down doesn’t change what you qualify for here.",
+        "We count savings at their balances on January 1, 2026, for the whole year. So the savings tests for SSI, Medicaid and the Medicare Savings Programs treat what you withdraw as still in your accounts, while money to spend counts it as spent. SSI looks at your savings on the first of each month (20 CFR 416.1207(a)), so spending them down could qualify you in later months, which we don’t show.",
       ),
     ).toBeInTheDocument();
     const engine = runOf("example").sources.find((source) => source.name === "PolicyEngine US");

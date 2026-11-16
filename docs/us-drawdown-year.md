@@ -60,52 +60,107 @@ Rhode Island's retirement income subtraction (R.I. Gen. Laws 44-30-12(c)(9))
 cover workplace plans but not IRAs.
 
 The calculator counts each draw as spent evenly through the year and holds
-savings at their January 1, 2026 balances for the whole year. It puts each
-person's IRA and 401(k) balances into `ssi_countable_resources` in full, since
-the owner can withdraw them (POMS SI 01120.210 B), along with the household's
-cash and investments. SSI's resource test reads that figure, and so do
-PolicyEngine-US's asset tests for the Medicare Savings Programs and Medicaid's
-senior and disability groups. SNAP's asset test reads bank, stock and bond
-assets and leaves retirement accounts out.
+savings at their January 1, 2026 balances for the whole year. So the resource
+tests treat a withdrawal as still held, while money to spend counts it as
+spent. SSI tests resources as of the first moment of each month and counts
+money spent from the next month (20 CFR 416.1207(a); POMS SI 01110.600 B.2),
+so a household that spends down below a limit could qualify for later months,
+which the calculator doesn't show.
+
+It puts each person's IRA and 401(k) balances into `ssi_countable_resources`,
+since the owner can withdraw them (POMS SI 01120.210 B, D.2), along with the
+household's cash and investments. SSA values a retirement fund at what the
+owner could withdraw now, less any penalty for withdrawing early, with no
+deduction for income tax (SI 01120.210 A.3). Everyone here is 65 or older, past
+the IRS early-withdrawal tax (26 USC 72(t)(2)(A)(i)), and the calculator takes
+no plan surrender charge, so it counts the whole balance. SSI's resource test
+reads that figure, and so do PolicyEngine-US's asset tests for the Medicare
+Savings Programs and Medicaid's senior and disability groups. SNAP's asset
+test reads bank, stock and bond assets and leaves retirement accounts out.
+
+A plan at a current employer that pays nothing until the owner leaves the job
+is not a resource (POMS SI 01120.210 C.1). The calculator's traditional
+balance doesn't tell such a plan apart, so it counts it; a caveat says so when
+someone with a traditional balance has earnings.
 
 For a married couple the calculator splits interest, dividends and the gain on
 investments sold evenly between the spouses, as from accounts they hold
 together. States that exclude retirement or investment income for each person,
 such as Georgia's retirement exclusion (`ga_retirement_exclusion_person`, which
 counts interest, dividends and capital gains), then apply each spouse's own
-exclusion. Federal tax, SNAP, SSI and the Medicare Savings Programs read the
-couple's or household's total, so the split leaves them as they were. Cash and
-investment balances sit with the first person; the SSI and Medicare Savings
-Program resource tests add up the couple's resources.
+exclusion. Federal tax and SNAP read the couple's or household's total, so
+the split leaves them as they were; SSI and the programs that follow its income
+rules leave interest and dividends out (below). Cash and investment balances
+sit with the first person. The SSI and Medicare Savings Program resource tests
+add up the couple's resources, but two PolicyEngine-US tests read each
+person's own `ssi_countable_resources`: Colorado's Old Age Pension
+(`co_oap_eligible`) and Maryland's Public Assistance to Adults
+(`md_paa_eligible`, only in a care facility). Colorado counts the couple's
+resources together against its limit for a married client (9 CCR 2503-5
+3.520.72 A), so for a Colorado couple with savings the page can show an Old
+Age Pension that Colorado wouldn't pay; a caveat says so. Splitting the
+savings evenly would make that worse, so they stay with the first person.
 
-Because SSI counts those balances as resources, a withdrawal from them turns
-one resource into another, and what someone receives for a resource is not
-income (20 CFR 416.1103(c); POMS SI 01110.600 B.4). PolicyEngine-US leaves
-retirement accounts out of SSI resources and counts their withdrawals, through
-`retirement_distributions`, as SSI unearned income. To follow the rule that
-goes with counting the balances, the calculator runs PolicyEngine-US with
-`retirement_distributions` taken out of SSI's unearned income sources
-(`gov.ssa.ssi.income.sources.unearned`) from 2026 on
-(`us_year_engine.ssi_withdrawal_reform`). That is the one place Eggnest changes
-PolicyEngine-US's rules. Every variable that reads `ssi_unearned_income` follows
-it:
+What someone receives for a resource is the resource in another form, not
+income (20 CFR 416.1103(c), 416.1207(e); POMS SI 01110.600 B.4). Because SSI
+counts retirement balances as resources, the calculator reads a withdrawal
+from them the same way. That is Eggnest's reading: no regulation or POMS
+section we found says it in words for an SSI claimant's own IRA or 401(k).
+POMS says it for Trump Accounts, which it calls a type of traditional IRA (SI
+01120.250 A): "Distributions of TA funds are not income, but a conversion of a
+resource" (SI 01120.250 B.2). It says the same for a deemed spouse's or
+parent's pension withdrawals (SI 01330.120 C.2, SI 01330.220 C.2).
 
-- SSI itself, including deeming between spouses (`ssi_countable_income`,
-  `ssi_marital_unearned_income`);
+SSI also leaves out interest and dividends earned on countable resources (42
+USC 1382a(b)(23); 20 CFR 416.1124(c)(22); POMS SI 00830.500). The calculator
+counts all the household's cash and investments as resources, so it leaves out
+all the interest and dividends entered. A caveat asks for the savings behind
+them when someone enters interest or dividends with no cash or investments.
+
+PolicyEngine-US leaves retirement accounts out of SSI resources and counts
+`retirement_distributions`, `interest_income` and `dividend_income` as SSI
+unearned income. To follow the rules that go with counting the balances, the
+calculator runs PolicyEngine-US with those three taken out of SSI's unearned
+income sources (`gov.ssa.ssi.income.sources.unearned`) from 2026 on
+(`us_year_engine.ssi_income_reform`). That is the one place Eggnest changes
+PolicyEngine-US's rules. Every variable that reads `ssi_unearned_income`,
+`ssi_marital_unearned_income` or `ssi_countable_income` follows it:
+
+- SSI itself, including deeming between spouses;
 - the Medicare Savings Programs (`msp_countable_income`), which use SSI's
   income method (42 USC 1396d(p)(1)(B));
 - Medicaid's senior and disability groups
-  (`medicaid_optional_senior_or_disabled_countable_income`);
-- state programs PolicyEngine-US builds on SSI's unearned income: California's
-  250 Percent Working Disabled Program, Connecticut's and Kentucky's state
-  supplementary payments, Maryland's Public Assistance to Adults, Minnesota
-  Supplemental Aid and Missouri's Supplemental Aid to the Blind.
+  (`medicaid_optional_senior_or_disabled_countable_income`) and its medically
+  needy group (`is_medically_needy_for_medicaid`);
+- state programs PolicyEngine-US builds on SSI's income: California's Cash
+  Assistance Program for Immigrants, state supplement and 250 Percent Working
+  Disabled Program; Colorado's Old Age Pension and state supplement;
+  Connecticut's, Indiana's, Kentucky's and South Carolina's state
+  supplementary payments; Florida's and Louisiana's optional state
+  supplements; Idaho's Aid to the Aged, Blind and Disabled; Maryland's Public
+  Assistance to Adults; Minnesota Supplemental Aid; and Missouri's
+  supplementary payments.
 
-SNAP keeps its own list of sources, which includes `retirement_distributions`,
-so SNAP counts withdrawals from both kinds of IRA as unearned income. SSA may
-treat an account that pays regular payments differently: such a fund may not be
-a resource (POMS SI 01120.210 B), and its payments are then periodic income
-(20 CFR 416.1121(a)). The calculator doesn't model that case.
+SNAP keeps its own list of sources, which includes all three, so SNAP counts
+withdrawals from both kinds of IRA, and interest and dividends, as unearned
+income. SNAP also counts SSI payments, so it moves when the reform changes SSI.
+
+SSA treats a plan that entitles its owner to periodic payments differently.
+Periodic payments are those "which result from entitlement under a retirement
+fund" (POMS SI 01120.210 A.2). The owner must apply for them and choose them
+over a lump sum (SI 01120.210 E.1); the fund then "may not be a countable
+resource" (SI 01120.210 B), and the payments are unearned income (20 CFR
+416.1121(a); POMS SI 00830.160 B.1). Taking a lump sum when periodic payments
+are available can make the owner ineligible for SSI for that month (POMS SI
+00510.001 D.4). The calculator doesn't model that case; a caveat says so.
+Whether required minimum distributions, or withdrawals an IRA owner schedules,
+are periodic payments is not settled by any text we read.
+
+PolicyEngine-US's `age`, `is_ssi_aged` and `is_medicare_eligible` are yearly,
+while SSI is decided month by month (20 CFR 416.420) and counts someone as aged
+once they are 65 (20 CFR 416.202(a)(1)). So someone born in 1961 counts as 65
+for all of 2026, and SSI, Medicaid and Medicare Savings Program results for
+them can include months before their birthday. A caveat says so.
 
 The calculator takes every tax before refundable credits and counts those
 credits once, among benefits:

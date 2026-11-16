@@ -36,7 +36,11 @@ from fastapi.testclient import TestClient
 from policyengine_us import Simulation
 
 from eggnest.cli import main as cli
-from eggnest.core.us_drawdown_year import OUTPUT_KEY, build_us_drawdown_year_scenario
+from eggnest.core.us_drawdown_year import (
+    OUTPUT_KEY,
+    build_us_drawdown_year_scenario,
+    caveats_for,
+)
 from eggnest.drawdown_us import cash_income, run_us_drawdown_year
 from eggnest.models_us_drawdown import USDrawdownYearInput
 from eggnest.us_year_engine import (
@@ -441,22 +445,83 @@ def test_a_withdrawal_from_a_counted_account_leaves_ssi_unchanged(source):
     assert ssi[1] == pytest.approx(ssi[0], abs=DOLLAR)
     snap = arrays.programs["snap"]
     assert snap[1] < snap[0] - 100
-    money = cash_income(inputs) + np.array([0.0, 1_500.0]) - arrays.taxes + arrays.benefits
-    assert money[1] - money[0] == pytest.approx(1_500.0 - (snap[0] - snap[1]), abs=DOLLAR)
+    money = (
+        cash_income(inputs) + np.array([0.0, 1_500.0]) - arrays.taxes + arrays.benefits
+    )
+    assert money[1] - money[0] == pytest.approx(
+        1_500.0 - (snap[0] - snap[1]), abs=DOLLAR
+    )
 
 
-def test_only_ssi_income_leaves_retirement_withdrawals_out():
-    """The reform takes retirement_distributions out of SSI's unearned income
-    sources and nothing else, so SNAP keeps it."""
+def test_ssi_income_reform_takes_out_three_sources_and_nothing_else():
+    """The reform takes retirement_distributions, interest_income and
+    dividend_income out of SSI's unearned income sources and nothing else,
+    so SNAP keeps all three."""
+    excluded = {"retirement_distributions", "interest_income", "dividend_income"}
     reformed = tax_benefit_system(2026).parameters
     ssi = reformed.gov.ssa.ssi.income.sources.unearned("2026-01-01")
     snap = reformed.gov.usda.snap.income.sources.unearned("2026-01-01")
     baseline = Simulation(situation=build_situation(_single_texan(), np.zeros(1)))
     before = baseline.tax_benefit_system.parameters.gov.ssa.ssi.income.sources
-    assert "retirement_distributions" in before.unearned("2026-01-01")
-    assert "retirement_distributions" not in ssi
-    assert set(ssi) == set(before.unearned("2026-01-01")) - {"retirement_distributions"}
-    assert "retirement_distributions" in snap
+    assert excluded <= set(before.unearned("2026-01-01"))
+    assert set(ssi) == set(before.unearned("2026-01-01")) - excluded
+    assert excluded <= set(snap)
+
+
+@pytest.mark.parametrize(
+    ("savings", "income"),
+    [("cash_savings", "taxable_interest"), ("taxable_balance", "dividends")],
+)
+def test_ssi_leaves_out_interest_and_dividends_on_counted_savings(savings, income):
+    """SSI excludes interest and dividends earned on countable resources (42
+    USC 1382a(b)(23); 20 CFR 416.1124(c)(22)). Tennessee, single, born 1956,
+    $7,200 of Social Security, $1,900 of cash earning $85.50 of interest, or
+    $1,900 of investments paying $85.50 of dividends (which reach SSI through
+    qualified_dividend_income, ordinary_dividend_income and dividend_income):
+    SSI is 12 x ($994 - ($600 - $20)) = $4,968, as with neither. Counting
+    them would give $4,882.50."""
+
+    def ssi(amount: float) -> float:
+        inputs = USDrawdownYearInput.model_validate(
+            {
+                "state": "TN",
+                "you": {"birth_year": 1956, "social_security": 7_200.0},
+                savings: 1_900.0,
+                income: amount,
+                "draw_source": "cash",
+            }
+        )
+        return float(ENGINE.evaluate(inputs, np.array([0.0])).programs["ssi"][0])
+
+    assert ssi(0.0) == pytest.approx(4_968.0, abs=DOLLAR)
+    assert ssi(85.50) == pytest.approx(4_968.0, abs=DOLLAR)
+
+
+def test_colorado_old_age_pension_tests_each_spouse_alone():
+    """PolicyEngine-US's co_oap_eligible compares each spouse's own
+    ssi_countable_resources with the couple limit, where Colorado adds up
+    the couple's (9 CCR 2503-5 3.520.72 A). A Colorado couple born 1956,
+    $6,000 of Social Security each and $5,800 of cash: Colorado would pay no
+    Old Age Pension, but the cash sits with the first person, so the spouse's
+    own figure is $0 and PolicyEngine-US pays the spouse $6,504. The page
+    carries a caveat for it. When this fails, PolicyEngine-US has started
+    adding up the couple's resources: drop the Colorado caveat
+    (core.us_drawdown_year._ssi_caveats)."""
+    inputs = USDrawdownYearInput.model_validate(
+        {
+            "state": "CO",
+            "filing_status": "married_filing_jointly",
+            "you": {"birth_year": 1956, "social_security": 6_000.0},
+            "spouse": {"birth_year": 1956, "social_security": 6_000.0},
+            "cash_savings": 5_800.0,
+            "draw_source": "cash",
+        }
+    )
+    arrays = ENGINE.evaluate(inputs, np.array([0.0]))
+    assert arrays.programs["household_state_benefits"][0] == pytest.approx(
+        6_504.0, abs=DOLLAR
+    )
+    assert [c for c in caveats_for(inputs) if "Old Age Pension" in c]
 
 
 @pytest.mark.parametrize("state", ["MD", "RI"])

@@ -21,7 +21,8 @@ Invariants held for every input:
 - The chosen and no-draw outcomes are points of the sweep, and the account
   left is what the source holds for the draw, less the draw. For a
   traditional draw that is the owner's balance less their other traditional
-  withdrawals and Roth conversion, which come out of the same accounts.
+  withdrawals and Roth conversion, which come out of the same accounts and
+  together never exceed that balance (inputs where they do are refused).
 - Every marker lies inside the sweep.
 - Each Medicare marker sits where Medicare income reaches its line and
   carries that line's step alone, so the steps add up to the surcharge at the
@@ -295,19 +296,27 @@ def _assert_invariants(inputs: USDrawdownYearInput, result) -> None:
         assert 0.0 <= marker.draw <= draws[-1] + 0.005
 
 
-people = st.fixed_dictionaries(
-    {
-        "birth_year": st.integers(1930, 1961),
-        "social_security": st.floats(0, 60_000),
-        "pension_income": st.floats(0, 40_000),
-        "earnings": st.sampled_from([0.0, 15_000.0]),
-        "traditional_balance": st.floats(0, 2_000_000),
-        "roth_balance": st.floats(0, 500_000),
-        "other_traditional_withdrawals": st.sampled_from([0.0, 5_000.0]),
-        "other_withdrawals_account": st.sampled_from(["ira", "workplace_plan"]),
-        "roth_conversion": st.sampled_from([0.0, 20_000.0]),
-    }
-)
+@st.composite
+def people(draw):
+    person = draw(
+        st.fixed_dictionaries(
+            {
+                "birth_year": st.integers(1930, 1961),
+                "social_security": st.floats(0, 60_000),
+                "pension_income": st.floats(0, 40_000),
+                "earnings": st.sampled_from([0.0, 15_000.0]),
+                "roth_balance": st.floats(0, 500_000),
+                "other_traditional_withdrawals": st.sampled_from([0.0, 5_000.0]),
+                "other_withdrawals_account": st.sampled_from(["ira", "workplace_plan"]),
+                "roth_conversion": st.sampled_from([0.0, 20_000.0]),
+            }
+        )
+    )
+    # Withdrawals and conversions come out of the traditional balance, so it
+    # holds at least what they take.
+    taken = person["other_traditional_withdrawals"] + person["roth_conversion"]
+    person["traditional_balance"] = taken + draw(st.floats(0, 2_000_000))
+    return person
 
 
 @st.composite
@@ -316,8 +325,8 @@ def households(draw):
     values = {
         "state": draw(st.sampled_from(["TX", "CA", "NY", "WI", "DC"])),
         "filing_status": "married_filing_jointly" if joint else "single",
-        "you": draw(people),
-        "spouse": draw(people) if joint else None,
+        "you": draw(people()),
+        "spouse": draw(people()) if joint else None,
         "taxable_interest": draw(st.floats(0, 10_000)),
         "tax_exempt_interest": draw(st.floats(0, 10_000)),
         "dividends": draw(st.floats(0, 20_000)),
@@ -1165,8 +1174,8 @@ def test_other_withdrawals_and_conversions_come_out_of_the_traditional_balance()
     # A Roth draw leaves the traditional withdrawals aside.
     roth = _inputs(you=person, draw_source="roth", draw_amount=0.0)
     assert source_balance(roth) == 30_000.0
-    # Withdrawals beyond the balance leave nothing to draw.
-    spent = _inputs(you={**person, "roth_conversion": 40_000.0}, draw_amount=0.0)
+    # Withdrawals that take the whole balance leave nothing to draw.
+    spent = _inputs(you={**person, "roth_conversion": 30_000.0}, draw_amount=0.0)
     assert source_balance(spent) == 0.0
 
 
@@ -1507,3 +1516,133 @@ def test_medicare_caveat_expects_higher_lines_only_until_medicare_publishes_them
         "Social Security uses your 2026 income to set the extra you pay for Medicare "
         "in 2028 (42 USC 1395r(i)(4)). We apply Medicare’s 2028 income lines and amounts."
     ]
+
+
+@pytest.mark.parametrize("who", ["you", "spouse"])
+def test_withdrawals_beyond_the_traditional_balance_are_refused(who):
+    """Other traditional withdrawals and a Roth conversion come out of the
+    traditional balance, so together they can't exceed it. Otherwise SSI would
+    leave out of income withdrawals that no counted resource stands behind."""
+    person = {
+        "birth_year": 1950,
+        "social_security": 24_000.0,
+        "traditional_balance": 50_000.0,
+        "other_traditional_withdrawals": 30_000.0,
+        "roth_conversion": 20_000.0,
+    }
+    plain = {"birth_year": 1950, "social_security": 24_000.0}
+    couple = {"filing_status": "married_filing_jointly", "draw_amount": 0.0}
+    couple = {**couple, "draw_owner": who}
+    at_balance = (
+        _inputs(you=person, spouse=plain, **couple)
+        if who == "you"
+        else _inputs(you=plain, spouse=person, **couple)
+    )
+    assert source_balance(at_balance) == 0.0
+    over = {**person, "roth_conversion": 20_000.01}
+    with pytest.raises(ValidationError, match="more than"):
+        if who == "you":
+            _inputs(you=over, spouse=plain, **couple)
+        else:
+            _inputs(you=plain, spouse=over, **couple)
+
+
+def test_ssi_caveats_follow_the_inputs():
+    """The SSI caveats appear where they apply: regular payments from a
+    workplace plan for anyone with a traditional balance, the current-job plan
+    for anyone who also works, turning 65 during the year, and the Colorado
+    couple's Old Age Pension."""
+
+    def found(text: str, inputs: USDrawdownYearInput) -> list[str]:
+        return [c for c in caveats_for(inputs) if text in c]
+
+    plain = _inputs()
+    assert found("POMS SI 01120.210 B, E.1", plain)
+    assert not found("SI 01120.210 C.1", plain)
+    assert not found("as 65 for all of 2026", plain)
+    assert not found("Old Age Pension", plain)
+
+    no_traditional = _inputs(
+        you={"birth_year": 1955, "social_security": 24_000.0, "roth_balance": 1.0},
+        draw_source="roth",
+        draw_amount=0.0,
+    )
+    assert not found("POMS SI 01120.210 B, E.1", no_traditional)
+
+    working = _inputs(
+        you={
+            "birth_year": 1955,
+            "social_security": 24_000.0,
+            "traditional_balance": 600_000.0,
+            "earnings": 20_000.0,
+        }
+    )
+    (current_job,) = found("SI 01120.210 C.1", working)
+    assert "your current job" in current_job
+
+    spouse_works = _inputs(
+        filing_status="married_filing_jointly",
+        spouse={
+            "birth_year": 1958,
+            "traditional_balance": 10_000.0,
+            "earnings": 20_000.0,
+        },
+    )
+    (current_job,) = found("SI 01120.210 C.1", spouse_works)
+    assert "your spouse’s traditional balance" in current_job
+
+    turning_65 = _inputs(
+        you={
+            "birth_year": 1961,
+            "social_security": 24_000.0,
+            "traditional_balance": 600_000.0,
+        }
+    )
+    (aged,) = found("as 65 for all of 2026", turning_65)
+    assert aged.startswith("PolicyEngine-US treats you")
+
+    colorado = _inputs(
+        state="CO",
+        filing_status="married_filing_jointly",
+        spouse={"birth_year": 1956, "social_security": 6_000.0},
+    )
+    assert found("Old Age Pension", colorado)
+    assert not found("Old Age Pension", _inputs(state="CO"))
+    no_savings = _inputs(
+        state="CO",
+        filing_status="married_filing_jointly",
+        you={"birth_year": 1956, "social_security": 6_000.0},
+        spouse={"birth_year": 1956, "social_security": 6_000.0},
+        draw_source="cash",
+        draw_amount=0.0,
+    )
+    assert not found("Old Age Pension", no_savings)
+
+
+def test_ssi_wording_marks_the_conversion_reading_as_eggnest_s():
+    """The page says the withdrawal reading is Eggnest's, cites the texts that
+    say it in words, and values retirement funds by POMS SI 01120.210 A.3."""
+    caveats = caveats_for(_inputs())
+    (conversion,) = [c for c in caveats if "416.1103(c)" in c]
+    assert "We read a withdrawal" in conversion
+    assert "SI 01120.250 B.2" in conversion
+    assert "1382a(b)(23)" in conversion
+    assert [c for c in caveats if "SI 01120.210 A.3, B, D.2" in c]
+    assert [c for c in caveats if "416.1207(a)" in c]
+
+
+def test_investment_income_with_no_savings_gets_a_caveat():
+    """SSI leaves out interest and dividends only on savings it counts, so the
+    page asks for the savings when someone enters such income without any."""
+
+    def found(**overrides) -> bool:
+        return any(
+            "enter the savings they come from" in c
+            for c in caveats_for(_inputs(**overrides))
+        )
+
+    assert found(taxable_interest=500.0)
+    assert found(dividends=500.0)
+    assert not found(taxable_interest=500.0, cash_savings=10_000.0)
+    assert not found(dividends=500.0, taxable_balance=10_000.0)
+    assert not found()

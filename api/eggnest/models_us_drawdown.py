@@ -159,6 +159,18 @@ class USDrawdownYearInput(BaseModel):
             raise ValueError("Only a joint return can include a spouse")
         if self.draw_owner == "spouse" and self.spouse is None:
             raise ValueError("A draw from the spouse's account needs a spouse")
+        for who, person in self.people:
+            # Withdrawals and conversions come out of the traditional balance;
+            # past it, SSI would leave out of income money that no counted
+            # resource stands behind.
+            taken = person.other_traditional_withdrawals + person.roth_conversion
+            if taken > person.traditional_balance:
+                whose = "the spouse's" if who == "spouse" else "your"
+                raise ValueError(
+                    f"{whose.capitalize()} other traditional withdrawals and Roth "
+                    f"conversion (${taken:,.2f}) are more than {whose} "
+                    f"traditional balance (${person.traditional_balance:,.2f})"
+                )
         balance = source_balance(self)
         if self.draw_amount > balance:
             after = (
