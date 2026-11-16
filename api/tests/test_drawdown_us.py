@@ -1109,6 +1109,35 @@ def test_caveats_follow_the_inputs():
     assert [c for c in caveats_for(roth, _run(roth)) if "408A" in c]
 
 
+@pytest.mark.parametrize(
+    ("you_born", "spouse_born", "expected"),
+    [
+        # Your spouse, 76, owes the minimum; you, 65, owe none.
+        (1961, 1950, ["If your spouse names you, more than 10 years younger,"]),
+        (1950, 1961, ["If you name your spouse, more than 10 years younger,"]),
+        # Both owe a minimum; only the older one has a spouse 11 years younger.
+        (1952, 1941, ["If your spouse names you, more than 10 years younger,"]),
+        (1951, 1961, []),
+    ],
+)
+def test_the_joint_table_caveat_names_the_owner_with_a_younger_spouse(
+    you_born, spouse_born, expected
+):
+    """The IRS Joint and Last Survivor Table serves an owner whose sole
+    beneficiary is a spouse more than 10 years younger (26 CFR
+    1.401(a)(9)-9), so the caveat names whoever owes that minimum."""
+    inputs = _inputs(
+        filing_status="married_filing_jointly",
+        you={"birth_year": you_born, "traditional_balance": 300_000.0},
+        spouse={"birth_year": spouse_born, "traditional_balance": 300_000.0},
+        draw_amount=0.0,
+    )
+    caveats = caveats_for(inputs, _run(inputs))
+    found = [c for c in caveats if "Joint and Last Survivor" in c]
+    assert [c[: len(start)] for c, start in zip(found, expected)] == expected
+    assert len(found) == len(expected)
+
+
 def test_rmd_caveats_follow_the_first_year_and_earnings():
     """A first-year shortfall owes no excise tax yet, so the excise caveat
     gives way to the April 1 deadline; earnings bring the still-working

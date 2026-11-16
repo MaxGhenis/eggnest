@@ -150,9 +150,10 @@ asks PolicyEngine-US for 2028:
 each enrolled person's Part B premium less the base premium, plus
 `income_adjusted_part_d_premium_surcharge`, against
 `medicare_irmaa_magi_two_years_prior`, which adds tax-exempt interest to 2026
-adjusted gross income. PolicyEngine-US holds the lines and amounts CMS has
-published and doesn't project them, so the calculator applies the latest year
-it holds, now 2026, and `medicare_surcharge.rates_year` names that year.
+adjusted gross income. PolicyEngine-US holds the lines and amounts CMS
+published up to its release and doesn't project them, so the calculator applies
+the latest year it holds, now 2026, even after CMS publishes a later year's,
+and `medicare_surcharge.rates_year` names that year.
 
 Required minimum distributions come from the IRS Uniform Lifetime Table in
 `api/eggnest/rmd.py`. From age 73, a person owes their traditional balance on

@@ -242,7 +242,7 @@ PROGRAMS: list[ProgramSpec] = [
                 description=(
                     "The income-related Part B and Part D premiums Social Security "
                     "sets for 2028 from this year's income, at the latest lines "
-                    "and amounts CMS has published."
+                    "and amounts PolicyEngine-US holds (now 2026)."
                 ),
             ),
             ProgramOutput(

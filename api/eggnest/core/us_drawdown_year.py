@@ -267,12 +267,23 @@ def caveats_for(
             caveats.append(
                 f"If {who} 5% or less of the business, that plan’s minimum can wait until April 1 of the year after retirement (26 USC 401(a)(9)(C)). IRAs get no such delay, and we figure the minimum on the whole balance."
             )
-        if inputs.spouse is not None and (
-            abs(inputs.you.birth_year - inputs.spouse.birth_year) > _JOINT_TABLE_AGE_GAP
-        ):
-            caveats.append(
-                "If you name a spouse more than 10 years younger as your sole beneficiary, you use the IRS Joint and Last Survivor Table instead. It gives a smaller required minimum than we show."
-            )
+        if inputs.spouse is not None:
+            # How much older each owner is than the other, in years at the end
+            # of the tax year.
+            older_by = {
+                "you": inputs.spouse.birth_year - inputs.you.birth_year,
+                "spouse": inputs.you.birth_year - inputs.spouse.birth_year,
+            }
+            for minimum in minimums:
+                if older_by[minimum.person] <= _JOINT_TABLE_AGE_GAP:
+                    continue
+                if minimum.person == "spouse":
+                    who = "your spouse names you, more than 10 years younger, as their sole beneficiary, they use the IRS Joint and Last Survivor Table for their minimum instead"
+                else:
+                    who = "you name your spouse, more than 10 years younger, as your sole beneficiary, you use the IRS Joint and Last Survivor Table for your minimum instead"
+                caveats.append(
+                    f"If {who}. It gives a smaller required minimum than we show (26 CFR 1.401(a)(9)-9)."
+                )
     if any(minimum.shortfall > 0 and not minimum.first_year for minimum in minimums):
         caveats.append(
             "If you take less than your required minimum, you owe an excise tax of 25% of the shortfall, or 10% if you correct it in time (26 USC 4974). We leave it out of your taxes and money to spend."
