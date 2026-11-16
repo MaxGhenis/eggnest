@@ -2,9 +2,11 @@
 
 The one-year drawdown calculators evaluate a year's result on a grid of draw
 amounts. These helpers find the draw amounts where a straight line stops
-describing each series (tax, benefits) and place each change of rate on the
-pound or dollar, so a coarse grid still gives exact band edges for rules that
-are piecewise linear.
+describing each series (tax, benefits) and place each change of rate where
+the lines on either side cross, so a coarse grid still gives band edges far
+closer than its spacing. On a piecewise-linear series whose changes of rate
+sit three or more grid intervals apart, each edge lands within a cent of the
+change (tests/test_drawdown_bands.py).
 """
 
 from __future__ import annotations
@@ -76,24 +78,69 @@ def crossing_point(
     return float(crossing) if draws[left_to] <= crossing <= draws[right_from] else None
 
 
-def band_edges(draws: np.ndarray, series: Series, min_width: float = 1.0) -> np.ndarray:
-    """Draw amounts, to the cent, where the rate on the next unit changes.
+def _fits(
+    draws: np.ndarray, values: np.ndarray, span: tuple[int, int], tolerance: float
+) -> bool:
+    """Whether the line through a span's ends passes within ``tolerance`` of
+    every point between them."""
+    low, high = span
+    if high - low < 2:
+        return True
+    share = (draws[low + 1 : high] - draws[low]) / (draws[high] - draws[low])
+    chord = values[low] + share * (values[high] - values[low])
+    return bool(np.all(np.abs(values[low + 1 : high] - chord) <= tolerance))
+
+
+def _line_span(
+    draws: np.ndarray,
+    values: np.ndarray,
+    tolerance: float,
+    span: tuple[int, int],
+    gap_above: bool,
+) -> tuple[int, int]:
+    """The part of a span next to the gap that a straight line describes.
+
+    The span's far end is itself a break, which can sit just past the next
+    change of rate, so it stays out of the line while the span has room. Then
+    the span gives up points at its far end until its line fits every point
+    within the series' tolerance; one interval always fits.
+    """
+    low, high = span
+
+    def shorter(low: int, high: int) -> tuple[int, int]:
+        return (low + 1, high) if gap_above else (low, high - 1)
+
+    if high - low >= 2:
+        low, high = shorter(low, high)
+    while high - low >= 2 and not _fits(draws, values, (low, high), tolerance):
+        low, high = shorter(low, high)
+    return low, high
+
+
+def _changes(draws: np.ndarray, series: Series) -> list[tuple[int, int, float]]:
+    """Each change of rate: the grid indices either side of the interval or
+    two that hold it, and where it lies.
 
     A rate changes between grid points, and the interval holding the change
-    mixes both rates. So the edge comes from where the clean lines on either
-    side cross, which puts it on the pound or dollar while the grid stays
-    coarse. Edges closer together than ``min_width`` merge.
+    mixes both rates. So the change lies where the lines on either side
+    cross, each through points it fits within the series' tolerance; where no
+    series' lines cross in the gap, it stays on the break.
     """
     breaks = band_breaks(draws, series)
 
     def crossing(left: tuple[int, int], right: tuple[int, int]) -> float | None:
-        for values, _ in series:
-            point = crossing_point(draws, values, left, right)
+        for values, tolerance in series:
+            point = crossing_point(
+                draws,
+                values,
+                _line_span(draws, values, tolerance, left, gap_above=True),
+                _line_span(draws, values, tolerance, right, gap_above=False),
+            )
             if point is not None:
                 return point
         return None
 
-    edges = [float(draws[breaks[0]]), float(draws[breaks[-1]])]
+    changes = []
     index = 1
     while index < len(breaks) - 1:
         before, at, after = breaks[index - 1 : index + 2]
@@ -101,14 +148,36 @@ def band_edges(draws: np.ndarray, series: Series, min_width: float = 1.0) -> np.
         if after == at + 1 and index + 2 < len(breaks):
             point = crossing((before, at), (after, breaks[index + 2]))
             if point is not None:
-                edges.append(point)
+                changes.append((at, after, point))
                 index += 2
                 continue
         # A lone break sits just next to the change, on either side.
         point = crossing((before, at - 1), (at + 1, after))
-        edges.append(float(draws[at]) if point is None else point)
+        changes.append((at - 1, at + 1, float(draws[at]) if point is None else point))
         index += 1
+    return changes
 
+
+def change_intervals(draws: np.ndarray, series: Series) -> list[tuple[float, float]]:
+    """The stretch of grid, one interval or two, that holds each change of rate."""
+    return [
+        (float(draws[low]), float(draws[high]))
+        for low, high, _ in _changes(draws, series)
+    ]
+
+
+def band_edges(draws: np.ndarray, series: Series, min_width: float = 1.0) -> np.ndarray:
+    """Draw amounts where the rate on the next unit changes.
+
+    Each lies where the lines either side of its change cross (``_changes``),
+    which places it far closer than the grid's spacing. Edges closer together
+    than ``min_width`` merge.
+    """
+    edges = [
+        float(draws[0]),
+        float(draws[-1]),
+        *(point for _, _, point in _changes(draws, series)),
+    ]
     ordered = np.unique(np.round(edges, 2))
     separated = [ordered[0]]
     for edge in ordered[1:-1]:
