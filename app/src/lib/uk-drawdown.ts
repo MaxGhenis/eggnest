@@ -297,6 +297,23 @@ export function potLockedAllYear(inputs: UKDrawdownYearInput): boolean {
   return inputs.draw_source === "sipp" && inputs.birth_date > LAST_BIRTH_FOR_POT;
 }
 
+/** The last day of the 2026/27 tax year. */
+const TAX_YEAR_END = "2027-04-05";
+/**
+ * The API counts Pension Credit in the 52 weeks from 6 April 2026 that start on
+ * or after the qualifying date. The last of them starts on this day.
+ */
+export const LAST_PENSION_CREDIT_WEEK_STARTS = "2027-03-29";
+
+/**
+ * True when the qualifying date for Pension Credit falls after 2026/27 ends.
+ * A date from 30 March to 5 April 2027 is false here: it falls in the tax year,
+ * though after the last counted week starts, so the API counts no week.
+ */
+export function reachesPensionCreditAgeAfterTaxYear(qualifyingDate: string): boolean {
+  return qualifyingDate > TAX_YEAR_END;
+}
+
 /** What the page shows in place of the curve for a pot locked all year. */
 export const LOCKED_POT_MESSAGE =
   "You turn 55 after this tax year ends on 5 April 2027, so your pension pot can’t pay you a pension or lump sum in 2026/27. Take money from your savings instead to see what you’d keep.";

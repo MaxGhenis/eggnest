@@ -28,6 +28,7 @@ import {
   pounds,
   poundsAndPence,
   potLockedAllYear,
+  reachesPensionCreditAgeAfterTaxYear,
   sliceBetween,
   sourceBalance,
   splitPence,
@@ -534,6 +535,18 @@ describe("inputProblem", () => {
     expect(
       potLockedAllYear({ ...EXAMPLE_INPUTS, birth_date: "1980-01-10", draw_source: "isa" }),
     ).toBe(false);
+  });
+
+  it("places a Pension Credit age after 2026/27 only from 6 April 2027", () => {
+    // 30 March to 5 April 2027 is in the tax year, though the API counts no
+    // week from it: the last of its 52 weeks starts on 29 March 2027.
+    expect(reachesPensionCreditAgeAfterTaxYear("2027-03-30")).toBe(false);
+    expect(reachesPensionCreditAgeAfterTaxYear("2027-04-05")).toBe(false);
+    expect(reachesPensionCreditAgeAfterTaxYear("2027-04-06")).toBe(true);
+    const lastDays = recorded.pension_credit_age_in_last_days.envelope.outputs.uk_drawdown_year_result
+      .pension_credit_working;
+    expect(lastDays.eligible_weeks).toBe(0);
+    expect(reachesPensionCreditAgeAfterTaxYear(lastDays.qualifying_date)).toBe(false);
   });
 
   it("lets someone under 55 draw from savings or draw nothing", () => {

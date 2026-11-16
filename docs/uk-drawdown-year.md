@@ -53,7 +53,20 @@ year, so the calculator costs only a draw of nothing from it. ISA,
 investment and cash draws add no taxable income; the calculator leaves out
 Capital Gains Tax.
 
-Pension Credit assesses each of the 52 weeks separately:
+The calculator assesses Pension Credit in each of 52 weeks from 6 April 2026
+separately, counting a week when it starts on or after the qualifying date.
+That approximates DWP's timing. DWP pays from the first full benefit week, which
+turns on the claimant's payday, unless they move straight from Universal Credit
+or another benefit reg 16A(2) names (SI 1987/1968 reg 16A). For people reaching
+pensionable age from 6 April 2010, the National Insurance number sets the
+payday unless DWP arranges another, and DWP pays in arrears, weekly,
+fortnightly or every four weeks (reg 26BA). The tax year has 52 weeks and a day, and neither the payday nor an
+earlier benefit is an input, so DWP's count can be about a week more or less;
+the caveats say so. The last week starts on 29 March 2027, so a qualifying date
+from 30 March to 5 April 2027 leaves no week counted, and the page says so
+rather than calling the date after the tax year.
+
+In each week it counts:
 
 | Money | How DWP counts it | Authority |
 | --- | --- | --- |

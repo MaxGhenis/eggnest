@@ -218,9 +218,39 @@ describe("UKDrawdownPage", () => {
     ).toBeInTheDocument();
     await waitFor(() => expect(lastInputs().birth_date).toBe("1980-01-10"));
     expect(await screen.findByText(/You turn 55 on 10 January 2035/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/You reach Pension Credit age on 10 January 2048, after this tax year, so you get no Pension Credit in 2026\/27/),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("slider")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /Your next/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/Draw another/)).not.toBeInTheDocument();
+  });
+
+  it("says a Pension Credit age in the year's last days falls in the year", async () => {
+    // The API counts the 52 weeks from 6 April 2026 that start on or after the
+    // qualifying date; the last starts on 29 March 2027. A qualifying date
+    // from 30 March to 5 April 2027 counts no week but is not after the year.
+    await openPage();
+    runMock.mockImplementation(async () => exampleRun("pension_credit_age_in_last_days"));
+    fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "1960-09-30" } });
+    await waitFor(() => expect(lastInputs().birth_date).toBe("1960-09-30"));
+    expect(
+      await screen.findByText(
+        /You reach Pension Credit age on 30 March 2027, in 2026\/27 but after the last of the 52 weeks we count starts on 29 March 2027/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/DWP may still pay you up to a week’s credit for 2026\/27/)).toBeInTheDocument();
+    expect(screen.queryByText(/after this tax year, so you get no Pension Credit/)).not.toBeInTheDocument();
+  });
+
+  it("says DWP's count of weeks turns on the payday", async () => {
+    await openPage();
+    runMock.mockImplementation(async () => exampleRun("reaches_state_pension_age"));
+    fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "1960-07-15" } });
+    await waitFor(() => expect(lastInputs().birth_date).toBe("1960-07-15"));
+    expect(
+      await screen.findByText(/so we count 20 of the year’s 52 weeks\. DWP pays from your first full benefit week, which turns on your payday, so its count can be a week more or less\./),
+    ).toBeInTheDocument();
   });
 
   it("asks for a balance when the chosen source holds nothing", async () => {

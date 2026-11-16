@@ -189,7 +189,7 @@ def caveats_for(inputs: UKDrawdownYearInput) -> list[str]:
         "We cover one person living alone, and leave out couples, additional amounts for severe disability or caring, and Savings Credit.",
         _local_help_caveat(inputs),
         "We don’t cover Scottish taxpayers, who pay the income tax rates the Scottish Parliament sets.",
-        "We count Pension Credit for every eligible week of the tax year; a claim that starts part way through pays less.",
+        _pension_credit_timing_caveat(inputs),
         "We assume you spend the money you draw evenly through the year. DWP can treat someone as still holding money they spent or gave away to get or increase Pension Credit (SI 2002/1792 regs 18(6) and 21).",
         "We value an undrawn pot from the Government Actuary’s table, and DWP decision makers also weigh evidence from the pension provider (DMG 85470-85471). DWP decides whether withdrawals count as regular or one-off (DMG 85456-85457).",
         "We count all of a regular withdrawal as income, its tax-free part included, reading DMG 85456 and 85476 that way. DMG 85472 treats a lump sum of up to 25% taken when income starts as capital; if DWP treats your tax-free part that way, Pension Credit here may be too low.",
@@ -225,6 +225,27 @@ def caveats_for(inputs: UKDrawdownYearInput) -> list[str]:
             "We apply Great Britain’s Pension Credit regulations; Northern Ireland has its own (SR 2003 No. 28)."
         )
     return caveats
+
+
+def _pension_credit_timing_caveat(inputs: UKDrawdownYearInput) -> str:
+    """Which weeks of Pension Credit we count, and how DWP's count can differ.
+
+    The calculator counts the 52 weeks from 6 April that start on or after
+    the qualifying date. DWP pays from the first full benefit week, which
+    turns on the payday (SI 1987/1968 reg 16A(1), (4)); for people reaching
+    pensionable age from 6 April 2010 the NI number sets the payday and DWP
+    pays in arrears (reg 26BA). Neither the payday nor an earlier benefit
+    (reg 16A(2)) is an input, so the caveat names the approximation.
+    """
+    starts = date(inputs.tax_year, 4, 6)
+    ends = date(inputs.tax_year + 1, 4, 5)
+    year = f"{inputs.tax_year}/{(inputs.tax_year + 1) % 100:02d}"
+    return (
+        f"We count Pension Credit in 52 weeks from {starts:%A} {_day(starts)}, starting with the first week that begins on or after the day you reach Pension Credit age. "
+        "DWP pays from your first full benefit week, which turns on your payday, unless you move straight from Universal Credit, Income Support, income-based Jobseeker’s Allowance or income-related Employment and Support Allowance (SI 1987/1968 reg 16A). "
+        "If your State Pension age falls on or after 6 April 2010, DWP pays in arrears, weekly, fortnightly or every four weeks, on a day your National Insurance number sets unless it arranges another (reg 26BA). "
+        f"The tax year also has 52 weeks and a day, so the credit you get for {year} can be about a week’s worth more or less than we show, some of it can arrive after {_day(ends)}, and a claim that starts later pays less."
+    )
 
 
 def _local_help_caveat(inputs: UKDrawdownYearInput) -> str:

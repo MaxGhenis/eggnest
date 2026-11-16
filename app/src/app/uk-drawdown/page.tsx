@@ -19,6 +19,7 @@ import {
 import { citationLabel } from "../../lib/uk-benefits";
 import {
   EXAMPLE_INPUTS,
+  LAST_PENSION_CREDIT_WEEK_STARTS,
   LOCKED_POT_MESSAGE,
   chartTop,
   comparedWithNoDraw,
@@ -34,6 +35,7 @@ import {
   pounds,
   poundsAndPence,
   potLockedAllYear,
+  reachesPensionCreditAgeAfterTaxYear,
   sliceBetween,
   sourceBalance,
   splitPence,
@@ -122,10 +124,20 @@ function YearLedger({
 function PensionCreditWorking({ run, deferred }: { run: UKDrawdownRun; deferred: boolean }) {
   const working = run.result.pension_credit_working;
   if (working.status === "under_qualifying_age") {
+    if (reachesPensionCreditAgeAfterTaxYear(working.qualifying_date)) {
+      return (
+        <p>
+          You reach Pension Credit age on {longDate(working.qualifying_date)}, after this tax year, so
+          you get no Pension Credit in {run.result.tax_year_label}.
+        </p>
+      );
+    }
     return (
       <p>
-        You reach Pension Credit age on {longDate(working.qualifying_date)}, after this tax year, so
-        you get no Pension Credit in {run.result.tax_year_label}.
+        You reach Pension Credit age on {longDate(working.qualifying_date)}, in{" "}
+        {run.result.tax_year_label} but after the last of the 52 weeks we count starts on{" "}
+        {longDate(LAST_PENSION_CREDIT_WEEK_STARTS)}, so we count no Pension Credit. Depending on your
+        payday, DWP may still pay you up to a week’s credit for {run.result.tax_year_label}.
       </p>
     );
   }
@@ -143,7 +155,8 @@ function PensionCreditWorking({ run, deferred }: { run: UKDrawdownRun; deferred:
       {working.eligible_weeks < 52 && (
         <p className="mb-3">
           You reach Pension Credit age on {longDate(working.qualifying_date)}, so we count{" "}
-          {working.eligible_weeks} of the year’s 52 weeks.
+          {working.eligible_weeks} of the year’s 52 weeks. DWP pays from your first full benefit
+          week, which turns on your payday, so its count can be a week more or less.
         </p>
       )}
       <table className="w-full max-w-md border-collapse tabular-nums">

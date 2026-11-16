@@ -68,6 +68,9 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "birth_date": "1960-07-15",
         "state_pension": 12547.6,
     },
+    # Pension Credit age on Tuesday 30 March 2027: in the tax year, but after
+    # the last counted week starts on 29 March, so no week counts.
+    "pension_credit_age_in_last_days": {**EXAMPLE, "birth_date": "1960-09-30"},
     # 55 on 10 January 2035, after the tax year: the pot can pay nothing.
     "locked_pot": {
         **EXAMPLE,

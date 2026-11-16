@@ -30,6 +30,14 @@ Pension Credit counts, each week (SPC Act 2002 ss.15-16; SI 2002/1792):
 
 Money drawn is taken to be spent evenly through the year, so savings fall week
 by week and each of the 52 weeks is assessed separately.
+
+The weeks run from 6 April, and one counts when it starts on or after the
+qualifying date. That approximates DWP's timing rather than following it: DWP
+pays from the first full benefit week, which turns on the claimant's payday
+(SI 1987/1968 reg 16A), and sets the payday from the NI number for people
+reaching pensionable age from 6 April 2010 (reg 26BA). With the tax year 52
+weeks and a day long, DWP's count can be about a week more or less. Neither
+the payday nor an earlier benefit is an input, so the caveats say so.
 """
 
 from __future__ import annotations
@@ -355,6 +363,9 @@ class _Calculation:
         self.tax_year_start = date(inputs.tax_year, 4, 6)
         self.age = age_on(inputs.birth_date, self.tax_year_start)
         self.qualifying_date = pension_credit_qualifying_date(inputs.birth_date)
+        # Weeks start on 6 April and every 7 days after. In 2026/27 the last
+        # starts on 29 March 2027, so a qualifying date from 30 March to
+        # 5 April 2027 leaves no week counted although it falls in the year.
         self.eligible = np.array(
             [
                 self.tax_year_start + timedelta(days=7 * week) >= self.qualifying_date

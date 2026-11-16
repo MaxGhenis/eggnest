@@ -551,6 +551,16 @@ class TestPensionCreditCounting:
         assert working.weekly_minimum_guarantee is None
         assert all(r.pension_credit == 0.0 for r in result.sweep)
 
+    def test_qualifying_after_the_last_week_assessed_counts_no_weeks(self):
+        # Pension Credit age on Tuesday 30 March 2027, inside the tax year but
+        # after the last Monday week assessed, which starts 29 March.
+        result = run(person(birth_date=date(1960, 9, 30), state_pension=0.0))
+        working = result.pension_credit_working
+        assert working.qualifying_date == date(2027, 3, 30)
+        assert working.eligible_weeks == 0
+        assert working.status == "under_qualifying_age"
+        assert result.pension_credit.amount == 0.0
+
     def test_reaching_the_qualifying_age_during_the_year(self):
         # 66th birthday on 15 June 2026.
         result = run(person(birth_date=date(1960, 6, 15), state_pension=0.0))
@@ -1278,6 +1288,25 @@ class TestCaveats:
         assert "if you chose the lump sum" in text
         # The new State Pension (s.16(1)(za)) is outside reg 18(1B).
         assert "18(1B)" not in self.text(person(state_pension_deferred=True))
+
+    def test_discloses_how_dwp_times_pension_credit(self):
+        # Claims and Payments Regs (SI 1987/1968) reg 16A: payable from the
+        # first full benefit week, which ends on the payday; reg 26BA: paid in
+        # arrears on a day set by the NI number. Neither is an input, so the
+        # 52 Monday weeks from 6 April are an approximation the caveat names.
+        inputs = UKDrawdownYearInput(birth_date=date(1960, 4, 12), state_pension=0)
+        caveats = caveats_for(inputs)
+        assert not any("every eligible week" in c for c in caveats)
+        timing = [c for c in caveats if "52 weeks" in c and "payday" in c]
+        assert len(timing) == 1
+        assert "16A" in timing[0] and "26BA" in timing[0]
+        assert "a week’s worth more or less" in timing[0]
+        assert "Monday 6 April 2026" in timing[0]
+        # The count itself stays: Mondays from 18 May 2026 to 29 March 2027.
+        result = run(inputs)
+        assert result.pension_credit_working.qualifying_date == date(2026, 5, 12)
+        assert result.pension_credit_working.eligible_weeks == 46
+        assert result.pension_credit.amount == pytest.approx(46 * 238.0, abs=0.01)
 
     def test_names_the_day_someone_turns_55(self):
         inputs = person(
