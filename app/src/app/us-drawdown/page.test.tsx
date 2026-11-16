@@ -345,7 +345,7 @@ describe("USDrawdownPage", () => {
     );
   });
 
-  it("shows where a low-income household loses SNAP, CSFP food boxes and health coverage", async () => {
+  it("shows where a low-income household loses SNAP and CSFP food boxes but keeps its coverage", async () => {
     await openScenario(
       "low_income",
       "Draw $3,000 from your traditional IRA in 2026 and you’ll have $16,019 to spend.",
@@ -362,15 +362,49 @@ describe("USDrawdownPage", () => {
     expect(rowText(ledger(), "CSFP food boxes")).toBe("$651$651");
     expect(rowText(coverage(), "Medicaid")).toBe("YesYes");
     expect(rowText(coverage(), "Medicare Savings Program")).toBe("YesYes");
+    expect(screen.queryByText(/ends at a draw of about/)).not.toBeInTheDocument();
+    expect(screen.getByText("At about $11,942")).toBeInTheDocument();
+    expect(screen.getByText("CSFP food boxes end, taking $651 all at once.")).toBeInTheDocument();
+    expect(screen.queryByText(/You’d lose/)).not.toBeInTheDocument();
+
+    // The Medicare Savings Programs and Medi-Cal for people 65 and older follow
+    // SSI's income rules, which leave an IRA withdrawal out of income.
+    fireEvent.change(screen.getByRole("slider", { name: "Amount to draw" }), {
+      target: { value: "8000" },
+    });
+    expect(rowText(coverage(), "Medicare Savings Program")).toBe("YesYes");
+    expect(screen.queryByText(/You’d lose/)).not.toBeInTheDocument();
+  });
+
+  it("marks where coverage ends and warns at a draw past it", async () => {
+    // Made-up ends added to the recorded low-income run: PolicyEngine-US ends
+    // this household's coverage at no draw in the sweep, but a household with
+    // other income can lose it, and the page reads only these markers.
+    const run = runOf("low_income");
+    const ends = [
+      { kind: "coverage_ends" as const, program: "msp", draw: 7_393.75, amount: null },
+      { kind: "coverage_ends" as const, program: "medicaid", draw: 12_785.42, amount: null },
+    ];
+    runMock.mockImplementation(async (inputs) =>
+      withoutDraw(inputs) === withoutDraw(inputsOf("low_income"))
+        ? {
+            ...run,
+            result: {
+              ...run.result,
+              markers: [...run.result.markers, ...ends].sort((a, b) => a.draw - b.draw),
+            },
+          }
+        : runFor(inputs),
+    );
+    await openScenario(
+      "low_income",
+      "Draw $3,000 from your traditional IRA in 2026 and you’ll have $16,019 to spend.",
+    );
     expect(
       screen.getByText(
         "Help from a Medicare Savings Program ends at a draw of about $7,394 and Medicaid at about $12,785.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("At about $11,942")).toBeInTheDocument();
-    expect(screen.getByText("CSFP food boxes end, taking $651 all at once.")).toBeInTheDocument();
-    expect(screen.queryByText(/You’d lose/)).not.toBeInTheDocument();
-
     fireEvent.change(screen.getByRole("slider", { name: "Amount to draw" }), {
       target: { value: "8000" },
     });

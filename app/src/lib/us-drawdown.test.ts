@@ -629,7 +629,7 @@ describe("recorded real-engine runs", () => {
     ).toEqual(["SNAP falls by $216 all at once.", "SNAP ends, taking $75 all at once."]);
   });
 
-  it("the low-income household loses SNAP, CSFP food boxes and its coverage", () => {
+  it("the low-income household loses SNAP and CSFP food boxes but keeps its coverage", () => {
     const { bands, sweep, markers } = resultOf("low_income");
     const steps = ladderRows(bands).filter((row) => row.step);
     expect(
@@ -641,15 +641,10 @@ describe("recorded real-engine runs", () => {
       "SNAP ends, taking $75 all at once.",
       "CSFP food boxes end, taking $651 all at once.",
     ]);
-    expect(markers.map(markerLabel)).toEqual([
-      "SNAP ends",
-      "Medicare Savings Program ends",
-      "CSFP food boxes end",
-      "Medicaid ends",
-    ]);
-    expect(describeCoverageEnds(markers)).toBe(
-      "Help from a Medicare Savings Program ends at a draw of about $7,394 and Medicaid at about $12,785.",
-    );
+    // SSI's income rules, which the Medicare Savings Programs and Medi-Cal for
+    // people 65 and older follow, leave an IRA withdrawal out of income.
+    expect(markers.map(markerLabel)).toEqual(["SNAP ends", "CSFP food boxes end"]);
+    expect(describeCoverageEnds(markers)).toBeNull();
   });
 });
 
