@@ -69,9 +69,12 @@ WEEKS_IN_YEAR = 52
 _EARNINGS_DISREGARD_WEEKLY = 5.0  # SI 2002/1792 Sch VI para 5(a)
 _NEXT_DRAW_STEP = 1_000.0
 
-# Sweep range. With a quarter of each draw tax free, drawing £180,000 carries
-# someone with a State Pension past the additional-rate threshold (£125,140),
-# so larger draws add no new tax band.
+# Sweep range. Taxable income past £125,140 pays the additional rate on every
+# further pound and leaves no Personal Allowance (ITA 2007 ss.10(3A), (5A),
+# 35(2)), so larger draws add no new tax band. With at most a quarter of each
+# draw tax free, drawing £180,000 carries anyone past it; with the tax-free
+# cash taken first, every pound beyond the cash is taxable, so £180,000 past
+# the cash does.
 _SWEEP_MIN_TOP = 180_000.0
 _SWEEP_MAX_INTERVALS = 200
 _SWEEP_STEPS = (50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000)
@@ -225,13 +228,17 @@ def _sweep_draws(inputs: UKDrawdownYearInput) -> np.ndarray:
     """A grid of round draw amounts from nothing up to the useful top.
 
     The top reaches past the draw where the tax-free part stops growing, so the
-    last band never stretches a tax-free rate over draws that pay full tax.
+    last band never stretches a tax-free rate over draws that pay full tax, and
+    past the additional-rate threshold, so the last band's rate holds to the
+    balance.
     """
     balance = _source_balance(inputs)
     tax_free_ends = _tax_free_ends(inputs)
     useful = max(_SWEEP_MIN_TOP, inputs.draw_amount * 1.25)
     if tax_free_ends is not None:
         useful = max(useful, tax_free_ends * 1.25)
+    if inputs.sipp_tax_free_cash_first and tax_free_ends is not None:
+        useful = max(useful, tax_free_ends + _SWEEP_MIN_TOP)
     top = min(balance, useful)
     step = next(
         (s for s in _SWEEP_STEPS if top / s <= _SWEEP_MAX_INTERVALS),

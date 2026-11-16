@@ -81,8 +81,10 @@ carries the table, and `api/scripts/build_gad_drawdown_factors.py` rebuilds it.
 - `at_chosen_draw` and `with_no_draw`: the full year at the chosen draw and at
   none.
 - `sweep`: the same at every draw on a grid up to the pot, or at least far
-  enough to pass the additional-rate threshold and the draw where the Lump Sum
-  Allowance runs out. The page reads between rows in a straight line, so it
+  enough to pass the additional-rate threshold and the draw where the tax-free
+  cash runs out, so the last band's rate holds to the pot. With the tax-free
+  cash taken first, every pound past the cash is taxable, so the grid runs
+  £180,000 past it. The page reads between rows in a straight line, so it
   answers as the slider moves and refreshes from the API when the slider stops.
 - `bands`: the ranges of draw where each extra pound splits the same way. A
   second pass runs extra draws around each edge, and tests hold each edge

@@ -236,6 +236,36 @@ class TestReviewCounterexamples:
         assert result.bands[1].to_pension_credit == pytest.approx(1.0, abs=0.01)
 
 
+class TestIndependentReviewCounterexamples:
+    """Inputs from the 2026-11-16 independent review, by hand from the law."""
+
+    def test_cash_first_sweep_passes_the_additional_rate_threshold(self):
+        # R1: £100,000 of tax-free cash comes first, then every pound drawn is
+        # taxable. With £12,547.60 of State Pension, the allowance tapers from
+        # a draw of £187,452.40, where adjusted net income passes £100,000
+        # (ITA 2007 s.35(2)), and the additional rate starts at £212,592.40,
+        # where it passes £125,140 (s.10(3A), (5A)).
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_547.60,
+                sipp_balance=400_000.0,
+                draw_amount=25_000.0,
+                sipp_draw_pattern="one_off",
+                sipp_tax_free_cash_first=True,
+            )
+        )
+        assert result.at_chosen_draw.income_tax == 0.0
+        assert result.sweep[-1].draw > 212_592.40
+        rates = [round(band.to_tax, 2) for band in result.bands]
+        assert rates == [0.0, 0.2, 0.4, 0.6, 0.45]
+        assert result.bands[-1].to_tax == pytest.approx(0.45, abs=1e-6)
+        # Within £5: the £2 bound on edges is fixed with the shared band code.
+        starts = dict(zip(rates, (b.draw_from for b in result.bands), strict=True))
+        assert starts[0.6] == pytest.approx(187_452.40, abs=5.0)
+        assert starts[0.45] == pytest.approx(212_592.40, abs=5.0)
+
+
 class TestEnvelope:
     def test_citations_come_from_the_engine_traces(self):
         inputs = UKDrawdownYearInput(

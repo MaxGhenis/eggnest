@@ -14,6 +14,9 @@ Invariants, for every input:
 - Each band and next_1000 splits the pound in full: kept + tax + Pension
   Credit == 1. Bands run from 0 to the top of the sweep without gaps, and
   their rates add back up to the sweep's total change.
+- A pot's sweep runs to its balance, or until taxable income passes £125,140,
+  where the real rules charge the additional rate on every further pound
+  (ITA 2007 ss.10(3A), (5A), 35(2)), tax-free cash taken first included.
 - 0 <= Pension Credit <= eligible weeks x minimum guarantee; tax >= 0;
   taxable part of the draw <= draw.
 - Regular pot draws: tax never falls as the draw rises. Pension Credit never
@@ -64,7 +67,11 @@ from eggnest.drawdown_uk import (
     gad_annuity_income_per_1000,
     run_uk_drawdown_year,
 )
-from eggnest.models_uk_drawdown import UKDrawdownYearInput, UKDrawdownYearResult
+from eggnest.models_uk_drawdown import (
+    LUMP_SUM_ALLOWANCE,
+    UKDrawdownYearInput,
+    UKDrawdownYearResult,
+)
 from eggnest.programs import list_programs
 from eggnest.tax_uk import AXIOM_UK_TAX_ENGINE, UKYearInputs, UKYearResults
 from main import app
@@ -72,6 +79,9 @@ from main import app
 client = TestClient(app)
 
 MINIMUM_GUARANTEE = 238.0
+# On the real rules, income past the higher rate limit pays the additional rate
+# and leaves no Personal Allowance (ITA 2007 ss.10(3A), (5A), 35(2)).
+ADDITIONAL_RATE_INCOME = 125_140.0
 PAST_QUALIFYING_AGE = date(1958, 6, 15)  # 67 on 6 April 2026
 UNDER_QUALIFYING_AGE = date(1966, 6, 15)  # 59 on 6 April 2026
 
@@ -179,6 +189,46 @@ def scenarios(draw, sources=("sipp", "isa", "gia", "cash"), investment_income=Tr
     )
 
 
+@st.composite
+def pot_draws(draw):
+    """Pot draws up to £2 million beside modest income, where the top of the
+    sweep matters most."""
+    modest = st.floats(min_value=0.0, max_value=20_000.0).map(
+        lambda value: round(value, 2)
+    )
+    pot = draw(
+        st.floats(min_value=0.0, max_value=2_000_000.0).map(
+            lambda value: round(value, 2)
+        )
+    )
+    # Half take the tax-free cash first, which the general strategy rarely
+    # pairs with a large pot and modest income.
+    cash_first = draw(st.booleans())
+    pattern = "one_off" if cash_first else draw(st.sampled_from(["regular", "one_off"]))
+    fraction = 0.25 if cash_first else draw(st.sampled_from([0.0, 0.25]))
+    return UKDrawdownYearInput(
+        birth_date=draw(st.dates(date(1935, 1, 1), date(1972, 4, 5))),
+        state_pension=draw(modest),
+        other_pension_income=draw(modest),
+        employment_income=draw(modest),
+        savings_interest=draw(modest),
+        dividend_income=draw(modest),
+        sipp_balance=pot,
+        draw_amount=round(pot * draw(st.floats(0.0, 0.5)), 2),
+        sipp_draw_pattern=pattern,
+        sipp_tax_free_fraction=fraction,
+        sipp_tax_free_cash_first=cash_first,
+        lump_sum_allowance_remaining=draw(
+            st.one_of(
+                st.just(LUMP_SUM_ALLOWANCE),
+                st.floats(min_value=0.0, max_value=LUMP_SUM_ALLOWANCE).map(
+                    lambda value: round(value, 2)
+                ),
+            )
+        ),
+    )
+
+
 class TestAccounting:
     @given(scenarios())
     def test_every_row_accounts_for_every_pound(self, inputs):
@@ -224,6 +274,22 @@ class TestAccounting:
         added = sum((b.draw_to - b.draw_from) * b.kept for b in result.bands)
         total = result.sweep[-1].money_to_spend - result.sweep[0].money_to_spend
         assert added == pytest.approx(total, abs=0.1)
+
+    @given(pot_draws())
+    def test_the_sweep_reaches_the_pot_or_the_additional_rate(self, inputs):
+        result = run(inputs)
+        last = result.sweep[-1]
+        other_income = (
+            result.state_pension_paid
+            + inputs.other_pension_income
+            + inputs.employment_income
+            + inputs.savings_interest
+            + inputs.dividend_income
+        )
+        assert (
+            last.draw >= inputs.sipp_balance - 0.005
+            or last.taxable_draw + other_income > ADDITIONAL_RATE_INCOME
+        )
 
     @given(scenarios())
     def test_next_1000_splits_the_pound_and_matches_the_money(self, inputs):
@@ -591,6 +657,20 @@ class TestTaxFreeCashFirst:
         assert result.bands[0].draw_to == 25_000.0
         assert result.bands[0].to_tax == 0.0
         assert result.bands[1].to_tax == pytest.approx(0.2, abs=1e-6)
+
+    def test_the_sweep_passes_the_additional_rate_threshold(self):
+        # Past the tax-free cash every pound is taxable, so the stand-in's 45%
+        # rate starts at a draw of £100,000 + £137,710 - £9,360 = £228,350.
+        result = run(
+            person(
+                sipp_balance=400_000.0,
+                draw_amount=25_000.0,
+                sipp_draw_pattern="one_off",
+                sipp_tax_free_cash_first=True,
+            )
+        )
+        assert result.sweep[-1].draw > 228_350.0
+        assert result.bands[-1].to_tax == pytest.approx(0.45, abs=1e-6)
 
     @given(scenarios(sources=("sipp",)))
     def test_taxable_part_is_what_passes_the_tax_free_cash(self, inputs):
