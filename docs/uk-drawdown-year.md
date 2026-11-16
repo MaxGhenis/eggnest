@@ -153,15 +153,19 @@ them with stand-in rules and Hypothesis:
 - ISA, investment and cash draws leave tax unchanged and never lower Pension
   Credit.
 - Bands run from nothing to the top of the sweep without gaps.
-- On stand-in rules with the real rules' steps, each step in income tax of £1
-  or more, such as where the Personal Savings Allowance falls (ITA 2007
-  s.12B), gets a band one penny wide with `jump` set. No other band charges
-  more than 62p a pound or strays more than £1 from a straight line, so none
-  hides a step.
+- On stand-in rules with the real rules' steps, each fall in the Personal
+  Savings Allowance (ITA 2007 s.12B) gets a band one penny wide with `jump`
+  set, and income tax moves £1 or more across every such band. On the 20
+  examples the tests run, no other band charges more than 62p a pound or
+  strays more than £1 from a straight line, so none hides a step of £2 or
+  more. Where a change of rate sits within a 24th of a grid interval of such
+  a jump, more examples find two exceptions: the change can land up to that
+  24th from its place, and the jump can keep that 24th as its band.
 - Where the Personal Allowance tapers, it rounds up to the pound (s.35(3)), so
   tax rises in 40p steps; the taper's band runs from the last penny before its
-  first step to the penny of its last. A run evaluates the year six times at
-  most.
+  first step to the penny of its last, even where the grid samples each step
+  at the same point (4% or 16% of the draw tax free). A run evaluates the
+  year six times at most.
 - The shared band helpers (`api/tests/test_drawdown_bands.py`) place a jump at
   a change of rate on its penny, and a change of rate alone, on figures
   rounded to the penny, within a cent plus half a penny over the change of
@@ -171,9 +175,10 @@ them with stand-in rules and Hypothesis:
 worked by hand from the legislation, and compares its tax with
 `policyengine-uk-compiled`. The two engines differ where interest straddles the
 higher-rate or additional-rate threshold, and the Axiom result follows
-ITA 2007 s.12B(8). It also holds the reviewers' cases to the penny: the
-Personal Savings Allowance's £100 and £200 jumps, the taper's first and last
-40p steps, and a change of rate beside a jump.
+ITA 2007 s.12B(8). It also checks the reviewers' cases: the Personal Savings
+Allowance's £100 and £200 jumps and the taper's first and last 40p steps to
+the penny, and each change of rate beside a jump within a cent plus half a
+penny over the change of rate.
 
 `app/src/lib/uk-drawdown.test.ts` tests the page's arithmetic with fast-check
 and checks it against runs recorded from the real engine. To refresh those

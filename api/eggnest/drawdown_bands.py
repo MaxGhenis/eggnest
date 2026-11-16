@@ -592,9 +592,11 @@ def _narrow(
     evaluate: Callable[[np.ndarray], np.ndarray],
     rounds: int,
     first: np.ndarray,
+    after_first: Callable[[dict[int, float]], list[_Search]] | None = None,
 ) -> dict[int, float]:
     """Narrow every search to one cent in ``rounds`` calls of ``evaluate``,
     all searches at once, with ``first`` evaluated in the first call.
+    ``after_first`` may then replace the searches, given every value so far.
 
     Each call cuts a search's bracket of n cents into n ** (1 / rounds left)
     pieces, rounded up, so the last call leaves one cent. Returns each value
@@ -628,6 +630,8 @@ def _narrow(
             before = points[inside][~held & (points[inside] < search.high)]
             if len(before):
                 search.low = float(before.max())
+        if left == rounds and after_first is not None:
+            searches = after_first(known)
     return known
 
 
@@ -680,7 +684,10 @@ def pin_changes(
       kink and keeps its edge where the lines cross.
     - Where only one side is straight and the other moves in small steps (the
       tax a whole-pound rounding gives, say), the edge goes on the straight
-      line's last cent, so neither band takes in the other's pounds.
+      line's last cent, so neither band takes in the other's pounds. A side
+      judged straight on the grid stays straight only if its line also holds
+      at every draw the first round evaluates on that side, since a grid can
+      sample such steps at the same point of each.
 
     A located jump with no straight line on either side keeps its piece. An
     edge left within ``min_width`` of a placed one goes, and so does one with
@@ -833,8 +840,91 @@ def pin_changes(
     first = np.concatenate(
         [np.zeros(0) if also is None else np.asarray(also, dtype=float), crossings]
     )
-    known = _narrow(searches, evaluate, rounds, first)
     base = {_cents(d): float(v) for d, v in zip(draws, values, strict=True)}
+
+    def rejudged(known: dict[int, float]) -> list[_Search]:
+        """The searches once each side's line is judged again at the first
+        round's draws too. A grid can sample a series that moves in small
+        steps at the same point of each step, so that it looks straight
+        there; between those draws it strays from the line and comes back.
+        A line the series leaves and then comes back to, within half the
+        tolerance, becomes no line, and the other side's search then looks
+        for where its own line alone stops holding. (Where a jump comes
+        before the lines cross, the left line fails so; the right one alone
+        still finds the jump.)"""
+        every = {**base, **known}
+        cents = np.array(sorted(every))
+        at_all = cents / 100.0
+        value_all = np.array([every[cent] for cent in cents])
+
+        def comes_back(line: Line, points: np.ndarray, at: np.ndarray) -> bool:
+            gap = np.abs(at - line(points))
+            off = gap > tolerance
+            if not off.any():
+                return False
+            return bool(np.any(gap[int(np.argmax(off)) :] <= tolerance / 2))
+
+        for change in changes:
+            if change.from_left is None and change.from_right is None:
+                continue
+            # From the draw furthest from the change that each line was
+            # fitted to, so the series starts on it.
+            low = (
+                float(draws[change.left_near[-2]])
+                if len(change.left_near) > 1
+                else float(draws[0])
+            )
+            high = (
+                float(draws[change.right_near[-2]])
+                if len(change.right_near) > 1
+                else float(draws[-1])
+            )
+            span = (at_all >= low) & (at_all <= high)
+            points, at = at_all[span], value_all[span]
+            left_fails = change.left is not None and comes_back(change.left, points, at)
+            right_fails = change.right is not None and comes_back(
+                change.right, points[::-1], at[::-1]
+            )
+            if not (left_fails or right_fails):
+                continue
+            if left_fails:
+                change.left = None
+            if right_fails:
+                change.right = None
+            change.from_left = change.from_right = None
+            change.crossing = None
+            if change.left is not None and change.right is None:
+                line = change.left
+                start = float(draws[change.left_near[0]])
+                order = np.flatnonzero(at_all >= start)
+                flags = ~on(line, at_all[order], value_all[order])
+                if flags.any() and not flags[0]:
+                    k = int(np.argmax(flags))
+                    change.from_left = _Search(
+                        float(at_all[order[k - 1]]),
+                        float(at_all[order[k]]),
+                        lambda a, v, line=line: ~on(line, a, v),
+                    )
+            elif change.right is not None and change.left is None:
+                line = change.right
+                start = float(draws[change.right_near[0]])
+                order = np.flatnonzero(at_all <= start)[::-1]
+                flags = ~on(line, at_all[order], value_all[order])
+                if flags.any() and not flags[0]:
+                    k = int(np.argmax(flags))
+                    change.from_right = _Search(
+                        float(at_all[order[k]]),
+                        float(at_all[order[k - 1]]),
+                        lambda a, v, line=line: on(line, a, v),
+                    )
+        return [
+            search
+            for change in changes
+            for search in (change.from_left, change.from_right)
+            if search is not None
+        ]
+
+    known = _narrow(searches, evaluate, rounds, first, after_first=rejudged)
 
     def value_at(draw: float) -> float:
         cents = _cents(draw)

@@ -39,12 +39,15 @@ Invariants, for every input:
   stand-in rules (two credit kinks £200 or more apart included).
 - On the stepped stand-in (stand_in_stepped_tax: the Personal Savings
   Allowance of ITA 2007 ss.12A-12B and the allowance rounded up to the pound
-  of s.35(3), in pence), each step in income tax of £1 or more gets a band one
-  penny wide with jump set, and every other band charges 0p to 62p a pound
-  and stays within £1 of the straight line between its ends, so no step hides
-  in it. The taper's band runs from the last penny before its first 40p step
-  to the penny of its last. A run evaluates the year six times at most.
-  test_drawdown_uk_axiom.py holds the reviewers' cases to the penny on the
+  of s.35(3), in pence), each fall in the Personal Savings Allowance gets a
+  band one penny wide with jump set, tax moves £1 or more across every jump
+  band, and every other band charges 0p to 62p a pound and stays within £1
+  of the straight line between its ends, so no step of £2 or more hides in
+  it. That holds on the 20 examples CI runs; with 150, about 4% fail where a
+  change of rate sits within a 24th of a grid interval of a jump (the change
+  lands up to that 24th away, or the jump keeps the 24th as its band). The taper's band runs from the last penny before its first 40p step to
+  the penny of its last, even where the grid samples each step at the same
+  point (4% or 16% tax free). A run evaluates the year six times at most. test_drawdown_uk_axiom.py checks the reviewers' cases on the
   real engine.
 """
 
@@ -1099,20 +1102,27 @@ class TestStepsInIncomeTax:
         ]
 
     @pytest.mark.parametrize(
-        ("state_pension", "first_step", "last_step"),
+        ("state_pension", "tax_free", "first_step", "last_step"),
         [
-            # 0.75 D + State Pension reaches £100,002 (the allowance's first
-            # pound gone) and £125,140 (its last).
-            (12_547.60, 116_605.87, 150_123.20),
-            (9_410.70, 120_788.40, 154_305.74),
+            # (1 - tax free) D + State Pension reaches £100,002 (the
+            # allowance's first pound gone) and £125,140 (its last).
+            (12_547.60, 0.25, 116_605.87, 150_123.20),
+            (9_410.70, 0.25, 120_788.40, 154_305.74),
+            # With 4% or 16% tax free, the grid and its 24ths sample the 40p
+            # steps at the same point of each, so they look straight there.
+            (12_547.60, 0.04, 91_098.34, 117_283.75),
+            (9_410.70, 0.16, 107_846.79, 137_772.98),
         ],
     )
     def test_the_taper_ends_sit_on_its_first_and_last_steps(
-        self, state_pension, first_step, last_step
+        self, state_pension, tax_free, first_step, last_step
     ):
         # R7: a £2 million pot, so a £10,000 grid.
         inputs = person(
-            state_pension=state_pension, sipp_balance=2_000_000.0, draw_amount=10_000.0
+            state_pension=state_pension,
+            sipp_balance=2_000_000.0,
+            draw_amount=10_000.0,
+            sipp_tax_free_fraction=tax_free,
         )
         before, at = _stepped_tax(inputs, [first_step - 0.01, first_step])
         assert at - before == pytest.approx(0.4 + 0.003, abs=0.011)
@@ -1124,13 +1134,20 @@ class TestStepsInIncomeTax:
         assert all(b.draw_to - b.draw_from >= 1_000.0 for b in inside)
         assert not any(b.jump for b in result.bands)
 
-    @given(pot_draws(), st.floats(600.0, 20_000.0).map(lambda value: round(value, 2)))
-    def test_no_band_hides_a_step(self, inputs, interest):
+    @given(
+        pot_draws(),
+        st.floats(600.0, 20_000.0).map(lambda value: round(value, 2)),
+        st.one_of(st.none(), st.floats(0.0, 0.25).map(lambda value: round(value, 2))),
+    )
+    def test_no_band_hides_a_step(self, inputs, interest, tax_free):
         """Every band without ``jump`` stays within £1 of a straight line, so
         no step of £2 or more hides in it, and it charges between 0p and
-        60p a pound; every jump band is one penny across which tax moves £1
+        62p a pound; every jump band is one penny across which tax moves £1
         or more."""
-        inputs = inputs.model_copy(update={"savings_interest": interest})
+        update = {"savings_interest": interest}
+        if tax_free is not None and not inputs.sipp_tax_free_cash_first:
+            update["sipp_tax_free_fraction"] = tax_free
+        inputs = inputs.model_copy(update=update)
         result = run_uk_drawdown_year(inputs, STEPPED)
         for band in result.bands:
             if band.jump:

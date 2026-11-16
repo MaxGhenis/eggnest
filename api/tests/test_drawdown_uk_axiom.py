@@ -435,17 +435,20 @@ class TestStepsInIncomeTax:
         assert near[2][0] == pytest.approx(67_026.6667, abs=0.01 + 0.005 / 0.15)
 
     @pytest.mark.parametrize(
-        ("state_pension", "pot", "first_step", "last_step"),
+        ("state_pension", "pot", "tax_free", "first_step", "last_step"),
         [
-            # R7: the allowance's first pound goes where 0.75 D plus the State
-            # Pension reaches £100,002, its last at £125,140.
-            (12_547.60, 2_000_000.0, 116_605.87, 150_123.20),
-            (9_410.70, 2_000_000.0, 120_788.40, 154_305.74),
-            (0.0, 400_000.0, 133_336.0, 166_853.34),
+            # R7: the allowance's first pound goes where (1 - tax free) D plus
+            # the State Pension reaches £100,002, its last at £125,140.
+            (12_547.60, 2_000_000.0, 0.25, 116_605.87, 150_123.20),
+            (9_410.70, 2_000_000.0, 0.25, 120_788.40, 154_305.74),
+            (0.0, 400_000.0, 0.25, 133_336.0, 166_853.34),
+            # Fractions whose grid samples each 40p step at the same point.
+            (12_547.60, 2_000_000.0, 0.04, 91_098.34, 117_283.75),
+            (9_410.70, 2_000_000.0, 0.16, 107_846.79, 137_772.98),
         ],
     )
     def test_the_taper_band_runs_from_its_first_step_to_its_last(
-        self, state_pension, pot, first_step, last_step
+        self, state_pension, pot, tax_free, first_step, last_step
     ):
         result = run_uk_drawdown_year(
             UKDrawdownYearInput(
@@ -453,6 +456,7 @@ class TestStepsInIncomeTax:
                 state_pension=state_pension,
                 sipp_balance=pot,
                 draw_amount=10_000.0,
+                sipp_tax_free_fraction=tax_free,
             )
         )
         starts = [band.draw_from for band in result.bands]
