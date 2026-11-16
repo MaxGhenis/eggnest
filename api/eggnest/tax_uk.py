@@ -85,6 +85,11 @@ class UKYearResults:
     total_tax: np.ndarray  # income tax + employee NI, £
     income_tax: np.ndarray  # £
     employee_ni: np.ndarray  # £
+    # The part of income_tax charged on non-savings income (employment,
+    # pensions), which sits below savings and dividends (ITA 2007 s.16) and
+    # takes the allowance first (s.25(3A)). None from an engine that doesn't
+    # report income tax by component.
+    non_savings_income_tax: np.ndarray | None = None  # £
 
 
 def _defaults_frame(defaults: dict, n: int) -> dict[str, np.ndarray]:

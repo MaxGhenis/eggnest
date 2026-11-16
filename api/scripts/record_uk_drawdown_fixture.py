@@ -32,6 +32,7 @@ EXAMPLE: dict[str, Any] = {
     "region": "England",
     "tax_year": 2026,
     "state_pension": 9360.0,
+    "state_pension_deferred": False,
     "other_pension_income": 0.0,
     "employment_income": 0.0,
     "savings_interest": 0.0,
@@ -44,6 +45,7 @@ EXAMPLE: dict[str, Any] = {
     "draw_amount": 2500.0,
     "sipp_draw_pattern": "regular",
     "sipp_tax_free_fraction": 0.25,
+    "sipp_tax_free_cash_first": False,
     "lump_sum_allowance_remaining": 268275.0,
     "gilt_yield_percent": 5.25,
     "annuity_income_per_1000": None,
@@ -60,6 +62,30 @@ SCENARIOS: dict[str, dict[str, Any]] = {
         "draw_amount": 15000.0,
     },
     "large_pot": {**EXAMPLE, "sipp_balance": 400000.0, "draw_amount": 30000.0},
+    # State Pension age on 15 November 2026, part way through the year.
+    "reaches_state_pension_age": {
+        **EXAMPLE,
+        "birth_date": "1960-07-15",
+        "state_pension": 12547.6,
+    },
+    # Pension Credit age on Tuesday 30 March 2027: in the tax year, but after
+    # the last counted week starts on 29 March, so no week counts.
+    "pension_credit_age_in_last_days": {**EXAMPLE, "birth_date": "1960-09-30"},
+    # 55 on 10 January 2035, after the tax year: the pot can pay nothing.
+    "locked_pot": {
+        **EXAMPLE,
+        "birth_date": "1980-01-10",
+        "state_pension": 0.0,
+        "draw_amount": 0.0,
+    },
+    "tax_free_cash_first": {
+        **EXAMPLE,
+        "state_pension": 12547.6,
+        "sipp_balance": 100000.0,
+        "draw_amount": 25000.0,
+        "sipp_draw_pattern": "one_off",
+        "sipp_tax_free_cash_first": True,
+    },
 }
 
 

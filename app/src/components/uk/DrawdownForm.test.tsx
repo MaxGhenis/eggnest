@@ -21,7 +21,7 @@ describe("DrawdownForm", () => {
   it("asks how a pension draw comes out only for a pension draw", () => {
     renderForm({ draw_source: "cash" });
     expect(screen.queryByRole("radio", { name: "One-off" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Tax-free share of each withdrawal")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tax-free cash")).not.toBeInTheDocument();
   });
 
   it("explains how DWP treats each kind of withdrawal", () => {
@@ -36,7 +36,42 @@ describe("DrawdownForm", () => {
   it("sends the tax-free share as a number", () => {
     const onChange = renderForm();
     fireEvent.click(screen.getByRole("radio", { name: "None" }));
-    expect(onChange).toHaveBeenCalledWith({ sipp_tax_free_fraction: 0 });
+    expect(onChange).toHaveBeenCalledWith({
+      sipp_tax_free_fraction: 0,
+      sipp_tax_free_cash_first: false,
+    });
+  });
+
+  it("offers tax-free cash first only for a one-off draw", () => {
+    renderForm();
+    expect(screen.queryByRole("radio", { name: "Tax-free cash first" })).not.toBeInTheDocument();
+    const onChange = renderForm({ sipp_draw_pattern: "one_off" });
+    fireEvent.click(screen.getByRole("radio", { name: "Tax-free cash first" }));
+    expect(onChange).toHaveBeenCalledWith({
+      sipp_tax_free_fraction: 0.25,
+      sipp_tax_free_cash_first: true,
+    });
+  });
+
+  it("shows a regular draw a quarter tax free when cash first was chosen for a one-off", () => {
+    renderForm({ sipp_draw_pattern: "regular", sipp_tax_free_cash_first: true });
+    expect(screen.getByRole("radio", { name: "A quarter" })).toBeChecked();
+  });
+
+  it("asks for the State Pension's yearly rate and whether it's deferred", () => {
+    const onChange = renderForm();
+    expect(screen.getByLabelText("State Pension, yearly rate")).toBeInTheDocument();
+    const deferred = screen.getByRole("checkbox", { name: "I’m putting off claiming it" });
+    expect(deferred).toHaveAccessibleDescription(
+      "Pension Credit still counts a State Pension you could claim.",
+    );
+    fireEvent.click(deferred);
+    expect(onChange).toHaveBeenCalledWith({ state_pension_deferred: true });
+  });
+
+  it("asks about deferral only when there is a State Pension", () => {
+    renderForm({ state_pension: 0 });
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
   it("reads amounts typed with pound signs and commas", () => {

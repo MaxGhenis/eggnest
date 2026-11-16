@@ -18,18 +18,24 @@ import {
   describeNextStep,
   describePound,
   emptySourceMessage,
+  failureMessage,
   headline,
   inputProblem,
+  inputsToSend,
   isExamplePerson,
   niceTicks,
   outcomeAt,
   pounds,
   poundsAndPence,
+  potLockedAllYear,
+  reachesPensionCreditAgeAfterTaxYear,
   sliceBetween,
   sourceBalance,
   splitPence,
   withDrawInBounds,
+  withTaxFreeChoiceInBounds,
 } from "./uk-drawdown";
+import { ApiError, NetworkError, SimulationError, TimeoutError } from "./api";
 
 // Invariants these tests hold for every input:
 // - outcomeAt returns a sweep row exactly at its draw and stays between the two
@@ -203,9 +209,9 @@ describe("recorded real-engine runs", () => {
   });
 
   it.each(runs)("%s: the sweep keeps the accounting", (_name, { inputs, envelope }) => {
-    const { sweep } = envelope.outputs.uk_drawdown_year_result;
+    const { sweep, state_pension_paid } = envelope.outputs.uk_drawdown_year_result;
     const income =
-      inputs.state_pension +
+      state_pension_paid +
       inputs.other_pension_income +
       inputs.employment_income +
       inputs.savings_interest +
@@ -223,7 +229,13 @@ describe("recorded real-engine runs", () => {
     expect(outcomeAt(result.sweep, 0)).toEqual(result.with_no_draw);
 
     const next = result.next_1000;
-    expect(next).not.toBeNull();
+    if (next === null) {
+      // A pot locked all year: the API costs only the zero draw, and the page
+      // reads no next step off it either.
+      expect(result.sweep).toHaveLength(1);
+      expect(sliceBetween(result.sweep, chosen.draw, chosen.draw + 1_000)).toBeNull();
+      return;
+    }
     const read = sliceBetween(result.sweep, next!.draw_from, next!.draw_to)!;
     expect(read.kept).toBeCloseTo(next!.kept, 5);
     expect(read.to_tax).toBeCloseTo(next!.to_tax, 5);
@@ -499,13 +511,42 @@ describe("inputProblem", () => {
     [{ birth_date: "1900-01-01" }, "Enter a date of birth for someone aged 18 to 120 on 6 April 2026."],
     [
       { birth_date: "1975-01-01" },
-      "You can’t draw from a pension pot before age 55. Draw from your savings, or set the draw to £0.",
+      "You can’t draw from a pension pot before age 55, and you turn 55 after this tax year ends on 5 April 2027. Draw from your savings, or set the draw to £0.",
+    ],
+    [
+      { birth_date: "1972-04-06" },
+      "You can’t draw from a pension pot before age 55, and you turn 55 after this tax year ends on 5 April 2027. Draw from your savings, or set the draw to £0.",
     ],
     [{ cash_savings: 100_000_001 }, "Enter amounts up to £100 million."],
     [{ gilt_yield_percent: 21 }, "Enter a gilt yield of 20% or less."],
     [{ annuity_income_per_1000: 1_001 }, "Enter annuity income of £1,000 or less per £1,000 of pot."],
   ] as [Partial<UKDrawdownYearInput>, string][])("explains %j", (change, message) => {
     expect(inputProblem({ ...EXAMPLE_INPUTS, ...change })).toBe(message);
+  });
+
+  it("lets someone who turns 55 during the tax year draw from a pot", () => {
+    expect(inputProblem({ ...EXAMPLE_INPUTS, birth_date: "1971-08-01" })).toBeNull();
+    expect(inputProblem({ ...EXAMPLE_INPUTS, birth_date: "1972-04-05" })).toBeNull();
+  });
+
+  it("locks a pot all year for anyone who turns 55 after 5 April 2027", () => {
+    expect(potLockedAllYear({ ...EXAMPLE_INPUTS, birth_date: "1972-04-05" })).toBe(false);
+    expect(potLockedAllYear({ ...EXAMPLE_INPUTS, birth_date: "1972-04-06" })).toBe(true);
+    expect(
+      potLockedAllYear({ ...EXAMPLE_INPUTS, birth_date: "1980-01-10", draw_source: "isa" }),
+    ).toBe(false);
+  });
+
+  it("places a Pension Credit age after 2026/27 only from 6 April 2027", () => {
+    // 30 March to 5 April 2027 is in the tax year, though the API counts no
+    // week from it: the last of its 52 weeks starts on 29 March 2027.
+    expect(reachesPensionCreditAgeAfterTaxYear("2027-03-30")).toBe(false);
+    expect(reachesPensionCreditAgeAfterTaxYear("2027-04-05")).toBe(false);
+    expect(reachesPensionCreditAgeAfterTaxYear("2027-04-06")).toBe(true);
+    const lastDays = recorded.pension_credit_age_in_last_days.envelope.outputs.uk_drawdown_year_result
+      .pension_credit_working;
+    expect(lastDays.eligible_weeks).toBe(0);
+    expect(reachesPensionCreditAgeAfterTaxYear(lastDays.qualifying_date)).toBe(false);
   });
 
   it("lets someone under 55 draw from savings or draw nothing", () => {
@@ -523,5 +564,63 @@ describe("inputProblem", () => {
         annuity_income_per_1000: 1_000,
       }),
     ).toBeNull();
+  });
+});
+
+describe("withTaxFreeChoiceInBounds", () => {
+  const first = {
+    ...EXAMPLE_INPUTS,
+    sipp_draw_pattern: "one_off" as const,
+    sipp_tax_free_cash_first: true,
+  };
+
+  it("keeps tax-free cash first for a one-off pot draw with a quarter tax free", () => {
+    expect(withTaxFreeChoiceInBounds(first)).toBe(first);
+  });
+
+  it.each([
+    [{ sipp_draw_pattern: "regular" }],
+    [{ sipp_tax_free_fraction: 0 }],
+    [{ draw_source: "isa" }],
+  ] as [Partial<UKDrawdownYearInput>][])("turns it off for %j", (change) => {
+    expect(withTaxFreeChoiceInBounds({ ...first, ...change }).sipp_tax_free_cash_first).toBe(false);
+  });
+
+  it("sends only choices the API accepts", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom<DrawSource>("sipp", "isa", "gia", "cash"),
+        fc.constantFrom<"regular" | "one_off">("regular", "one_off"),
+        fc.constantFrom(0, 0.25),
+        fc.boolean(),
+        (draw_source, sipp_draw_pattern, sipp_tax_free_fraction, sipp_tax_free_cash_first) => {
+          const sent = inputsToSend({
+            ...EXAMPLE_INPUTS,
+            draw_source,
+            sipp_draw_pattern,
+            sipp_tax_free_fraction,
+            sipp_tax_free_cash_first,
+          });
+          if (sent.sipp_tax_free_cash_first) {
+            expect(sent.draw_source).toBe("sipp");
+            expect(sent.sipp_draw_pattern).toBe("one_off");
+            expect(sent.sipp_tax_free_fraction).toBe(0.25);
+          }
+        },
+      ),
+    );
+  });
+});
+
+describe("failureMessage", () => {
+  it.each([
+    [new NetworkError("down"), "We couldn’t reach the calculator. Check your connection and try again."],
+    [new TimeoutError("slow"), "The calculator took too long to answer. Try again."],
+    [new ApiError("off", 503), "The calculator isn’t running right now. Try again later."],
+    [new SimulationError("bug", 500), "The calculator couldn’t work out this year. Try again, or change a figure."],
+    [new ApiError("bad", 422), "The calculator couldn’t work out this year. Try again, or change a figure."],
+    [new Error("other"), "We couldn’t work this out. Try again."],
+  ])("words %s", (error, message) => {
+    expect(failureMessage(error)).toBe(message);
   });
 });

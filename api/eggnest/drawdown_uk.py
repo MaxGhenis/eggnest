@@ -9,8 +9,13 @@ encodings (``axiom_uk``). This module decides what each rule is given: which
 money counts as income, which counts as capital, and when. Every such decision
 follows a cited provision:
 
+Income tax and money to spend count the State Pension paid in the tax year:
+the yearly rate for the share of the year from State Pension age, and none
+while it is deferred.
+
 Pension Credit counts, each week (SPC Act 2002 ss.15-16; SI 2002/1792):
-- State Pension in full, claimed or not, from the qualifying age (reg 18(1)).
+- State Pension at its weekly rate in each week from the qualifying age,
+  claimed or deferred (reg 18(1)).
 - Other pension income in full (s.16(1)(f)).
 - Regular withdrawals from a pot in full, tax-free part included (DMG 85456,
   85476). One-off withdrawals count as capital instead (DMG 85457).
@@ -25,6 +30,14 @@ Pension Credit counts, each week (SPC Act 2002 ss.15-16; SI 2002/1792):
 
 Money drawn is taken to be spent evenly through the year, so savings fall week
 by week and each of the 52 weeks is assessed separately.
+
+The weeks run from 6 April, and one counts when it starts on or after the
+qualifying date. That approximates DWP's timing rather than following it: DWP
+pays from the first full benefit week, which turns on the claimant's payday
+(SI 1987/1968 reg 16A), and sets the payday from the NI number for people
+reaching pensionable age from 6 April 2010 (reg 26BA). With the tax year 52
+weeks and a day long, DWP's count can be about a week more or less. Neither
+the payday nor an earlier benefit is an input, so the caveats say so.
 """
 
 from __future__ import annotations
@@ -43,6 +56,7 @@ from .citations import Citation
 from .drawdown_bands import band_breaks, crossing_point  # noqa: F401 (re-exported)
 from .models_uk import UKCitationRef
 from .models_uk_drawdown import (
+    MAX_TAX_FREE_FRACTION,
     UKDrawdownAssumptions,
     UKDrawdownFigure,
     UKDrawdownMarker,
@@ -51,6 +65,8 @@ from .models_uk_drawdown import (
     UKDrawdownSlice,
     UKDrawdownYearInput,
     UKDrawdownYearResult,
+    minimum_pension_age_date,
+    pot_locked_all_year,
 )
 from .state_pension_age import (
     pension_credit_qualifying_date,
@@ -63,9 +79,12 @@ WEEKS_IN_YEAR = 52
 _EARNINGS_DISREGARD_WEEKLY = 5.0  # SI 2002/1792 Sch VI para 5(a)
 _NEXT_DRAW_STEP = 1_000.0
 
-# Sweep range. With a quarter of each draw tax free, drawing £180,000 carries
-# someone with a State Pension past the additional-rate threshold (£125,140),
-# so larger draws add no new tax band.
+# Sweep range. Taxable income past £125,140 pays the additional rate on every
+# further pound and leaves no Personal Allowance (ITA 2007 ss.10(3A), (5A),
+# 35(2)), so larger draws add no new tax band. With at most a quarter of each
+# draw tax free, drawing £180,000 carries anyone past it; with the tax-free
+# cash taken first, every pound beyond the cash is taxable, so £180,000 past
+# the cash does.
 _SWEEP_MIN_TOP = 180_000.0
 _SWEEP_MAX_INTERVALS = 200
 _SWEEP_STEPS = (50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000)
@@ -200,10 +219,39 @@ def _is_one_off_pot_draw(inputs: UKDrawdownYearInput) -> bool:
     return inputs.draw_source == "sipp" and inputs.sipp_draw_pattern == "one_off"
 
 
+def _tax_free_ends(inputs: UKDrawdownYearInput) -> float | None:
+    """The draw at which the tax-free part stops growing, if the pot is drawn."""
+    if inputs.draw_source != "sipp":
+        return None
+    if inputs.sipp_tax_free_cash_first:
+        return min(
+            inputs.sipp_balance * MAX_TAX_FREE_FRACTION,
+            inputs.lump_sum_allowance_remaining,
+        )
+    if inputs.sipp_tax_free_fraction <= 0:
+        return None
+    return inputs.lump_sum_allowance_remaining / inputs.sipp_tax_free_fraction
+
+
 def _sweep_draws(inputs: UKDrawdownYearInput) -> np.ndarray:
-    """A grid of round draw amounts from nothing up to the useful top."""
+    """A grid of round draw amounts from nothing up to the useful top.
+
+    The top reaches past the draw where the tax-free part stops growing, so the
+    last band never stretches a tax-free rate over draws that pay full tax, and
+    past the additional-rate threshold, so the last band's rate holds to the
+    balance.
+    """
+    if pot_locked_all_year(inputs):
+        # The pot can pay nothing this tax year, so no other draw exists.
+        return np.array([0.0])
     balance = _source_balance(inputs)
-    top = min(balance, max(_SWEEP_MIN_TOP, inputs.draw_amount * 1.25))
+    tax_free_ends = _tax_free_ends(inputs)
+    useful = max(_SWEEP_MIN_TOP, inputs.draw_amount * 1.25)
+    if tax_free_ends is not None:
+        useful = max(useful, tax_free_ends * 1.25)
+    if inputs.sipp_tax_free_cash_first and tax_free_ends is not None:
+        useful = max(useful, tax_free_ends + _SWEEP_MIN_TOP)
+    top = min(balance, useful)
     step = next(
         (s for s in _SWEEP_STEPS if top / s <= _SWEEP_MAX_INTERVALS),
         _SWEEP_STEPS[-1],
@@ -212,7 +260,8 @@ def _sweep_draws(inputs: UKDrawdownYearInput) -> np.ndarray:
     fine = np.arange(0.0, _SWEEP_FINE_TOP + _SWEEP_FINE_STEP, _SWEEP_FINE_STEP)
     # The £1 point gives the rate on the very first pounds, so a change of
     # rate inside the first interval can be placed.
-    grid = np.concatenate([coarse, fine, [1.0, top]])
+    exact = [1.0, top] + ([tax_free_ends] if tax_free_ends is not None else [])
+    grid = np.concatenate([coarse, fine, exact])
     return np.unique(grid[grid <= top])
 
 
@@ -240,6 +289,22 @@ class _Evaluated:
     def index_of(self, draw: float) -> int:
         return int(np.argmin(np.abs(self.draws - draw)))
 
+    def merged_with(self, other: _Evaluated) -> _Evaluated:
+        """Both sets of draw amounts, in draw order, each draw once."""
+        draws = np.concatenate([self.draws, other.draws])
+        order = np.argsort(draws, kind="stable")
+        _, first = np.unique(draws[order], return_index=True)
+        keep = order[first]
+
+        def pick(name: str) -> np.ndarray:
+            return np.concatenate([getattr(self, name), getattr(other, name)])[keep]
+
+        return _Evaluated(
+            **{name: pick(name) for name in _PER_DRAW_FIELDS},
+            weekly_minimum_guarantee=self.weekly_minimum_guarantee,
+            pension_credit_citations=self.pension_credit_citations,
+        )
+
     def outcome(self, index: int) -> UKDrawdownOutcome:
         return UKDrawdownOutcome(
             draw=_money(self.draws[index]),
@@ -251,9 +316,42 @@ class _Evaluated:
         )
 
 
+_PER_DRAW_FIELDS = (
+    "draws",
+    "taxable_draw",
+    "income_tax",
+    "employee_ni",
+    "pension_credit",
+    "money_to_spend",
+    "regular_pot_income",
+    "notional_pot_income",
+    "tax_deducted",
+    "deemed_first_week",
+    "deemed_last_week",
+    "capital_first_week",
+    "capital_last_week",
+    "annual_annuity_income",
+)
+
+# Each band edge the grid finds is placed again on this many points across the
+# grid intervals beside it, so a rate change near another one is not averaged
+# across a whole interval.
+_REFINE_POINTS = 24
+
+
 def _money(value: float) -> float:
     # Adding 0.0 turns a rounded -0.0 into 0.0.
     return round(float(value), 2) + 0.0
+
+
+def _tax_on_counted_income(tax: UKYearResults) -> np.ndarray:
+    """Income tax on non-savings income plus NI: what reg 17(10) deducts."""
+    if tax.non_savings_income_tax is None:
+        raise DrawdownEngineUnavailable(
+            "This calculator needs income tax on non-savings income, which "
+            "Pension Credit takes off the income it counts."
+        )
+    return tax.non_savings_income_tax + tax.employee_ni
 
 
 class _Calculation:
@@ -265,39 +363,63 @@ class _Calculation:
         self.tax_year_start = date(inputs.tax_year, 4, 6)
         self.age = age_on(inputs.birth_date, self.tax_year_start)
         self.qualifying_date = pension_credit_qualifying_date(inputs.birth_date)
-        self.annuity_income_per_1000 = (
-            inputs.annuity_income_per_1000
-            if inputs.annuity_income_per_1000 is not None
-            else gad_annuity_income_per_1000(self.age, inputs.gilt_yield_percent)
-        )
+        # Weeks start on 6 April and every 7 days after. In 2026/27 the last
+        # starts on 29 March 2027, so a qualifying date from 30 March to
+        # 5 April 2027 leaves no week counted although it falls in the year.
         self.eligible = np.array(
             [
                 self.tax_year_start + timedelta(days=7 * week) >= self.qualifying_date
                 for week in range(WEEKS_IN_YEAR)
             ]
         )
-        # NI stops on earnings paid after State Pension age (SSCBA 1992 s.6(3)).
+        # Births from 6 December 1953 have one State Pension age for both
+        # sexes; anyone born earlier passed both before 2026/27, so the
+        # female schedule gives everyone's share of the year.
+        self.state_pension_age = state_pension_age_date(inputs.birth_date, "female")
+        # NI stops on earnings paid after State Pension age (SSCBA 1992 s.6(3)),
+        # and State Pension is paid only from that age.
         self.share_over_spa = share_of_period_from(
             self.tax_year_start,
             date(inputs.tax_year + 1, 4, 6),
-            state_pension_age_date(inputs.birth_date, "female"),
+            self.state_pension_age,
         )
+        self.state_pension_paid = (
+            0.0
+            if inputs.state_pension_deferred
+            else inputs.state_pension * self.share_over_spa
+        )
+        # Only Pension Credit uses the annuity rate, so only weeks past the
+        # qualifying age need it. GAD Step B reads the table at the age when
+        # notional income starts (reg 18(2)): the first eligible week.
+        self.annuity_age: int | None = None
+        self.annuity_income_per_1000: float | None = None
+        if self.eligible.any():
+            first_week = int(np.flatnonzero(self.eligible)[0])
+            self.annuity_age = age_on(
+                inputs.birth_date,
+                self.tax_year_start + timedelta(days=7 * first_week),
+            )
+            self.annuity_income_per_1000 = (
+                inputs.annuity_income_per_1000
+                if inputs.annuity_income_per_1000 is not None
+                else gad_annuity_income_per_1000(
+                    self.annuity_age, inputs.gilt_yield_percent
+                )
+            )
+        elif inputs.annuity_income_per_1000 is not None:
+            self.annuity_income_per_1000 = inputs.annuity_income_per_1000
 
-    def _tax(
-        self, taxable_draw: np.ndarray, *, include_investment_income: bool = True
-    ) -> UKYearResults:
+    def _tax(self, taxable_draw: np.ndarray) -> UKYearResults:
         n = len(taxable_draw)
         inputs = self.inputs
-        interest = inputs.savings_interest if include_investment_income else 0.0
-        dividends = inputs.dividend_income if include_investment_income else 0.0
         return self.engines.tax(
             UKYearInputs(
                 age=self.age,
                 year=inputs.tax_year,
-                state_pension=np.full(n, inputs.state_pension),
+                state_pension=np.full(n, self.state_pension_paid),
                 private_pension_income=inputs.other_pension_income + taxable_draw,
-                savings_interest=np.full(n, interest),
-                dividend_income=np.full(n, dividends),
+                savings_interest=np.full(n, inputs.savings_interest),
+                dividend_income=np.full(n, inputs.dividend_income),
                 employment_income=np.full(n, inputs.employment_income),
                 birth_date=inputs.birth_date,
                 share_of_year_over_spa=self.share_over_spa,
@@ -308,9 +430,17 @@ class _Calculation:
         inputs = self.inputs
         if inputs.draw_source != "sipp":
             return np.zeros_like(draws)
-        tax_free = np.minimum(
-            draws * inputs.sipp_tax_free_fraction, inputs.lump_sum_allowance_remaining
-        )
+        if inputs.sipp_tax_free_cash_first:
+            # A pension commencement lump sum: up to a quarter of the pot tax
+            # free, within the Lump Sum Allowance left; what is drawn beyond it
+            # is taxable income (Finance Act 2004 Sch 29 paras 1-3, s.637S).
+            cap = _tax_free_ends(inputs)
+            tax_free = np.minimum(draws, cap if cap is not None else 0.0)
+        else:
+            tax_free = np.minimum(
+                draws * inputs.sipp_tax_free_fraction,
+                inputs.lump_sum_allowance_remaining,
+            )
         return draws - tax_free
 
     def evaluate(self, draws: np.ndarray) -> _Evaluated:
@@ -323,21 +453,27 @@ class _Calculation:
 
         regular = _is_regular_pot_draw(inputs)
         one_off = _is_one_off_pot_draw(inputs)
+        no_draw_tax = self._tax(np.zeros(1)) if one_off else None
 
-        # Reg 17(10) deducts tax on income Pension Credit counts. Interest and
-        # dividends are not counted, and income tax charges them last, so the
-        # tax on counted income is the tax with them removed. A one-off draw
-        # is capital, so its tax comes off the capital, not the income.
-        counted_taxable = taxable if regular else np.zeros(n)
-        if inputs.savings_interest or inputs.dividend_income or not regular:
-            counted = self._tax(counted_taxable, include_investment_income=False)
+        # Reg 17(10) deducts the tax payable on income Pension Credit counts:
+        # the State Pension, other pensions, regular withdrawals and earnings,
+        # all of it non-savings income. Interest and dividends aren't counted
+        # and sit on top of it (ITA 2007 s.16), but they still taper the one
+        # Personal Allowance (s.35(2)), which comes off non-savings income
+        # first (s.25(3A)). So the deduction is the tax the engine charges on
+        # non-savings income in the full calculation, plus NI on earnings.
+        # A one-off draw is capital, so the tax it adds comes off the capital
+        # (DMG 85457) and counted income keeps its tax with no draw. Which of
+        # the two carries tax the draw adds by tapering the allowance has no
+        # statutory order; here the draw carries all of it.
+        if no_draw_tax is not None:
+            tax_deducted = np.full(n, float(_tax_on_counted_income(no_draw_tax)[0]))
         else:
-            counted = tax
-        tax_deducted = counted.income_tax + counted.employee_ni
+            tax_deducted = _tax_on_counted_income(tax)
 
         pot_for_annuity = inputs.sipp_balance - (draws if one_off else np.zeros(n))
         annuity = np.maximum(pot_for_annuity, 0.0) * (
-            self.annuity_income_per_1000 / 1_000.0
+            (self.annuity_income_per_1000 or 0.0) / 1_000.0
         )
         regular_pot_income = draws if regular else np.zeros(n)
         notional = np.maximum(annuity - regular_pot_income, 0.0)
@@ -358,8 +494,7 @@ class _Calculation:
         spent = (np.arange(WEEKS_IN_YEAR) + 0.5) / WEEKS_IN_YEAR
         if inputs.draw_source != "sipp":
             capital = opening_capital - np.outer(draws, spent)
-        elif one_off:
-            no_draw_tax = self._tax(np.zeros(1))
+        elif no_draw_tax is not None:
             tax_on_draw = direct_tax - float(
                 no_draw_tax.income_tax[0] + no_draw_tax.employee_ni[0]
             )
@@ -372,7 +507,7 @@ class _Calculation:
             weekly_income, capital
         )
         money_to_spend = (
-            inputs.state_pension
+            self.state_pension_paid
             + inputs.other_pension_income
             + inputs.employment_income
             + inputs.savings_interest
@@ -453,7 +588,7 @@ def _slice(evaluated: _Evaluated, low: int, high: int) -> UKDrawdownSlice:
 
 
 def band_edges(draws: np.ndarray, tax: np.ndarray, credit: np.ndarray) -> np.ndarray:
-    """Draw amounts, to the penny, where the rate on the next pound changes."""
+    """Draw amounts where the rate on the next pound changes (drawdown_bands)."""
     return drawdown_bands.band_edges(
         draws,
         [(tax, _BAND_TAX_TOLERANCE), (credit, _BAND_CREDIT_TOLERANCE)],
@@ -500,6 +635,29 @@ def _markers(
     return markers
 
 
+def _refinement_draws(draws: np.ndarray, edges: np.ndarray) -> np.ndarray:
+    """Evenly spaced draws across the grid intervals either side of each edge."""
+    points = []
+    for edge in edges[1:-1]:
+        right = int(np.searchsorted(draws, edge, side="right"))
+        low = draws[max(right - 2, 0)]
+        high = draws[min(right + 1, len(draws) - 1)]
+        if high > low:
+            points.append(np.linspace(low, high, 2 * _REFINE_POINTS + 1)[1:-1])
+    if not points:
+        return np.array([], dtype=float)
+    refined = np.unique(np.round(np.concatenate(points), 2))
+    return refined[~np.isin(refined, draws)]
+
+
+def _band_edges_of(evaluated: _Evaluated) -> np.ndarray:
+    return band_edges(
+        evaluated.draws,
+        evaluated.income_tax + evaluated.employee_ni,
+        evaluated.pension_credit,
+    )
+
+
 def _refs(citations: list[Citation]) -> list[UKCitationRef]:
     return [UKCitationRef(id=item.id, url=item.url) for item in citations]
 
@@ -511,24 +669,31 @@ def run_uk_drawdown_year(
     engines = engines or default_engines()
     calculation = _Calculation(inputs, engines)
     balance = _source_balance(inputs)
-    next_draw = min(inputs.draw_amount + _NEXT_DRAW_STEP, balance)
+    next_draw = (
+        inputs.draw_amount
+        if pot_locked_all_year(inputs)
+        else min(inputs.draw_amount + _NEXT_DRAW_STEP, balance)
+    )
 
     grid = np.unique(
         np.concatenate([_sweep_draws(inputs), [0.0, inputs.draw_amount, next_draw]])
     )
     evaluated = calculation.evaluate(grid)
 
+    # Second pass: evaluate finely around each change of rate the grid shows,
+    # then place the edges again on the finer points.
+    refined = _refinement_draws(evaluated.draws, _band_edges_of(evaluated))
+    if refined.size:
+        evaluated = evaluated.merged_with(calculation.evaluate(refined))
+    edge_draws = _band_edges_of(evaluated)
+    missing = edge_draws[~np.isin(edge_draws, evaluated.draws)]
+    if missing.size:
+        evaluated = evaluated.merged_with(calculation.evaluate(missing))
+    edge_index = [evaluated.index_of(edge) for edge in edge_draws]
+
     chosen = evaluated.index_of(inputs.draw_amount)
     upcoming = evaluated.index_of(next_draw)
     no_draw = evaluated.index_of(0.0)
-
-    edges = calculation.evaluate(
-        band_edges(
-            evaluated.draws,
-            evaluated.income_tax + evaluated.employee_ni,
-            evaluated.pension_credit,
-        )
-    )
     tax_citations = _refs(engines.tax_citations(inputs.tax_year))
     has_credit_weeks = bool(calculation.eligible.any())
     credit_citations = _refs(
@@ -539,6 +704,9 @@ def run_uk_drawdown_year(
         draw_source=inputs.draw_source,
         sipp_draw_pattern=inputs.sipp_draw_pattern,
         pot_left=_money(balance - inputs.draw_amount),
+        state_pension_paid=_money(calculation.state_pension_paid),
+        state_pension_age_date=calculation.state_pension_age,
+        minimum_pension_age_date=minimum_pension_age_date(inputs.birth_date),
         income_tax=UKDrawdownFigure(
             amount=_money(evaluated.income_tax[chosen]),
             engine=AXIOM_UK_TAX_ENGINE,
@@ -565,7 +733,7 @@ def run_uk_drawdown_year(
             weekly_minimum_guarantee=evaluated.weekly_minimum_guarantee,
             annual_annuity_income=_money(evaluated.annual_annuity_income[chosen]),
             annuity_income_per_1000=calculation.annuity_income_per_1000,
-            annuity_age=calculation.age,
+            annuity_age=calculation.annuity_age,
             state_pension=_money(inputs.state_pension / WEEKS_IN_YEAR),
             other_pension_income=_money(inputs.other_pension_income / WEEKS_IN_YEAR),
             earnings_counted=_money(
@@ -587,13 +755,17 @@ def run_uk_drawdown_year(
             capital_first_week=_money(evaluated.capital_first_week[chosen]),
             capital_last_week=_money(evaluated.capital_last_week[chosen]),
         ),
-        sweep=[evaluated.outcome(i) for i in range(len(grid))],
-        bands=[_slice(edges, i, i + 1) for i in range(len(edges.draws) - 1)],
+        sweep=[evaluated.outcome(i) for i in range(len(evaluated.draws))],
+        bands=[
+            _slice(evaluated, low, high)
+            for low, high in zip(edge_index[:-1], edge_index[1:], strict=True)
+        ],
         markers=_markers(inputs, evaluated),
         assumptions=UKDrawdownAssumptions(
             tax_free_fraction_applied=(
                 inputs.sipp_tax_free_fraction if inputs.draw_source == "sipp" else 0.0
             ),
+            tax_free_cash_first=inputs.sipp_tax_free_cash_first,
             gilt_yield_percent_used=(
                 None
                 if inputs.annuity_income_per_1000 is not None

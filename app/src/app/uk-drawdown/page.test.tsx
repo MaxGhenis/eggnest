@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import recorded from "../../test/fixtures/uk-drawdown-recorded.json";
 import type { UKDrawdownRun, UKDrawdownYearInput } from "../../lib/api-uk-drawdown";
+import { NetworkError, SimulationError } from "../../lib/api";
 import { runUKDrawdownYear } from "../../lib/api-uk-drawdown";
 import UKDrawdownPage from "./page";
 
@@ -12,9 +13,9 @@ vi.mock("../../lib/api-uk-drawdown", async (importOriginal) => ({
 
 const runMock = vi.mocked(runUKDrawdownYear);
 
-/** A real-engine run recorded for the page's example inputs. */
-function exampleRun(): UKDrawdownRun {
-  const { envelope } = recorded.example;
+/** A real-engine run recorded for the page's example inputs, or another scenario. */
+function exampleRun(name: keyof typeof recorded = "example"): UKDrawdownRun {
+  const { envelope } = recorded[name];
   return {
     result: envelope.outputs.uk_drawdown_year_result as unknown as UKDrawdownRun["result"],
     caveats: envelope.caveats,
@@ -118,7 +119,7 @@ describe("UKDrawdownPage", () => {
     });
     expect(screen.getByText(/These figures describe an example person/)).toBeInTheDocument();
 
-    edit("State Pension", "12547.60");
+    edit("State Pension, yearly rate", "12547.60");
     expect(screen.queryByText(/These figures describe an example person/)).not.toBeInTheDocument();
   });
 
@@ -140,7 +141,9 @@ describe("UKDrawdownPage", () => {
     await openPage();
     runMock.mockClear();
     fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "1975-01-01" } });
-    expect(screen.getByRole("alert")).toHaveTextContent("You can’t draw from a pension pot before age 55.");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "You can’t draw from a pension pot before age 55, and you turn 55 after this tax year ends",
+    );
     await debounceSettles();
     expect(runMock).not.toHaveBeenCalled();
   });
@@ -158,14 +161,32 @@ describe("UKDrawdownPage", () => {
     expect(runMock.mock.calls.map(([inputs]) => inputs.birth_date)).toEqual(["1962-01-01"]);
   });
 
-  it("offers a retry when the API fails", async () => {
-    runMock.mockRejectedValueOnce(new Error("network down"));
+  it("offers a retry when the API can't be reached", async () => {
+    runMock.mockRejectedValueOnce(new NetworkError("network down"));
     render(<UKDrawdownPage />);
     expect(await screen.findByRole("alert", undefined, { timeout: 3_000 })).toHaveTextContent(
-      "We couldn’t work this out. Check your connection and try again.",
+      "We couldn’t reach the calculator. Check your connection and try again.",
     );
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
+  });
+
+  it("words a server error as one, not as a connection problem", async () => {
+    runMock.mockRejectedValueOnce(new SimulationError("engine failed", 500));
+    render(<UKDrawdownPage />);
+    expect(await screen.findByRole("alert", undefined, { timeout: 3_000 })).toHaveTextContent(
+      "The calculator couldn’t work out this year. Try again, or change a figure.",
+    );
+  });
+
+  it("never sends tax-free cash first with a regular draw", async () => {
+    await openPage();
+    fireEvent.click(screen.getByRole("radio", { name: "One-off" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Tax-free cash first" }));
+    await waitFor(() => expect(lastInputs().sipp_tax_free_cash_first).toBe(true));
+    fireEvent.click(screen.getByRole("radio", { name: "Regular" }));
+    await waitFor(() => expect(lastInputs().sipp_draw_pattern).toBe("regular"));
+    expect(lastInputs().sipp_tax_free_cash_first).toBe(false);
   });
 
   it("ignores the result of a superseded request", async () => {
@@ -185,6 +206,51 @@ describe("UKDrawdownPage", () => {
     edit("Earnings", "200");
     await waitFor(() => expect(aborted).toEqual([true]));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("offers no draw from a pot that can't pay out this tax year", async () => {
+    await openPage();
+    runMock.mockImplementation(async () => exampleRun("locked_pot"));
+    edit("Amount to draw in 2026/27", "0");
+    fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "1980-01-10" } });
+    expect(
+      screen.getByText(/your pension pot can’t pay you a pension or lump sum in 2026\/27/),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(lastInputs().birth_date).toBe("1980-01-10"));
+    expect(await screen.findByText(/You turn 55 on 10 January 2035/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/You reach Pension Credit age on 10 January 2048, after this tax year, so you get no Pension Credit in 2026\/27/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Your next/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Draw another/)).not.toBeInTheDocument();
+  });
+
+  it("says a Pension Credit age in the year's last days falls in the year", async () => {
+    // The API counts the 52 weeks from 6 April 2026 that start on or after the
+    // qualifying date; the last starts on 29 March 2027. A qualifying date
+    // from 30 March to 5 April 2027 counts no week but is not after the year.
+    await openPage();
+    runMock.mockImplementation(async () => exampleRun("pension_credit_age_in_last_days"));
+    fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "1960-09-30" } });
+    await waitFor(() => expect(lastInputs().birth_date).toBe("1960-09-30"));
+    expect(
+      await screen.findByText(
+        /You reach Pension Credit age on 30 March 2027, in 2026\/27 but after the last of the 52 weeks we count starts on 29 March 2027/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/DWP may still pay you up to a week’s credit for 2026\/27/)).toBeInTheDocument();
+    expect(screen.queryByText(/after this tax year, so you get no Pension Credit/)).not.toBeInTheDocument();
+  });
+
+  it("says DWP's count of weeks turns on the payday", async () => {
+    await openPage();
+    runMock.mockImplementation(async () => exampleRun("reaches_state_pension_age"));
+    fireEvent.change(screen.getByLabelText("Date of birth"), { target: { value: "1960-07-15" } });
+    await waitFor(() => expect(lastInputs().birth_date).toBe("1960-07-15"));
+    expect(
+      await screen.findByText(/so we count 20 of the year’s 52 weeks\. DWP pays from your first full benefit week, which turns on your payday, so its count can be a week more or less\./),
+    ).toBeInTheDocument();
   });
 
   it("asks for a balance when the chosen source holds nothing", async () => {

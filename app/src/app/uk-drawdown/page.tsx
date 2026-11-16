@@ -19,21 +19,26 @@ import {
 import { citationLabel } from "../../lib/uk-benefits";
 import {
   EXAMPLE_INPUTS,
+  LAST_PENSION_CREDIT_WEEK_STARTS,
+  LOCKED_POT_MESSAGE,
   chartTop,
   comparedWithNoDraw,
   describeNextStep,
   drawStep,
   emptySourceMessage,
+  failureMessage,
   headline,
   inputProblem,
+  inputsToSend,
   isExamplePerson,
   outcomeAt,
   pounds,
   poundsAndPence,
+  potLockedAllYear,
+  reachesPensionCreditAgeAfterTaxYear,
   sliceBetween,
   sourceBalance,
   splitPence,
-  withDrawInBounds,
 } from "../../lib/uk-drawdown";
 
 const NEXT_STEP = 1_000;
@@ -116,18 +121,28 @@ function YearLedger({
   );
 }
 
-function PensionCreditWorking({ run }: { run: UKDrawdownRun }) {
+function PensionCreditWorking({ run, deferred }: { run: UKDrawdownRun; deferred: boolean }) {
   const working = run.result.pension_credit_working;
   if (working.status === "under_qualifying_age") {
+    if (reachesPensionCreditAgeAfterTaxYear(working.qualifying_date)) {
+      return (
+        <p>
+          You reach Pension Credit age on {longDate(working.qualifying_date)}, after this tax year, so
+          you get no Pension Credit in {run.result.tax_year_label}.
+        </p>
+      );
+    }
     return (
       <p>
-        You reach Pension Credit age on {longDate(working.qualifying_date)}, after this tax year, so
-        you get no Pension Credit in {run.result.tax_year_label}.
+        You reach Pension Credit age on {longDate(working.qualifying_date)}, in{" "}
+        {run.result.tax_year_label} but after the last of the 52 weeks we count starts on{" "}
+        {longDate(LAST_PENSION_CREDIT_WEEK_STARTS)}, so we count no Pension Credit. Depending on your
+        payday, DWP may still pay you up to a week’s credit for {run.result.tax_year_label}.
       </p>
     );
   }
   const rows: [string, number][] = [
-    ["State Pension", working.state_pension],
+    [deferred ? "State Pension you could claim" : "State Pension", working.state_pension],
     ["Other pensions and annuities", working.other_pension_income],
     ["Earnings above £5 a week", working.earnings_counted],
     ["Regular withdrawals from your pot", working.regular_pot_income],
@@ -140,7 +155,8 @@ function PensionCreditWorking({ run }: { run: UKDrawdownRun }) {
       {working.eligible_weeks < 52 && (
         <p className="mb-3">
           You reach Pension Credit age on {longDate(working.qualifying_date)}, so we count{" "}
-          {working.eligible_weeks} of the year’s 52 weeks.
+          {working.eligible_weeks} of the year’s 52 weeks. DWP pays from your first full benefit
+          week, which turns on your payday, so its count can be a week more or less.
         </p>
       )}
       <table className="w-full max-w-md border-collapse tabular-nums">
@@ -187,7 +203,7 @@ function PensionCreditWorking({ run }: { run: UKDrawdownRun }) {
           </tr>
         </tbody>
       </table>
-      {run.result.pension_credit_working.annual_annuity_income > 0 && (
+      {working.annual_annuity_income > 0 && working.annuity_income_per_1000 !== null && (
         <p className="mt-3">
           DWP assumes an untouched pot pays the annuity it could buy. For your pot that comes to{" "}
           {pounds(working.annual_annuity_income)} a year,{" "}
@@ -283,18 +299,22 @@ function Results({
   onDraw: (draw: number) => void;
 }) {
   const { result } = run;
+  // Checked on the inputs, so a dimmed earlier result never offers a draw.
+  const locked = potLockedAllYear(inputs);
   const balance = sourceBalance(inputs);
   const sweepTop = result.sweep[result.sweep.length - 1].draw;
   const top = chartTop(sweepTop, balance, inputs.draw_amount);
   const chosen = outcomeAt(result.sweep, inputs.draw_amount);
   const none = result.with_no_draw;
-  const next = sliceBetween(
-    result.sweep,
-    inputs.draw_amount,
-    Math.min(inputs.draw_amount + NEXT_STEP, balance),
-  );
+  const next = locked
+    ? null
+    : sliceBetween(
+        result.sweep,
+        inputs.draw_amount,
+        Math.min(inputs.draw_amount + NEXT_STEP, balance),
+      );
   const income =
-    inputs.state_pension +
+    result.state_pension_paid +
     inputs.other_pension_income +
     inputs.employment_income +
     inputs.savings_interest +
@@ -332,7 +352,9 @@ function Results({
         </a>
       </section>
 
-      {balance > 0 ? (
+      {locked ? (
+        <p className="text-lg">{LOCKED_POT_MESSAGE}</p>
+      ) : balance > 0 ? (
         <div>
           <DrawdownCurve
             sweep={result.sweep}
@@ -374,7 +396,7 @@ function Results({
         )}
       </section>
 
-      {result.bands.length > 0 && (
+      {!locked && result.bands.length > 0 && (
         <PoundLadder bands={result.bands} draw={inputs.draw_amount} balance={balance} />
       )}
 
@@ -383,7 +405,7 @@ function Results({
           What DWP counts each week
         </h2>
         <div className="mt-3">
-          <PensionCreditWorking run={run} />
+          <PensionCreditWorking run={run} deferred={inputs.state_pension_deferred} />
         </div>
       </section>
 
@@ -444,7 +466,7 @@ export default function UKDrawdownPage() {
   const [failure, setFailure] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
-  const inputs = useMemo(() => withDrawInBounds(form), [form]);
+  const inputs = useMemo(() => inputsToSend(form), [form]);
   const problem = inputProblem(inputs);
   const key = JSON.stringify(inputs);
   const baseKey = JSON.stringify({ ...inputs, draw_amount: 0 });
@@ -459,10 +481,8 @@ export default function UKDrawdownPage() {
         setRun({ baseKey: JSON.stringify({ ...sent, draw_amount: 0 }), data });
         setFailure(null);
       })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setFailure("We couldn’t work this out. Check your connection and try again.");
-        }
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setFailure(failureMessage(error));
       });
     return () => controller.abort();
   }, [debouncedKey, key, problem, attempt]);

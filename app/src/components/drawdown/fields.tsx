@@ -104,7 +104,7 @@ export function Choice<T extends string | number>({
   hint?: string;
   name: string;
   value: T;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; wide?: boolean }[];
   onChange: (value: T) => void;
 }) {
   const id = useId();
@@ -113,7 +113,10 @@ export function Choice<T extends string | number>({
       <legend className="font-medium">{legend}</legend>
       <div className="mt-1 grid grid-cols-2 gap-1.5">
         {options.map((option) => (
-          <label key={String(option.value)} className="cursor-pointer">
+          <label
+            key={String(option.value)}
+            className={`cursor-pointer ${option.wide ? "col-span-2" : ""}`}
+          >
             <input
               type="radio"
               className="peer sr-only"
@@ -133,6 +136,40 @@ export function Choice<T extends string | number>({
         </p>
       )}
     </fieldset>
+  );
+}
+
+export function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-start gap-2">
+      <input
+        id={id}
+        type="checkbox"
+        className="mt-1 size-4 accent-[var(--color-primary-dark)]"
+        checked={checked}
+        aria-describedby={hint ? hintId(id) : undefined}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <div>
+        <label htmlFor={id}>{label}</label>
+        {hint && (
+          <p id={hintId(id)} className="text-sm text-[var(--color-text-muted)]">
+            {hint}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 

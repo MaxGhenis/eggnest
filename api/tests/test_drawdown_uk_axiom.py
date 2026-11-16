@@ -162,6 +162,170 @@ class TestScenariosByHand:
         assert younger.employee_ni.amount > 0.0
 
 
+class TestReviewCounterexamples:
+    """Inputs from the 2026-11-11 review, by hand from the statutory rates."""
+
+    # State Pension age 15 November 2026 (Pensions Act 2014 s.26): 142 of the
+    # year's 365 days, and the 20 weeks that start on or after it.
+    REACHES_SPA_IN_YEAR = date(1960, 7, 15)
+
+    def test_full_state_pension_from_november_leaves_no_credit(self):
+        # £12,547.60 a year is £241.30 a week, over the £238 minimum guarantee
+        # in every eligible week (reg 17(1) weekly amounts).
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=self.REACHES_SPA_IN_YEAR, state_pension=12_547.60
+            )
+        )
+        paid = 12_547.60 * 142 / 365
+        assert result.state_pension_paid == pytest.approx(paid, abs=0.01)
+        assert result.pension_credit_working.eligible_weeks == 20
+        assert result.pension_credit.amount == 0.0
+        assert result.income_tax.amount == 0.0
+        assert result.money_to_spend == pytest.approx(paid, abs=0.01)
+
+    def test_lower_state_pension_from_november_earns_credit_in_20_weeks(self):
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=self.REACHES_SPA_IN_YEAR, state_pension=9_360.0
+            )
+        )
+        assert result.pension_credit.amount == pytest.approx(20 * 58.0, abs=0.01)
+
+    def test_deferred_state_pension_still_counts_for_credit(self):
+        claimed = run_uk_drawdown_year(
+            UKDrawdownYearInput(birth_date=BORN, state_pension=9_360.0)
+        )
+        deferred = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN, state_pension=9_360.0, state_pension_deferred=True
+            )
+        )
+        assert claimed.pension_credit.amount == pytest.approx(52 * 58.0, abs=0.01)
+        assert deferred.pension_credit.amount == claimed.pension_credit.amount
+        assert deferred.money_to_spend == pytest.approx(52 * 58.0, abs=0.01)
+
+    def test_tax_free_cash_first_pays_no_tax_on_a_quarter_of_the_pot(self):
+        # uk-law-5: £25,000 of a £100,000 pot as a pension commencement lump
+        # sum is tax free; £12,547.60 of State Pension sits under the allowance.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=date(1956, 1, 10),
+                state_pension=12_547.60,
+                sipp_balance=100_000.0,
+                draw_amount=25_000.0,
+                sipp_draw_pattern="one_off",
+                sipp_tax_free_cash_first=True,
+            )
+        )
+        assert result.income_tax.amount == 0.0
+        assert result.money_to_spend == pytest.approx(37_547.60, abs=0.01)
+
+    def test_two_credit_kinks_276_apart(self):
+        # uk-law-3: aged 90 (GAD £155 per £1,000), so £3,100 of annuity
+        # income; credit of £276 runs out at £3,376; tax from £4,760.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=date(1936, 1, 10),
+                state_pension=9_000.0,
+                sipp_balance=20_000.0,
+            )
+        )
+        edges = [band.draw_to for band in result.bands]
+        assert edges == pytest.approx([3_100.0, 3_376.0, 4_760.0, 20_000.0], abs=2.0)
+        assert result.bands[1].to_pension_credit == pytest.approx(1.0, abs=0.01)
+
+
+class TestIndependentReviewCounterexamples:
+    """Inputs from the 2026-11-16 independent review, by hand from the law."""
+
+    def test_cash_first_sweep_passes_the_additional_rate_threshold(self):
+        # R1: £100,000 of tax-free cash comes first, then every pound drawn is
+        # taxable. With £12,547.60 of State Pension, the allowance tapers from
+        # a draw of £187,452.40, where adjusted net income passes £100,000
+        # (ITA 2007 s.35(2)), and the additional rate starts at £212,592.40,
+        # where it passes £125,140 (s.10(3A), (5A)).
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_547.60,
+                sipp_balance=400_000.0,
+                draw_amount=25_000.0,
+                sipp_draw_pattern="one_off",
+                sipp_tax_free_cash_first=True,
+            )
+        )
+        assert result.at_chosen_draw.income_tax == 0.0
+        assert result.sweep[-1].draw > 212_592.40
+        rates = [round(band.to_tax, 2) for band in result.bands]
+        assert rates == [0.0, 0.2, 0.4, 0.6, 0.45]
+        assert result.bands[-1].to_tax == pytest.approx(0.45, abs=1e-6)
+        # Within £5: the £2 bound on edges is fixed with the shared band code.
+        starts = dict(zip(rates, (b.draw_from for b in result.bands), strict=True))
+        assert starts[0.6] == pytest.approx(187_452.40, abs=5.0)
+        assert starts[0.45] == pytest.approx(212_592.40, abs=5.0)
+
+    @pytest.mark.parametrize("investment", ["savings_interest", "dividend_income"])
+    def test_tax_off_counted_income_keeps_the_tapered_allowance(self, investment):
+        # R2: £90,000 of interest or dividends takes adjusted net income to
+        # £102,000, so the allowance is £11,570 (ITA 2007 s.35(2)). It comes
+        # off the State Pension first (s.25(3A)), leaving £430 taxed at 20%:
+        # £86 of tax on income Pension Credit counts (SI 2002/1792 reg
+        # 17(10)). Savings and dividends sit on top (s.16), so none of that
+        # £86 is theirs. Credit: £238 x 52 - (£12,000 - £86) = £462.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_000.0,
+                draw_source="cash",
+                draw_amount=0.0,
+                **{investment: 90_000.0},
+            )
+        )
+        assert result.pension_credit_working.tax_deducted == pytest.approx(
+            86.0 / 52, abs=0.01
+        )
+        assert result.pension_credit.amount == pytest.approx(462.0, abs=0.01)
+
+    def test_interest_below_the_taper_leaves_counted_income_untaxed(self):
+        # £88,000 takes adjusted net income to exactly £100,000: no taper, and
+        # the £12,570 allowance covers the State Pension. Tax on the interest:
+        # £5,500 at nil (s.12 starting rate, s.12B allowance), £32,200 at 20%
+        # and £49,730 at 40%.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_000.0,
+                savings_interest=88_000.0,
+                draw_source="cash",
+                draw_amount=0.0,
+            )
+        )
+        assert result.income_tax.amount == pytest.approx(26_332.0, abs=0.01)
+        assert result.pension_credit_working.tax_deducted == 0.0
+        assert result.pension_credit.amount == pytest.approx(376.0, abs=0.01)
+
+    def test_one_off_draw_keeps_the_tapered_allowance_on_counted_income(self):
+        # The same £86 on the State Pension. The one-off draw is capital, so
+        # its own tax comes off the capital, not the income (DMG 85457); the
+        # £500 left in the pot yields £40 a year at £80 per £1,000.
+        # Credit: £12,376 - (£12,000 - £86) - £40 = £422.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_000.0,
+                savings_interest=90_000.0,
+                sipp_balance=1_000.0,
+                draw_amount=500.0,
+                sipp_draw_pattern="one_off",
+            )
+        )
+        assert result.pension_credit_working.tax_deducted == pytest.approx(
+            86.0 / 52, abs=0.01
+        )
+        assert result.pension_credit.amount == pytest.approx(422.0, abs=0.01)
+
+
 class TestEnvelope:
     def test_citations_come_from_the_engine_traces(self):
         inputs = UKDrawdownYearInput(
@@ -294,9 +458,6 @@ class TestFrontendFixture:
             assert saved["inputs"] == run["inputs"], name
             fresh = run["envelope"]["outputs"]["uk_drawdown_year_result"]
             old = saved["envelope"]["outputs"]["uk_drawdown_year_result"]
-            for field in ("sweep", "at_chosen_draw", "with_no_draw", "markers"):
-                assert fresh[field] == old[field], f"{name}: {field}"
-            assert [b["draw_from"] for b in fresh["bands"]] == [
-                b["draw_from"] for b in old["bands"]
-            ], name
+            for field in sorted(set(fresh) | set(old)):
+                assert fresh.get(field) == old.get(field), f"{name}: {field}"
             assert run["envelope"]["caveats"] == saved["envelope"]["caveats"], name
