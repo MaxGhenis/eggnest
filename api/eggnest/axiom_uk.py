@@ -669,6 +669,7 @@ def calculate_uk_tax_axiom(inputs: UKYearInputs) -> UKYearResults:
         total_tax=total_tax,
         income_tax=income_tax,
         employee_ni=national_insurance,
+        non_savings_income_tax=non_savings_tax,
     )
 
 

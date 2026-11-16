@@ -332,6 +332,16 @@ def _money(value: float) -> float:
     return round(float(value), 2) + 0.0
 
 
+def _tax_on_counted_income(tax: UKYearResults) -> np.ndarray:
+    """Income tax on non-savings income plus NI: what reg 17(10) deducts."""
+    if tax.non_savings_income_tax is None:
+        raise DrawdownEngineUnavailable(
+            "This calculator needs income tax on non-savings income, which "
+            "Pension Credit takes off the income it counts."
+        )
+    return tax.non_savings_income_tax + tax.employee_ni
+
+
 class _Calculation:
     """One person's year, ready to evaluate at any set of draw amounts."""
 
@@ -384,21 +394,17 @@ class _Calculation:
         elif inputs.annuity_income_per_1000 is not None:
             self.annuity_income_per_1000 = inputs.annuity_income_per_1000
 
-    def _tax(
-        self, taxable_draw: np.ndarray, *, include_investment_income: bool = True
-    ) -> UKYearResults:
+    def _tax(self, taxable_draw: np.ndarray) -> UKYearResults:
         n = len(taxable_draw)
         inputs = self.inputs
-        interest = inputs.savings_interest if include_investment_income else 0.0
-        dividends = inputs.dividend_income if include_investment_income else 0.0
         return self.engines.tax(
             UKYearInputs(
                 age=self.age,
                 year=inputs.tax_year,
                 state_pension=np.full(n, self.state_pension_paid),
                 private_pension_income=inputs.other_pension_income + taxable_draw,
-                savings_interest=np.full(n, interest),
-                dividend_income=np.full(n, dividends),
+                savings_interest=np.full(n, inputs.savings_interest),
+                dividend_income=np.full(n, inputs.dividend_income),
                 employment_income=np.full(n, inputs.employment_income),
                 birth_date=inputs.birth_date,
                 share_of_year_over_spa=self.share_over_spa,
@@ -432,17 +438,23 @@ class _Calculation:
 
         regular = _is_regular_pot_draw(inputs)
         one_off = _is_one_off_pot_draw(inputs)
+        no_draw_tax = self._tax(np.zeros(1)) if one_off else None
 
-        # Reg 17(10) deducts tax on income Pension Credit counts. Interest and
-        # dividends are not counted, and income tax charges them last, so the
-        # tax on counted income is the tax with them removed. A one-off draw
-        # is capital, so its tax comes off the capital, not the income.
-        counted_taxable = taxable if regular else np.zeros(n)
-        if inputs.savings_interest or inputs.dividend_income or not regular:
-            counted = self._tax(counted_taxable, include_investment_income=False)
+        # Reg 17(10) deducts the tax payable on income Pension Credit counts:
+        # the State Pension, other pensions, regular withdrawals and earnings,
+        # all of it non-savings income. Interest and dividends aren't counted
+        # and sit on top of it (ITA 2007 s.16), but they still taper the one
+        # Personal Allowance (s.35(2)), which comes off non-savings income
+        # first (s.25(3A)). So the deduction is the tax the engine charges on
+        # non-savings income in the full calculation, plus NI on earnings.
+        # A one-off draw is capital, so the tax it adds comes off the capital
+        # (DMG 85457) and counted income keeps its tax with no draw. Which of
+        # the two carries tax the draw adds by tapering the allowance has no
+        # statutory order; here the draw carries all of it.
+        if no_draw_tax is not None:
+            tax_deducted = np.full(n, float(_tax_on_counted_income(no_draw_tax)[0]))
         else:
-            counted = tax
-        tax_deducted = counted.income_tax + counted.employee_ni
+            tax_deducted = _tax_on_counted_income(tax)
 
         pot_for_annuity = inputs.sipp_balance - (draws if one_off else np.zeros(n))
         annuity = np.maximum(pot_for_annuity, 0.0) * (
@@ -467,8 +479,7 @@ class _Calculation:
         spent = (np.arange(WEEKS_IN_YEAR) + 0.5) / WEEKS_IN_YEAR
         if inputs.draw_source != "sipp":
             capital = opening_capital - np.outer(draws, spent)
-        elif one_off:
-            no_draw_tax = self._tax(np.zeros(1))
+        elif no_draw_tax is not None:
             tax_on_draw = direct_tax - float(
                 no_draw_tax.income_tax[0] + no_draw_tax.employee_ni[0]
             )

@@ -19,6 +19,10 @@ Invariants, for every input:
   (ITA 2007 ss.10(3A), (5A), 35(2)), tax-free cash taken first included.
 - 0 <= Pension Credit <= eligible weeks x minimum guarantee; tax >= 0;
   taxable part of the draw <= draw.
+- Pension Credit takes off the engine's tax on non-savings income plus NI
+  (reg 17(10)), never more than the year's tax. Interest and dividends sit on
+  top (ITA 2007 s.16) but taper the allowance (s.35(2)), so on the real rules
+  they can raise it (test_drawdown_uk_axiom.py); these stand-ins don't taper.
 - Regular pot draws: tax never falls as the draw rises. Pension Credit never
   falls below its no-draw level up to the pot's annuity income, and never
   rises beyond it. Without interest or dividends, money to spend never falls.
@@ -86,21 +90,26 @@ PAST_QUALIFYING_AGE = date(1958, 6, 15)  # 67 on 6 April 2026
 UNDER_QUALIFYING_AGE = date(1966, 6, 15)  # 59 on 6 April 2026
 
 
-def stand_in_tax(inputs: UKYearInputs) -> UKYearResults:
-    """Banded tax in the shape of the real rules; not the real rules."""
-    income = (
-        inputs.state_pension
-        + inputs.private_pension_income
-        + inputs.employment_income
-        + inputs.savings_interest
-        + inputs.dividend_income
-    )
+def stand_in_band_tax(income: np.ndarray) -> np.ndarray:
     taxable = np.maximum(income - 12_570.0, 0.0)
-    income_tax = (
+    return (
         0.20 * np.minimum(taxable, 37_700.0)
         + 0.40 * np.clip(taxable - 37_700.0, 0.0, 87_440.0)
         + 0.45 * np.maximum(taxable - 125_140.0, 0.0)
     )
+
+
+def stand_in_tax(inputs: UKYearInputs) -> UKYearResults:
+    """Banded tax in the shape of the real rules; not the real rules.
+
+    No allowance taper, so savings and dividends on top leave the tax on
+    non-savings income as it would be without them.
+    """
+    non_savings = (
+        inputs.state_pension + inputs.private_pension_income + inputs.employment_income
+    )
+    income = non_savings + inputs.savings_interest + inputs.dividend_income
+    income_tax = stand_in_band_tax(income)
     share_under_spa = 1.0 - (inputs.share_of_year_over_spa or 0.0)
     ni = 0.08 * np.maximum(inputs.employment_income - 12_570.0, 0.0) * share_under_spa
     return UKYearResults(
@@ -108,6 +117,7 @@ def stand_in_tax(inputs: UKYearInputs) -> UKYearResults:
         total_tax=income_tax + ni,
         income_tax=income_tax,
         employee_ni=ni,
+        non_savings_income_tax=stand_in_band_tax(non_savings),
     )
 
 
@@ -369,9 +379,9 @@ class TestRegularPotDraws:
         above = [r.pension_credit for r in result.sweep if r.draw >= annuity]
         assert all(b <= a + 0.01 for a, b in zip(above, above[1:], strict=False))
 
-    # Interest and dividends sit outside the Pension Credit test, so tax they
-    # cause isn't deducted from counted income. With them, money to spend can
-    # dip while credit tapers; that violation is intended.
+    # Interest and dividends sit outside the Pension Credit test, so tax
+    # charged on them isn't deducted from counted income. With them, money to
+    # spend can dip while credit tapers; that violation is intended.
     @given(regular_inputs(investment_income=False))
     def test_money_never_falls_without_investment_income(self, inputs):
         money = [r.money_to_spend for r in run(inputs).sweep]
@@ -494,6 +504,29 @@ class TestPensionCreditCounting:
             == plain.pension_credit_working.tax_deducted
         )
         assert investing.income_tax.amount > plain.income_tax.amount
+
+    @given(scenarios())
+    def test_tax_deducted_never_exceeds_the_tax_charged(self, inputs):
+        # Reg 17(10) takes off tax payable on counted income, part of the
+        # year's tax; a penny a week of rounding aside.
+        result = run(inputs)
+        deducted = result.pension_credit_working.tax_deducted * 52
+        charged = result.income_tax.amount + result.employee_ni.amount
+        assert deducted <= charged + 0.27
+
+    def test_an_engine_without_non_savings_tax_is_refused(self):
+        def total_only(inputs: UKYearInputs) -> UKYearResults:
+            tax = stand_in_tax(inputs)
+            tax.non_savings_income_tax = None
+            return tax
+
+        engines = DrawdownEngines(
+            tax=total_only,
+            pension_credit=stand_in_credit,
+            tax_citations=STAND_INS.tax_citations,
+        )
+        with pytest.raises(DrawdownEngineUnavailable, match="non-savings"):
+            run_uk_drawdown_year(person(), engines)
 
     def test_earnings_count_after_the_five_pound_disregard(self):
         working = run(person(employment_income=5_200.0)).pension_credit_working

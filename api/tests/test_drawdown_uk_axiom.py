@@ -265,6 +265,66 @@ class TestIndependentReviewCounterexamples:
         assert starts[0.6] == pytest.approx(187_452.40, abs=5.0)
         assert starts[0.45] == pytest.approx(212_592.40, abs=5.0)
 
+    @pytest.mark.parametrize("investment", ["savings_interest", "dividend_income"])
+    def test_tax_off_counted_income_keeps_the_tapered_allowance(self, investment):
+        # R2: £90,000 of interest or dividends takes adjusted net income to
+        # £102,000, so the allowance is £11,570 (ITA 2007 s.35(2)). It comes
+        # off the State Pension first (s.25(3A)), leaving £430 taxed at 20%:
+        # £86 of tax on income Pension Credit counts (SI 2002/1792 reg
+        # 17(10)). Savings and dividends sit on top (s.16), so none of that
+        # £86 is theirs. Credit: £238 x 52 - (£12,000 - £86) = £462.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_000.0,
+                draw_source="cash",
+                draw_amount=0.0,
+                **{investment: 90_000.0},
+            )
+        )
+        assert result.pension_credit_working.tax_deducted == pytest.approx(
+            86.0 / 52, abs=0.01
+        )
+        assert result.pension_credit.amount == pytest.approx(462.0, abs=0.01)
+
+    def test_interest_below_the_taper_leaves_counted_income_untaxed(self):
+        # £88,000 takes adjusted net income to exactly £100,000: no taper, and
+        # the £12,570 allowance covers the State Pension. Tax on the interest:
+        # £5,500 at nil (s.12 starting rate, s.12B allowance), £32,200 at 20%
+        # and £49,730 at 40%.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_000.0,
+                savings_interest=88_000.0,
+                draw_source="cash",
+                draw_amount=0.0,
+            )
+        )
+        assert result.income_tax.amount == pytest.approx(26_332.0, abs=0.01)
+        assert result.pension_credit_working.tax_deducted == 0.0
+        assert result.pension_credit.amount == pytest.approx(376.0, abs=0.01)
+
+    def test_one_off_draw_keeps_the_tapered_allowance_on_counted_income(self):
+        # The same £86 on the State Pension. The one-off draw is capital, so
+        # its own tax comes off the capital, not the income (DMG 85457); the
+        # £500 left in the pot yields £40 a year at £80 per £1,000.
+        # Credit: £12,376 - (£12,000 - £86) - £40 = £422.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=12_000.0,
+                savings_interest=90_000.0,
+                sipp_balance=1_000.0,
+                draw_amount=500.0,
+                sipp_draw_pattern="one_off",
+            )
+        )
+        assert result.pension_credit_working.tax_deducted == pytest.approx(
+            86.0 / 52, abs=0.01
+        )
+        assert result.pension_credit.amount == pytest.approx(422.0, abs=0.01)
+
 
 class TestEnvelope:
     def test_citations_come_from_the_engine_traces(self):

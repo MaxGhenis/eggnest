@@ -61,7 +61,7 @@ Pension Credit assesses each of the 52 weeks separately:
 | One-off withdrawals from a pot | As capital, and DWP values what's left again | DMG 85457-85458 |
 | An undrawn pot | The annuity it could buy at the age of the first eligible week, less regular withdrawals | Reg 18(2)-(3); DMG 85460 |
 | Earnings | Above £5 a week | Sch VI para 5(a) |
-| Tax on counted income | Taken off that income | Reg 17(10) |
+| Tax on counted income | Taken off that income: income tax on non-savings income, with whatever allowance interest and dividends leave, and NI; a one-off draw's tax comes off the capital instead | Reg 17(10); ITA 2007 ss.16, 25(3A), 35(2) |
 | Savings over £10,000 | £1 a week per £500 or part, at full value (DWP takes 10% off shares; the calculator doesn't) | Regs 15(6), 19 |
 | Actual interest and dividends | Not counted | Sch IV para 18 |
 | The pot itself | Not capital | Sch V para 22 |
