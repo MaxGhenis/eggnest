@@ -156,7 +156,9 @@ def _assumptions(
             "the income the household enters plus the draw, less taxes before "
             "refundable credits, plus benefits and refundable credits; it equals "
             "PolicyEngine-US household_net_income plus the part of the draw that "
-            "isn't income, without health benefits or costs"
+            "isn't income, without health benefits or costs, except on Wisconsin's "
+            "retirement income exclusion path, where it exceeds that by the tax "
+            "the path saves"
         ),
         "savings_tested": (
             "balances on January 1, 2026; retirement accounts count toward "

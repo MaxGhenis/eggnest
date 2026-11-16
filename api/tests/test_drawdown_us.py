@@ -1086,6 +1086,17 @@ def test_state_tax_cites_the_variable_it_comes_from(state, draw, variable, statu
     )) is statute
 
 
+def test_the_money_to_spend_definition_names_the_wisconsin_exception():
+    """household_net_income nets the usual state tax, so on Wisconsin's
+    exclusion path money to spend exceeds it by the tax the path saves."""
+    inputs = _inputs()
+    envelope = build_us_drawdown_year_result(
+        build_us_drawdown_year_scenario(inputs), inputs, _run(inputs)
+    )
+    definition = envelope.assumptions["money_to_spend_definition"]
+    assert "Wisconsin's retirement income exclusion path" in definition
+
+
 def test_caveats_follow_the_inputs():
     plain = caveats_for(_inputs(), _run(_inputs()))
     assert not [c for c in plain if "Roth" in c]
