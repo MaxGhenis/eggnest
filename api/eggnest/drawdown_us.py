@@ -22,6 +22,7 @@ balances on January 1, 2026, the figures SSI, Medicaid and SNAP test against.
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol
@@ -590,6 +591,29 @@ def _required_minimum(
     )
 
 
+def _medicare_points(first: _Evaluated, lines: list[float]) -> np.ndarray:
+    """Draws at which the first run's Medicare income reaches each line, and
+    halfway between neighbouring lines, as straight lines between its points
+    place them.
+
+    The second run samples them, so no interval of the sweep spans two lines
+    and each marker carries its own line's step. Without them two lines can
+    share a grid interval, between steps on either side that make the
+    surcharge rise like a ramp, which the jump test rightly passes over.
+    """
+    income = first.medicare_income
+    draws = first.draws
+    targets = [*lines, *((low + high) / 2 for low, high in itertools.pairwise(lines))]
+    points = []
+    for target in targets:
+        crossed = np.flatnonzero((income[:-1] < target) & (income[1:] >= target))
+        if crossed.size:
+            i = int(crossed[0])
+            share = (target - income[i]) / (income[i + 1] - income[i])
+            points.append(draws[i] + share * (draws[i + 1] - draws[i]))
+    return np.array(points, dtype=float)
+
+
 def _markers(
     inputs: USDrawdownYearInput,
     merged: _Evaluated,
@@ -680,8 +704,11 @@ def run_us_drawdown_year(
     first = first_run.evaluated
     edges = band_edges(first)
     cliffs = cliff_intervals(first)
+    medicare_points = _medicare_points(first, first_run.medicare_lines)
     second = _evaluate(
-        engine, inputs, np.concatenate([edges, _refinement(cliffs)])
+        engine,
+        inputs,
+        np.concatenate([edges, _refinement(cliffs), medicare_points]),
     ).evaluated
     merged = first.merge(second)
 

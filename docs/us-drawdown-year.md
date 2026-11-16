@@ -196,7 +196,10 @@ and leaves it out of taxes and money to spend.
   a Medicare Savings Program ends (`coverage_ends`), where 2026 income crosses a
   Medicare line and the 2028 premium steps up (`medicare_surcharge_step`), and
   where a traditional draw covers its owner's required minimum
-  (`required_minimum_reached`).
+  (`required_minimum_reached`). The second run also evaluates the draws where
+  the grid puts Medicare income at each line and halfway between neighbouring
+  lines, so no interval of the sweep spans two lines and each
+  `medicare_surcharge_step` carries its own line's step.
 - `medicare_surcharge`: the lines for this filing status, the year they come
   from, the number of people on Medicare, and the yearly surcharge at the chosen
   draw and at none.
@@ -247,6 +250,9 @@ rules put them:
   draw, the owner's other traditional withdrawals and Roth conversion come out
   of the same balance first.
 - Every marker lies inside the sweep.
+- Each Medicare marker sits where Medicare income reaches its line and carries
+  that line's step alone, so the steps add up to the surcharge at the top of
+  the sweep.
 - The same inputs give the same result.
 - On piecewise-linear series whose kinks sit apart, the search for jumps never
   takes a change of rate for one. It finds any jump of $30 or more, and any two

@@ -23,6 +23,9 @@ Invariants held for every input:
   traditional draw that is the owner's balance less their other traditional
   withdrawals and Roth conversion, which come out of the same accounts.
 - Every marker lies inside the sweep.
+- Each Medicare marker sits where Medicare income reaches its line and
+  carries that line's step alone, so the steps add up to the surcharge at the
+  top of the sweep (tested on a stand-in with Medicare's five lines).
 - The same inputs give the same result.
 
 And for the test that tells jumps from changes of rate, on any continuous
@@ -34,6 +37,7 @@ piecewise-linear series whose kinks sit apart and away from the ends:
 
 from __future__ import annotations
 
+import itertools
 import numpy as np
 import pytest
 from hypothesis import assume, given
@@ -596,28 +600,105 @@ def test_medicare_steps_sit_where_income_crosses_each_line():
     assert surcharge.with_no_draw == 0.0
 
 
-def test_each_medicare_step_carries_its_own_amount():
-    """A $7,001 pension and no Social Security make Medicare income the draw
-    plus $7,001, so it crosses $109,001 at a draw of $102,000 and $137,001 at
-    $130,000. A $12 million balance puts both in one $50,000 grid interval;
-    each marker still sits at its own line with its own step, and the steps
-    add up to the surcharge."""
+# Medicare's five 2026 lines for a single filer, and the Part B plus Part D
+# amount a month above each, from PolicyEngine-US's IRMAA tables.
+CMS_LINES = (109_001.0, 137_001.0, 171_001.0, 205_001.0, 500_000.0)
+CMS_MONTHLY = (0.0, 95.7, 240.4, 385.0, 529.6, 578.0)
+
+
+class FiveLineEngine(StandInEngine):
+    """The stand-in with Medicare's five lines. Two of them, $34,000 of income
+    apart, can fall in one $50,000 interval of the sweep, between steps at the
+    lines on either side that make the surcharge rise much like a ramp."""
+
+    def evaluate(self, inputs: USDrawdownYearInput, draws: np.ndarray) -> USYearArrays:
+        arrays = super().evaluate(inputs, draws)
+        scale = 2.0 if inputs.spouse is not None else 1.0
+        lines = np.array(CMS_LINES) * scale
+        tier = np.searchsorted(lines, arrays.medicare_income, side="right")
+        arrays.later_medicare_surcharge = (
+            12.0 * np.array(CMS_MONTHLY)[tier] * arrays.people_on_medicare
+        )
+        arrays.medicare_lines = [float(line) for line in lines]
+        return arrays
+
+
+def _medicare_steps(result) -> list[tuple[float, float]]:
+    return [
+        (marker.draw, marker.amount)
+        for marker in result.markers
+        if marker.kind == "medicare_surcharge_step"
+    ]
+
+
+def test_two_medicare_lines_in_one_interval_keep_their_own_steps():
+    """A $20,000 pension makes Medicare income the draw plus $20,000, so it
+    crosses $171,001 at a draw of $151,001 and $205,001 at $185,001, both in
+    the sweep's interval from $150,000 to $200,000. Each marker carries its
+    own line's step, $1,735.20 a year, not the two together."""
     inputs = _inputs(
         you={
-            "birth_year": 1955,
-            "pension_income": 7_001.0,
+            "birth_year": 1950,
+            "pension_income": 20_000.0,
             "traditional_balance": 12_000_000.0,
         },
         draw_amount=10_000_000.0,
     )
-    result = _run(inputs)
-    steps = [m for m in result.markers if m.kind == "medicare_surcharge_step"]
-    assert [m.draw for m in steps] == pytest.approx([102_000.0, 130_000.0], abs=0.01)
-    assert [m.amount for m in steps] == pytest.approx(
-        [PART_B_STEPS[0] + PART_D_STEPS[0], PART_B_STEPS[1] + PART_D_STEPS[1]]
+    result = run_us_drawdown_year(inputs, FiveLineEngine())
+    expected = [12.0 * (high - low) for low, high in itertools.pairwise(CMS_MONTHLY)]
+    steps = _medicare_steps(result)
+    assert [draw for draw, _ in steps] == pytest.approx(
+        [line - 20_000.0 for line in CMS_LINES], abs=0.01
     )
-    assert sum(m.amount for m in steps) == pytest.approx(
+    assert [amount for _, amount in steps] == pytest.approx(expected)
+    assert sum(amount for _, amount in steps) == pytest.approx(
         result.medicare_surcharge.at_chosen_draw
+    )
+
+
+@given(
+    pension=st.floats(0.0, 60_000.0),
+    social_security=st.sampled_from([0.0, 30_000.0, 60_000.0]),
+    joint=st.booleans(),
+    balance=st.sampled_from([1_000_000.0, 4_000_000.0, 12_000_000.0, 30_000_000.0]),
+)
+def test_each_medicare_marker_carries_its_own_lines_step(
+    pension, social_security, joint, balance
+):
+    """However the lines fall in the sweep, each marker sits where Medicare
+    income reaches its line and carries that line's step alone, so the steps
+    add up to the surcharge at the top of the sweep."""
+    person = {
+        "birth_year": 1952,
+        "social_security": social_security,
+        "pension_income": pension,
+        "traditional_balance": balance,
+    }
+    joint_fields = (
+        {"filing_status": "married_filing_jointly", "spouse": {"birth_year": 1953}}
+        if joint
+        else {}
+    )
+    inputs = _inputs(you=person, draw_amount=balance, **joint_fields)
+    engine = FiveLineEngine()
+    result = run_us_drawdown_year(inputs, engine)
+    scale = 2.0 if joint else 1.0
+    people = 2 if joint else 1
+    lines = [line * scale for line in CMS_LINES]
+    no_draw = result.with_no_draw.medicare_income
+    top = result.sweep[-1].medicare_income
+    crossed = [i for i, line in enumerate(lines) if no_draw < line <= top]
+    steps = _medicare_steps(result)
+    assert [amount for _, amount in steps] == pytest.approx(
+        [12.0 * people * (CMS_MONTHLY[i + 1] - CMS_MONTHLY[i]) for i in crossed]
+    )
+    incomes = engine.evaluate(inputs, np.array([draw for draw, _ in steps]))
+    assert incomes.medicare_income == pytest.approx(
+        [lines[i] for i in crossed], abs=1.0
+    )
+    assert sum(amount for _, amount in steps) == pytest.approx(
+        result.sweep[-1].later_medicare_surcharge
+        - result.with_no_draw.later_medicare_surcharge
     )
 
 
