@@ -2,7 +2,7 @@
 name = "eggnest-docs"
 version = "0.1.0"
 description = "EggNest methodology paper dependencies"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "matplotlib>=3.7",
     "numpy>=1.24",
