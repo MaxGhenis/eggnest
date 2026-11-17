@@ -42,7 +42,12 @@ For a whole run, on a stand-in whose benefit is such a series in the draw
 grid intervals apart:
 
 - Changes of rate alone give no jump band, and each change of 5 cents a
-  dollar or more lands on a band edge within $1.
+  dollar or more lands on a band edge within $1 plus $1 divided by the change
+  ($3.50 for 40 cents, $21 for 5 cents). An edge goes to an evaluated draw
+  within $1 of where the lines on either side cross, and a change too small
+  for the bands to notice can tilt one of those lines, but they cross close
+  enough that the band's line misses the series at the change by less than
+  $1.
 - A jump of $30 or more gets the one jump band, holding it and no wider than
   1/24 of its grid interval, wherever it sits; within 1/12 of an interval of
   a kink it must exceed $25 plus the kink's change of rate times 1/24 of the
@@ -827,19 +832,71 @@ def _rate_change_near(kinks, rates, draw: float, reach: float) -> float:
     )
 
 
+def _assert_changes_land_on_edges(kinks, rates, result) -> None:
+    """No jump band, and each change of 5 cents a dollar or more has a band
+    edge within $1 plus $1 divided by the change: an edge goes to an evaluated
+    draw within $1 of where the lines on either side cross, and they cross
+    close enough that the band's line misses the series at the change by
+    less than $1."""
+    assert not any(band.jump for band in result.bands)
+    edges = np.array([band.draw_from for band in result.bands])
+    for kink, before, after in zip(kinks, rates, rates[1:], strict=False):
+        change = abs(after - before)
+        if change >= 0.05:
+            assert np.min(np.abs(edges - kink)) <= 1.0 + 1.0 / change, kink
+
+
 @given(kinked_benefit())
 def test_a_run_takes_no_change_of_rate_for_a_jump(rules):
     """Over the whole run, with its closer looks inside intervals, changes of
     rate alone give no jump band, and each change of 5 cents a dollar or more
-    lands on an edge within $1. (A smaller one can stay within the $15 a
-    benefit's line may stray before the bands notice it.)"""
+    lands on an edge within $1 plus $1 divided by the change. (A smaller one
+    can stay within the $15 a benefit's line may stray before the bands notice
+    it, and can tilt the line beside a larger one.)"""
     kinks, rates = rules
     result = _function_run(FunctionEngine(programs={"ssi": _piecewise(kinks, rates)}))
-    assert not any(band.jump for band in result.bands)
-    edges = np.array([band.draw_from for band in result.bands])
-    for kink, before, after in zip(kinks, rates, rates[1:], strict=False):
-        if abs(after - before) >= 0.05:
-            assert np.min(np.abs(edges - kink)) <= 1.0, kink
+    _assert_changes_land_on_edges(kinks, rates, result)
+
+
+@pytest.mark.parametrize(
+    ("kinks", "rates", "kink"),
+    [
+        pytest.param(
+            [6_062.5, 7_367.19, 11_367.19, 29_867.19, 40_117.19],
+            [0.0, 0.40625, 0.00390625, 0.0, 1.0, 0.0],
+            7_367.19,
+            id="edge-moves-to-a-draw",
+        ),
+        pytest.param(
+            [11_000.0, 16_500.0, 17_880.0, 20_360.0],
+            [0.0, 0.10, 0.11, 0.20, 0.0],
+            17_880.0,
+            id="small-change-tilts-a-line",
+        ),
+    ],
+)
+def test_a_change_of_rate_lands_within_its_dollar_and_stray(kinks, rates, kink):
+    """us-edge, from test_a_run_takes_no_change_of_rate_for_a_jump under the
+    thorough profile (seed 11). Each change lands on an edge within $1 of where
+    the lines on either side cross, which strays less than $1 from the series.
+
+    - A benefit rises 40.6 cents a dollar to 7,367.19, then 0.4 cents to
+      11,367.19, then not at all. The lines cross at 7,367.25, but the first
+      run's edge at 7,368.24 was evaluated, within $1, so the edge goes there
+      with no third run: $1.05 from the change, which the band's line misses
+      by 42 cents.
+    - A benefit rises 10 cents a dollar from 11,000, 11 cents from 16,500 and
+      20 cents from 17,880. The 1-cent change stays within the $15 a benefit's
+      line may stray, so the line before 17,880 runs from 11,000 at 10.2 cents
+      and crosses the next at 17,878.74: $1.26 from the change, missed by 11
+      cents.
+    """
+    result = _function_run(FunctionEngine(programs={"ssi": _piecewise(kinks, rates)}))
+    _assert_changes_land_on_edges(kinks, rates, result)
+    edge = _edge_near(result, kink)
+    change = rates[kinks.index(kink) + 1] - rates[kinks.index(kink)]
+    assert abs(edge - kink) * abs(change) < 1.0
+    assert edge in {row.draw for row in result.sweep}
 
 
 @given(kinked_benefit(), st.data(), st.floats(5.0, 2_000.0), st.booleans())

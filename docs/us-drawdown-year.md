@@ -256,10 +256,11 @@ and leaves it out of taxes and money to spend.
   rate changing, and each where a benefit reaches zero. A jump that shares an
   interval with a change of rate, or ends a phase-out, shows only on that
   closer look. Band edges then come from every draw evaluated, with each
-  located jump cut out so no line runs through it, and an edge that lands more
-  than $1 from every draw evaluated gets a third run. A band with `jump` set is
-  the 1/24 of an interval that holds a jump; its rates spread the jump over
-  that width. Between that band's two rows the page reads the line on the
+  located jump cut out so no line runs through it. An edge that lands more
+  than $1 from every draw evaluated gets a third run, and one closer moves to
+  the nearest, so each band's rates come from the engine. A band with `jump`
+  set is the 1/24 of an interval that holds a jump; its rates spread the jump
+  over that width. Between that band's two rows the page reads the line on the
   nearer row's side of the jump, not a line through it, and dims its figures
   until the API answers for the draw, since the jump may fall either side. It
   dims them too for a draw past the sweep's top.
@@ -332,10 +333,14 @@ rules put them:
   and any two side by side of $60 or more.
 - Over a whole run on such a series in the draw, changes of rate alone give no
   jump band, and each change of 5 cents a dollar or more lands on a band edge
-  within $1. A jump of $30 or more gets the one jump band, no wider than 1/24
-  of its grid interval, wherever it sits, unless it lies within 1/12 of an
-  interval of a change of rate and is no larger than $25 plus that change times
-  1/24 of the interval. The reviewers' cases also hold: a change of rate keeps
+  within $1 plus $1 divided by the change ($3.50 for 40 cents, $21 for 5
+  cents). The edge moves up to $1 to an evaluated draw, and a change too small
+  for the bands to notice can tilt the line beside a larger one, but the
+  band's line still misses the series at the larger change by less than $1. A
+  jump of $30 or more gets the one jump band, no wider than 1/24 of its grid
+  interval, wherever it sits, unless it lies within 1/12 of an interval of a
+  change of rate and is no larger than $25 plus that change times 1/24 of the
+  interval. The reviewers' cases also hold: a change of rate keeps
   its own edge beside a jump or a change of coverage, kinks a $50,000 grid
   can't separate get their own edges, and a cliff where a phase-out ends gets
   its jump band.

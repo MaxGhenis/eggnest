@@ -17,12 +17,15 @@ hold a jump or a change of coverage, that holds a change of rate, or where a
 benefit reaches zero, and evaluates where the first run placed each change of
 rate. Band edges then come from all those points, with each located jump cut
 out so no line runs through it. An edge that lands more than $1 from every
-evaluated draw gets a third run. On the stand-in rules of
-``tests/test_drawdown_us.py``, which are piecewise linear, each change of rate
-of 5 cents a dollar or more then lands on an edge within $1, and a jump of $30
-or more gets a band 1/24 of its grid interval wide, unless it sits within
-1/12 of an interval of a change of rate and is no larger than $25 plus that
-change times 1/24 of the interval.
+evaluated draw gets a third run; one closer moves to the nearest. On the
+stand-in rules of ``tests/test_drawdown_us.py``, which are piecewise linear,
+each change of rate of 5 cents a dollar or more then lands on an edge within
+$1 plus $1 divided by the change: a change too small for the bands to notice
+can tilt the line beside a larger one, but the band's line still misses the
+series at the larger change by less than $1. A jump of $30 or more gets a
+band 1/24 of its grid interval wide, unless it sits within 1/12 of an
+interval of a change of rate and is no larger than $25 plus that change
+times 1/24 of the interval.
 
 It counts each draw as spent through the year and holds savings at their
 balances on January 1, 2026, the figures SSI, Medicaid and SNAP test against.
