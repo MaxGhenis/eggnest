@@ -105,12 +105,17 @@ carries the table, and `api/scripts/build_gad_drawdown_factors.py` rebuilds it.
 - `bands`: the ranges of draw where each extra pound splits the same way. A
   second run cuts into 24 pieces each grid interval that may hold a jump in
   income tax, the intervals around each change of rate and those where Pension
-  Credit reaches zero. Up to three more runs then place each change in income
-  tax to the penny, and one more runs only where a band's tax still strays
-  more than £1 from straight. A band with `jump` set is the one penny where
-  income tax jumps, as where a draw takes income into the higher or additional
-  rate and the Personal Savings Allowance falls to £500 or to nothing
-  (ITA 2007 s.12B); its rates spread the jump over that penny.
+  Credit reaches zero. A change of rate a piece or two from a jump leaves
+  pieces between them that look like jumps too, so where a jump has fewer
+  than five draws on either side before the next change, one more run cuts
+  the pieces from the jump to just past that change into up to 24, none
+  narrower than £5, and looks for the jumps again. Up to three more runs then
+  place each change in income tax to the penny, and one more runs only where
+  a band's tax still strays more than £1 from straight: seven runs at most. A
+  band with `jump` set is the one penny where income tax jumps, as where a
+  draw takes income into the higher or additional rate and the Personal
+  Savings Allowance falls to £500 or to nothing (ITA 2007 s.12B); its rates
+  spread the jump over that penny.
 - `state_pension_paid`, `state_pension_age_date` and
   `minimum_pension_age_date`: the State Pension counted for tax, and the days
   behind it and behind a pot draw.
@@ -156,21 +161,26 @@ them with stand-in rules and Hypothesis:
 - Bands run from nothing to the top of the sweep without gaps.
 - On stand-in rules with the real rules' steps, each fall in the Personal
   Savings Allowance (ITA 2007 s.12B) gets a band one penny wide with `jump`
-  set, and income tax moves £1 or more across every such band. On the 20
-  examples the tests run, no other band charges more than 62p a pound or
-  strays more than £1 from a straight line, so none hides a step of £2 or
-  more. Where a change of rate sits within a 24th of a grid interval of such
-  a jump, more examples find two exceptions: the change can land up to that
-  24th from its place, and the jump can keep that 24th as its band.
+  set, and income tax moves £1 or more across every such band. No other band
+  charges more than 62p a pound or strays more than £1 from a straight line,
+  so none hides a step of £2 or more, including where a change of rate sits
+  within a 24th of a grid interval of the jump. The tests check this on 20
+  examples; with `HYPOTHESIS_PROFILE=thorough` it held on 150 (two seeds)
+  and on 500. They draw £600 to £20,000 of interest, so each jump is £20 or
+  more and the next change of rate £100 or more of taxable income past it. A
+  jump under £5 can go unfound, since a piece of draw must move £5 beyond
+  its neighbours' rates to count as one: at the higher rate that is under
+  £525 of interest.
 - Where the Personal Allowance tapers, it rounds up to the pound (s.35(3)), so
   tax rises in 40p steps; the taper's band runs from the last penny before its
   first step to the penny of its last, even where the grid samples each step
   at the same point (4% or 16% of the draw tax free). A run evaluates the
-  year six times at most.
+  year seven times at most.
 - The shared band helpers (`api/tests/test_drawdown_bands.py`) place a jump at
   a change of rate on its penny, and a change of rate alone, on figures
   rounded to the penny, within a cent plus half a penny over the change of
-  rate.
+  rate. A jump a 24th of a grid interval from a change of rate keeps its
+  penny once its pieces are cut finer, and the change gets its own edge.
 
 `api/tests/test_drawdown_uk_axiom.py` runs the real engine against scenarios
 worked by hand from the legislation, and compares its tax with
