@@ -30,8 +30,8 @@ It decides what each PolicyEngine-US input holds (``build_situation``):
   (brokerage and cash balances) sit with the first person. Most programs that
   test savings add up the couple's or household's, but two PolicyEngine-US
   tests read each person's own figure: Colorado's Old Age Pension
-  (``co_oap_eligible``), which so can pay a spouse whose own figure is under
-  the couple limit when the couple's together is not, and Maryland's Public
+  (``co_oap_eligible``), which can then pay a spouse whose own figure falls
+  under the couple limit when the couple's together exceeds it, and Maryland's Public
   Assistance to Adults (``md_paa_eligible``), which applies only in a care
   facility.
 
