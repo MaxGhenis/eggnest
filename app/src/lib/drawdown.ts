@@ -69,9 +69,9 @@ const STEADY_CENTS = 100;
  * the jump: the nearer row, carried to the draw at the rate of a line beside
  * the jump. Each side's line runs from the row beside the jump out to the
  * first row a dollar or more away, over rows outside any jump, or to the
- * farthest where none is that far: the API brackets a change of rate with
- * rows a cent apart and rounds each figure to the cent, so a line through
- * two such rows can put a rate up to a dollar a dollar out. The
+ * farthest where none is that far: the API can hold rows a cent apart
+ * beside a change of rate and rounds each figure to the cent, so a line
+ * through two such rows can put a rate up to a dollar a dollar out. The
  * nearer row's side serves where its line spans a dollar; else the other
  * side's where that does (at either end of the sweep, or beside another
  * jump), so the read still sits no further than half the band from one of

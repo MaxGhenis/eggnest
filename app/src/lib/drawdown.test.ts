@@ -394,12 +394,13 @@ describe("rowAt", () => {
   });
 
   it("reads a recorded run's cent pair as part of the dollar beyond it", () => {
-    // P3-a: the couple's rows at $74,750 and $74,750.01 bracket a change of
-    // rate to the cent, and on both the engine's figures, rounded to the
-    // cent, give federal tax of $9,944 and Medicare income of $150,000. No
-    // recorded jump sits beside such a pair, so this marks the interval above
-    // it as one. Carried at the pair's rate, a draw of $74,755 read the same
-    // $9,944 and $150,000, though the draw had moved $4.99.
+    // P3-a: the couple's band edge at $74,750.01, where federal tax goes
+    // from 27c to 30c a dollar, sits a cent from its grid row at $74,750,
+    // and on both the engine's figures, rounded to the cent, give federal
+    // tax of $9,944 and Medicare income of $150,000. No recorded jump sits
+    // beside such a pair, so this marks the interval above it as one.
+    // Carried at the pair's rate, a draw of $74,755 read the same $9,944 and
+    // $150,000, though the draw had moved $4.99.
     const { sweep } = usRecorded.couple.envelope.outputs.us_drawdown_year_result;
     const i = sweep.findIndex((row) => row.draw === 74_750.01);
     const [before, left, right, after] = sweep.slice(i - 2, i + 2);
