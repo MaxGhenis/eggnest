@@ -617,6 +617,7 @@ class TestFrontendFixture:
                 UKDrawdownYearInput(**{**saved["inputs"], "draw_amount": probe["draw"]})
             )
             assert json.loads(result.at_chosen_draw.model_dump_json()) == probe, name
+            assert probe["draw"] in {row.draw for row in result.sweep}, name
             assert probe["draw"] not in {
                 row["draw"]
                 for row in saved["envelope"]["outputs"]["uk_drawdown_year_result"][

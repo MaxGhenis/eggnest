@@ -14,6 +14,14 @@ function headlineAt(draw: number) {
   return `Draw ${wholeDollars(draw)} from your traditional IRA in 2026 and you’ll have ${wholeDollars(row.money_to_spend)} to spend.`;
 }
 
+/**
+ * The headline on show. A hidden status line repeats the API's answer for
+ * screen readers, so a bare text match can find two elements.
+ */
+function shown(page: Page, text: string) {
+  return page.getByText(text).and(page.locator(":not([role=status])"));
+}
+
 /** Serves the run recorded from the real engine and fails on console errors. */
 async function openPage(page: Page) {
   const errors: string[] = [];
@@ -22,7 +30,7 @@ async function openPage(page: Page) {
   });
   await page.route("**/core/simulate", (route) => route.fulfill({ json: envelope }));
   await page.goto("/us-drawdown");
-  await expect(page.getByText(headlineAt(30_000))).toBeVisible();
+  await expect(shown(page, headlineAt(30_000))).toBeVisible();
   return errors;
 }
 
@@ -60,7 +68,7 @@ test("dragging across the curve sets the draw", async ({ page }) => {
   // Halfway across a curve that runs to $100,000, to the nearest step.
   expect(draw).toBeGreaterThan(45_000);
   expect(draw).toBeLessThan(55_000);
-  await expect(page.getByText(`Draw ${wholeDollars(draw)} from your traditional IRA`)).toBeVisible();
+  await expect(shown(page, `Draw ${wholeDollars(draw)} from your traditional IRA`)).toBeVisible();
   await page.mouse.up();
 });
 

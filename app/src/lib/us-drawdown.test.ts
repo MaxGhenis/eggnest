@@ -71,9 +71,10 @@ import {
 // directly; on recorded real-engine runs the two agree at the API's rows. The
 // recorder also asked PolicyEngine-US for the year at draws between rows
 // ("probes"), where the page reads a straight line (uk-page-10). There each
-// figure is within 2.5 cents of the engine's, except benefits and other taxes,
-// which the engine gives in whole dollars, so they move in steps no band
-// marks and the line misses by at most half the step between the two rows.
+// figure is within 2.5 cents of the engine's, except benefits, which the
+// engine gives in whole dollars, and other taxes, which move in whole-dollar
+// steps over part of their range. Those steps get no band, so there the line
+// misses by at most half the step between the two rows.
 // Between the rows of a band the API marks as a jump, the engine's figures lie
 // on one side's line and the page shows the nearer side's (us-page-2).
 

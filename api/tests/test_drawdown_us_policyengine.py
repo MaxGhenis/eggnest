@@ -727,3 +727,6 @@ class TestFrontendFixture:
             USDrawdownYearInput(**{**saved["inputs"], "draw_amount": probe["draw"]})
         )
         assert json.loads(fresh.at_chosen_draw.model_dump_json()) == probe
+        # The page dims a draw between a jump's rows until the API answers; the
+        # answer holds a row at that draw, so the page stops dimming.
+        assert probe["draw"] in {row.draw for row in fresh.sweep}
