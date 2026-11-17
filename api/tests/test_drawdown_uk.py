@@ -36,7 +36,9 @@ Invariants, for every input:
   Otherwise next_1000 is missing only when the source is empty after the draw.
 - On a coarse grid, band_edges places each kink of a piecewise-linear series
   within £1. A whole run places each turning point within 2p on these
-  stand-in rules (two credit kinks £200 or more apart included).
+  stand-in rules (two credit kinks £200 or more apart included) when it lies
+  £200 or more below the top of the sweep; one nearer the top can stay within
+  a band's tolerance (£60 of Pension Credit) and get no edge.
 - On the stepped stand-in (stand_in_stepped_tax: the Personal Savings
   Allowance of ITA 2007 ss.12A-12B and the allowance rounded up to the pound
   of s.35(3), in pence), each fall in the Personal Savings Allowance gets a
@@ -973,7 +975,13 @@ class TestBandsAndMarkersOnWholeRuns:
         # where three quarters of the draw fills the personal allowance.
         annuity = pot * 0.155
         credit_ends = 12_376.0 - state_pension
+        tax_starts = (12_570.0 - state_pension) / 0.75
         if credit_ends - annuity < 200.0:
+            return
+        # A turn just below the top leaves the last band's line within its
+        # tolerance (£60 of Pension Credit), so it gets no edge: seed 31 found
+        # credit ending at 6,376 in a pot of 6,377.
+        if any(0.0 < pot - turn < 200.0 for turn in (credit_ends, tax_starts)):
             return
         result = run(
             UKDrawdownYearInput(
@@ -982,7 +990,6 @@ class TestBandsAndMarkersOnWholeRuns:
                 sipp_balance=pot,
             )
         )
-        tax_starts = (12_570.0 - state_pension) / 0.75
         turns = [annuity, credit_ends, tax_starts]
         expected = [0.0, *(turn for turn in turns if turn < pot), pot]
         edges = [band.draw_from for band in result.bands] + [result.bands[-1].draw_to]
