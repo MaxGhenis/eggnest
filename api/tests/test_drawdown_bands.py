@@ -28,6 +28,13 @@ with three more evaluations at most:
   to the pound, ITA 2007 s.35(3)) between two straight lines gets its edges
   on the last cent before the first step and on the last step, and no edge
   or jump between them.
+- On a series that jumps and then gives the jump back, as the Personal
+  Savings Allowance's fall at the higher rate does (ITA 2007 s.12B), on
+  grids where the bands beside the change past the jump can be too short to
+  judge, every band but a jump's is £1 wide or more, to the cent, and no
+  edge lands within £1 of either end of a jump. (A gap between two jumps,
+  and a sweep under £1 in all, would be exempt; these series have one jump
+  and run to £20,000 or more.)
 
 Before pin_changes, the UK calculator looks again around crowded jumps:
 
@@ -284,6 +291,117 @@ def test_a_change_two_edges_find_keeps_one_edge():
     assert jumps == []
     assert edges == pytest.approx([0.0, at, 20_000.0], abs=0.01 + 0.005 / 0.15)
     assert calls <= 3
+
+
+def _given_back(at, size, stretch, before, after, extra=0.0):
+    """Tax at ``before`` a pound that jumps ``size`` past ``at``, charges
+    ``after`` for ``stretch``, then ``before`` again until it has given the
+    jump back, and ``extra`` more of draw, then ``after``: the Personal
+    Savings Allowance's fall at the higher rate (ITA 2007 s.12B), in cents.
+    The line past the give-back meets the line before the jump ``extra``
+    short of ``at``."""
+    kink = at + stretch
+    back = kink + size / (after - before) + extra
+
+    def series(points):
+        points = np.asarray(points, dtype=float)
+        return _cents(
+            before * points
+            + np.where(points > at, size, 0.0)
+            + (after - before) * np.maximum(points - at, 0.0)
+            - (after - before) * np.maximum(points - kink, 0.0)
+            + (after - before) * np.maximum(points - back, 0.0)
+        )
+
+    return series
+
+
+# Grids a 24th of £25,000 and of £50,000 apart, to £25,000, and £1,000 apart,
+# to £20,000.
+_COARSE = {
+    "24th of 25k": _cents(np.linspace(0.0, 25_000.0, 25)),
+    "24th of 50k": _cents(np.linspace(0.0, 25_000.0, 13)),
+    "1k": _cents(np.arange(0.0, 20_001.0, 1_000.0)),
+}
+
+
+def _pin_after_a_grid(series, grid: np.ndarray):
+    """Edges and jumps a UK run would report for ``series`` on ``grid``: the
+    grid's own edges evaluated too, as the calculators' second run does, the
+    jumps located, then pin_changes as drawdown_uk calls it."""
+    first = band_edges(grid, [(series(grid), 1.0)], min_width=1.0)
+    draws = np.unique(_cents(np.concatenate([grid, first])))
+    values = series(draws)
+    jumps = locate_jumps(draws, [values], draws[0], draws[-1], _JUMP_RULE)
+    edges = edges_between_jumps(draws, [(values, 1.0)], jumps, 1.0)
+    have = set(draws.tolist())
+    edges, jumps, _ = pin_changes(
+        draws,
+        values,
+        edges,
+        jumps,
+        series,
+        tolerance=0.05,
+        step_min=1.0,
+        min_width=1.0,
+        also=np.array([edge for edge in _cents(np.array(edges)) if edge not in have]),
+        straight_within=1.0,
+    )
+    return edges, jumps
+
+
+def _assert_no_band_but_a_jumps_is_narrow(edges, jumps, min_width=1.0):
+    """Every band but a jump's, and a gap between two jumps, is at least
+    ``min_width`` wide, to the cent."""
+    jump_bands = {(round(low, 2), round(high, 2)) for low, high in jumps}
+    ends = {round(end, 2) for jump in jumps for end in jump}
+    for low, high in zip(edges, edges[1:], strict=False):
+        low, high = round(low, 2), round(high, 2)
+        if (low, high) in jump_bands or (low in ends and high in ends):
+            continue
+        assert round((high - low) * 100) >= round(min_width * 100), (low, high)
+
+
+@pytest.mark.parametrize(
+    ("grid", "at", "size", "stretch", "extra", "jump"),
+    [
+        ("24th of 25k", 9_406.94, 1.01, 1_371.66, 0.0, (9_406.94, 9_406.95)),
+        ("1k", 12_000.0, 1.01, 5.0, 1.01, (12_000.0, 12_000.01)),
+    ],
+)
+def test_no_edge_lands_under_a_pound_past_a_jump(grid, at, size, stretch, extra, jump):
+    """P2-c, as the stepped stand-in's run at £58,243.05 (test_drawdown_uk.py,
+    TestStepsInIncomeTax): the change at the grid point past the jump has
+    bands too short to judge on both sides, so its lines come from the bands
+    beyond: the line before the jump and the line past the give-back, which
+    cross at the jump. pin_changes put that edge 6p and 99p past the jump's
+    end, so a band under £1 wide followed it. Now no edge lands within £1 of
+    a jump's ends."""
+    edges, jumps = _pin_after_a_grid(
+        _given_back(at, size, stretch, 0.4, 0.45, extra), _COARSE[grid]
+    )
+    assert jump in jumps
+    _assert_no_band_but_a_jumps_is_narrow(edges, jumps)
+
+
+@given(
+    st.sampled_from([*_COARSE.values(), _FINE]),
+    st.floats(2_000.0, 12_000.0).map(lambda value: round(value, 2)),
+    st.floats(1.01, 300.0).map(lambda value: round(value, 2)),
+    st.floats(5.0, 3_000.0).map(lambda value: round(value, 2)),
+    st.sampled_from([(0.2, 0.4), (0.168, 0.336), (0.4, 0.45), (0.15, 0.6)]),
+    st.floats(-1.0, 1.0),
+)
+def test_no_band_but_a_jumps_is_narrower_than_the_minimum_width(
+    grid, at, size, stretch, rates, extra
+):
+    """A jump whose rates give it back, as the Personal Savings Allowance's
+    fall does, short of it or past it by up to £1 of draw, on grids where the
+    bands beside the change past the jump can be too short to judge."""
+    before, after = rates
+    series = _given_back(at, size, stretch, before, after, extra)
+    edges, jumps = _pin_after_a_grid(series, grid)
+    _assert_no_band_but_a_jumps_is_narrow(edges, jumps)
 
 
 def _whole_pound_taper(points):

@@ -184,7 +184,9 @@ them with stand-in rules and Hypothesis:
   rounded to the penny, within a cent plus half a penny over the change of
   rate, with no second edge within £1 of it. A jump a 24th of a grid interval
   from a change of rate keeps its penny once its pieces are cut finer, and the
-  change gets its own edge.
+  change gets its own edge. Where tax gives a jump back, as past the Personal
+  Savings Allowance's fall, no edge lands within £1 of the jump's ends, so no
+  band but a jump's is narrower than £1.
 
 `api/tests/test_drawdown_uk_axiom.py` runs the real engine against scenarios
 worked by hand from the legislation, and compares its tax with

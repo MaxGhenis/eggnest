@@ -1275,6 +1275,37 @@ class TestStepsInIncomeTax:
         assert near[4][0] == pytest.approx(67_026.6667, abs=0.01 + 0.005 / 0.15)
         assert [rate for _, rate, _ in near[2:]] == [0.3, 0.15, 0.3]
 
+    def test_no_band_under_a_pound_follows_a_jump(self):
+        """P2-c: £145.83 of other pension and £1,200 of interest, drawing
+        £2,000,000 a year at 16% tax free. Tax jumps £100 at £58,243.05 as
+        the Personal Savings Allowance falls to £500, charges 33.6p a pound,
+        then 16.8p until it has given the £100 back, then 33.6p. The grid
+        point at £58,333.33 had bands too short to judge on both sides, so its
+        lines came from the bands beyond, the 16.8p before the jump and the
+        33.6p past the give-back, which cross at £58,243.10. That edge stayed
+        4p past the jump's end, a band the ladder showed as "£58,243 to
+        £58,243". No edge lands within £1 of a jump's ends now."""
+        inputs = UKDrawdownYearInput(
+            birth_date=PAST_QUALIFYING_AGE,
+            state_pension=0.0,
+            other_pension_income=145.83,
+            savings_interest=1_200.0,
+            sipp_balance=4_000_000.0,
+            draw_amount=2_000_000.0,
+            sipp_draw_pattern="regular",
+            sipp_tax_free_fraction=0.16,
+        )
+        result = run_uk_drawdown_year(inputs, STEPPED)
+        for band in result.bands:
+            if not band.jump:
+                assert round((band.draw_to - band.draw_from) * 100) >= 100, band
+        (jump,) = [band for band in result.bands if band.draw_from == 58_243.05]
+        after = result.bands[result.bands.index(jump) + 1]
+        assert (jump.draw_to, jump.jump) == (58_243.06, True)
+        assert after.draw_from == 58_243.06
+        assert after.to_tax == pytest.approx(0.336, abs=0.001)
+        _assert_no_band_hides_a_step(inputs, result)
+
     def test_a_run_evaluates_the_year_at_most_seven_times(self, monkeypatch):
         # The grid; a closer look; one more only where a located jump has a
         # band beside it too short to judge a line; three rounds placing

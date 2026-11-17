@@ -779,12 +779,13 @@ def pin_changes(
       at every draw the first round evaluates on that side, since a grid can
       sample such steps at the same point of each.
 
-    A located jump with no straight line on either side keeps its piece. Of
-    edges placed within ``min_width`` of one another, the one nearest the edge
-    its change replaces stays: an edge whose band is too short to judge takes
-    in the band beyond it, so its line can run back to the next change and
-    place a second edge there. An edge left within ``min_width`` of a placed
-    one goes, and so does one with no straight line on either side where the
+    A located jump with no straight line on either side keeps its piece. No
+    other edge stays within ``min_width`` of a jump's ends. Of edges placed
+    within ``min_width`` of one another, the one nearest the edge its change
+    replaces stays: an edge whose band is too short to judge takes in the band
+    beyond it, so its line can run back to the next change and place a second
+    edge there. An edge left within ``min_width`` of a placed one goes, and so
+    does one with no straight line on either side where the
     series' rate across it changes by less than KINK_MIN_RATE_CHANGE and none
     of ``others_moving`` (the other series, on ``draws``) moves: in a stretch
     the series crosses unevenly, a grid point can pass for a change.
@@ -1087,13 +1088,22 @@ def pin_changes(
     # a band too short to judge takes in the band beyond it, across the next
     # change, and its one straight line then runs back to that change. Of
     # edges placed within min_width of one another, the one nearest the edge
-    # its change replaces stays.
+    # its change replaces stays. A jump's ends come first, and an edge placed
+    # within min_width of either goes too: a change whose bands are too short
+    # to judge on both sides takes both lines from the bands beyond, and where
+    # the series gives a jump back, as the Personal Savings Allowance's fall
+    # does, the line past the give-back meets the line before the jump beside
+    # the jump. Widths are compared in whole cents.
+    ends_of_jumps = {end for jump in (*placed_jumps, *kept_jumps) for end in jump}
+    width = _cents(min_width)
     placed_edges: set[float] = set()
     for edge in sorted(placed, key=lambda edge: (placed[edge], edge)):
-        if all(abs(edge - kept) >= min_width for kept in placed_edges):
+        if all(
+            _cents(abs(edge - kept)) >= width
+            for kept in (*ends_of_jumps, *placed_edges)
+        ):
             placed_edges.add(edge)
-    fixed = placed_edges | {end for jump in placed_jumps for end in jump}
-    fixed |= {end for jump in kept_jumps for end in jump}
+    fixed = placed_edges | ends_of_jumps
     fixed |= {float(draws[0]), float(draws[-1])}
     others = [
         edge
