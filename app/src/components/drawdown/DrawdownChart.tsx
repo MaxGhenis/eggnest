@@ -483,7 +483,7 @@ export function DrawdownChart<Row extends ChartRow>({
 
         {hover !== null && (
           <div
-            className="pointer-events-none absolute max-w-[16rem] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2 text-sm shadow-[var(--shadow-md)]"
+            className="pointer-events-none absolute rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2 text-sm shadow-[var(--shadow-md)]"
             style={{
               top: marginTop + 6,
               ...(x(hover) > width / 2 ? { right: width - x(hover) + 10 } : { left: x(hover) + 10 }),
@@ -493,7 +493,9 @@ export function DrawdownChart<Row extends ChartRow>({
             {jump ? (
               <>
                 <div className="font-semibold tabular-nums">{stepPlaceIn(money, jump)}</div>
-                <div>{describeStep(rowAt(sweep, jump.draw_from), rowAt(sweep, jump.draw_to))}</div>
+                <div className="max-w-[16rem]">
+                  {describeStep(rowAt(sweep, jump.draw_from), rowAt(sweep, jump.draw_to))}
+                </div>
               </>
             ) : (
               inspected && (
