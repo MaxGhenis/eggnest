@@ -167,10 +167,10 @@ them with stand-in rules and Hypothesis:
   set, and income tax moves £1 or more across every such band. No other band
   charges more than 62p a pound or strays more than £1 from a straight line,
   so none hides a step of £2 or more, including where a change of rate sits
-  within a 24th of a grid interval of the jump. Tax rounds to the penny, so
-  a band under £1, which only a sweep under £1 or a gap between two jumps
-  leaves, can charge a penny of rounding over the 62p: a pot of one penny
-  can show 100p a pound to tax. The tests check this on 20
+  within a 24th of a grid interval of the jump. The stand-in rounds tax to
+  the penny, so on it a band under £1, which only a sweep under £1 or a gap
+  between two jumps leaves, can charge a penny of rounding over the 62p: a
+  pot of one penny can show 100p a pound to tax. The tests check this on 20
   examples; with `HYPOTHESIS_PROFILE=thorough` it held on 150 (two seeds)
   and on 500. At the higher rate the jump is 20% of the interest over £500,
   up to £100, so the tests' £600 to £20,000 of interest makes each jump £20

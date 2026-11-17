@@ -1202,10 +1202,12 @@ class TestStepsInIncomeTax:
         _assert_no_band_hides_a_step(inputs, run_uk_drawdown_year(inputs, STEPPED))
 
     # HYPOTHESIS_PROFILE=thorough, seed 4242, found this pot of one penny.
-    # The stand-in rounds tax to the penny, and £13,566.42 of interest fills
-    # the £1,000 savings allowance exactly, so the penny drawn takes tax from
-    # 0p to 1p (20% of it, rounded): 100p a pound across the sweep's one band.
-    # The same household with a £5 pot pays 20p a pound.
+    # Beside £3.60 of other income, £13,566.42 of interest leaves £1,000.02
+    # taxable, 2p over the £1,000 savings allowance: 0.4p of tax, which the
+    # stand-in rounds to nothing. The penny drawn takes a penny more of the
+    # personal allowance, so 3p is taxed: 0.6p, rounded to 1p, or 100p a
+    # pound across the sweep's one band. The same household with a £5 pot
+    # pays 20p a pound. The real engine taxes none of this interest.
     @pytest.mark.parametrize(
         "pot, sweep_tax, to_tax", [(0.01, [0.0, 0.01], 1.0), (5.0, None, 0.2)]
     )
