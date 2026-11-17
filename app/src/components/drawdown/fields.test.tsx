@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import fc from "fast-check";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { NumberField, parseAmount } from "./fields";
+import { grouped, NumberField, parseAmount } from "./fields";
 
 // Invariants these tests hold for every input:
 // - A field works with the figure it shows: what parseAmount reads from any
@@ -33,7 +33,8 @@ describe("parseAmount", () => {
       fc.property(fc.integer({ min: 0, max: 10_000_000_000 }), fc.integer({ min: 0, max: 5 }), (units, places) => {
         const text = (units / 10 ** places).toString();
         const value = parseAmount(text);
-        const shown = value.toLocaleString("en-GB", { maximumFractionDigits: 2 });
+        // P3-c: the field's display of the amount as typed, not of the read.
+        const shown = grouped(Number(text));
         expect(Number(shown.replace(/,/g, ""))).toBe(value);
         expect(Math.abs(value - Number(text))).toBeLessThanOrEqual(0.005 + 1e-9);
       }),

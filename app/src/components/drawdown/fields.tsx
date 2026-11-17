@@ -17,7 +17,8 @@ export function parseAmount(text: string): number {
   return Number(value.toLocaleString("en-US", { maximumFractionDigits: 2, useGrouping: false }));
 }
 
-function grouped(value: number): string {
+/** An amount as the field shows it once it loses focus. */
+export function grouped(value: number): string {
   return value.toLocaleString("en-GB", { maximumFractionDigits: 2 });
 }
 
