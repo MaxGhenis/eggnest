@@ -1035,11 +1035,14 @@ def pin_changes(
             continue
         found_edges: list[float] = []
         found_jumps: list[tuple[float, float]] = []
+        # How far the series moves in the cent where a line ends, to the cent.
+        # A line fitted to figures rounded to the penny can sit most of a
+        # penny off the series where it ends, so the move is the series' own.
         step_left = step_right = 0.0
         if from_left is not None:
-            step_left = value_at(from_left.high) - float(left(from_left.high))
+            step_left = round(value_at(from_left.high) - value_at(from_left.low), 2)
         if from_right is not None:
-            step_right = float(right(from_right.low)) - value_at(from_right.low)
+            step_right = round(value_at(from_right.high) - value_at(from_right.low), 2)
         jumps_left = from_left is not None and abs(step_left) >= step_min
         jumps_right = from_right is not None and abs(step_right) >= step_min
         if from_left is not None and from_right is not None:

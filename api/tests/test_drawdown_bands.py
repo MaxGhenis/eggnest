@@ -221,6 +221,28 @@ def test_a_jump_at_a_change_of_rate_is_pinned_to_the_cent(
     assert calls <= 3
 
 
+def test_a_pound_moved_in_a_penny_is_a_jump_however_the_line_rounds():
+    """us-edge, from test_a_jump_at_a_change_of_rate_is_pinned_to_the_cent
+    under the thorough profile (seed 41): tax at 15p a pound jumps £1.01 at
+    3,106.50 and stays flat after, at 466.985, a half penny, so its figures
+    round to 466.98 or 466.99. The 15p line comes back to the flat series at
+    3,113.20, so the flat line alone finds the jump's penny, and fitted to
+    those figures it sits at 466.9776 there: 99.76p above the 465.98 before
+    the jump. The series itself moves £1.00 in that penny, which is a jump."""
+    at = 3_106.5
+
+    def series(points):
+        # As the property writes it, so the flat part carries its float noise.
+        points = np.asarray(points, dtype=float)
+        beyond = np.maximum(points - at, 0.0)
+        return _cents(0.15 * points + np.where(points > at, 1.01 - 0.15 * beyond, 0.0))
+
+    edges, jumps, calls = _pin(series, _FINE)
+    assert jumps == [(at, 3_106.51)]
+    assert all(abs(edge - at) >= 1.0 for edge in edges if edge not in (at, 3_106.51))
+    assert calls <= 3
+
+
 @given(
     st.floats(3_000.0, 17_000.0).map(lambda value: round(value, 2)),
     _PER_POUND,
