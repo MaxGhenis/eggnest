@@ -72,6 +72,10 @@ const STEADY_CENTS = 100;
  * farthest where none is that far: the API can hold rows a cent apart
  * beside a change of rate and rounds each figure to the cent, so a line
  * through two such rows can put a rate up to a dollar a dollar out. The
+ * walk out to a dollar can cross that change of rate, and the line then
+ * carries the rate beyond it: the read misses the rate right beside the
+ * jump by up to the change of rate times the distance carried, and the page
+ * dims those figures until the API answers. The
  * nearer row's side serves where its line spans a dollar; else the other
  * side's where that does (at either end of the sweep, or beside another
  * jump), so the read still sits no further than half the band from one of
@@ -109,6 +113,8 @@ export function rowAt<Row extends { draw: number }>(
   // The line beside the jump on one side: from the row next to it out to the
   // first row a dollar or more away, over rows outside any jump, or the
   // farthest such row. Null where the next row out is past a jump or the end.
+  // A change of rate inside that dollar is crossed: the line then takes the
+  // rate beyond it, off by the change times the distance carried.
   const sideLine = (from: number, step: 1 | -1): [Row, Row] | null => {
     let far = from;
     for (let next = from + step; next >= 0 && next < sweep.length; next += step) {

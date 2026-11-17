@@ -106,12 +106,15 @@ carries the table, and `api/scripts/build_gad_drawdown_factors.py` rebuilds it.
   answers as the slider moves and refreshes from the API when the slider stops.
   Between the two rows of a band with `jump` set it reads the nearer row's
   side of the jump instead: the nearer row, carried to the draw at the rate
-  of the rows beside the jump. It takes that rate from rows £1 or more apart,
+  of a line beside the jump. It takes that rate from rows £1 or more apart,
   since the API places a change of rate between rows a penny apart and rounds
   each figure to the penny, and two rows a penny apart can put a rate up to
-  £1 a pound out. Where the nearer row's side holds no row £1 away, at either
-  end of the sweep or beside another jump, it takes the other side's rate, or
-  the wider side's where neither does. Either way it dims those figures until
+  £1 a pound out. Since such a pair brackets a change of rate, the pound out
+  can cross one; the line then carries the rate beyond the change, and the
+  figures can miss by up to the change of rate times the distance carried.
+  Where the nearer row's side holds no row £1 away, at either end of the
+  sweep or beside another jump, it takes the other side's rate, or the wider
+  side's where neither does. Either way it dims those figures until
   the API answers for the draw, since the jump may fall either side. The
   ladder says where each jump falls ("At £770" for one placed to the penny,
   "Between" its ends for one the API leaves in a wider piece), and inside a

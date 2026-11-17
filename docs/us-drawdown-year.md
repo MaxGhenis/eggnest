@@ -265,13 +265,16 @@ and leaves it out of taxes and money to spend.
   set is the 1/24 of an interval that holds a jump; its rates spread the jump
   over that width. Between that band's two rows the page reads the nearer
   row's side of the jump, not a line through it: the nearer row, carried to
-  the draw at the rate of the rows beside the jump. It takes that rate from
+  the draw at the rate of a line beside the jump. It takes that rate from
   rows $1 or more apart, since the API rounds each figure to the cent and can
   hold rows a cent apart, as where it evaluates a band edge beside a grid row,
-  and two rows a cent apart can put a rate up to a dollar a dollar out. Where
-  the nearer row's side holds no row $1 away, at either end of the sweep or
-  beside another jump, the page takes the other side's rate, or the wider
-  side's where neither does. Either way it dims those figures until the API
+  and two rows a cent apart can put a rate up to a dollar a dollar out. Such
+  a pair sits beside a change of rate, so the dollar out can cross one; the
+  line then carries the rate beyond the change, and the figures can miss by
+  up to the change of rate times the distance carried. Where the nearer
+  row's side holds no row $1 away, at either end of the sweep or beside
+  another jump, the page takes the other side's rate, or the wider side's
+  where neither does. Either way it dims those figures until the API
   answers for the draw, since the jump may fall either side, and the chart's
   tooltip there says where the jump falls ("Between $7,292 and $7,302"), as
   the ladder does, and what changes, with no figure for the draw. It dims

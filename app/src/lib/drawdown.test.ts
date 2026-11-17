@@ -35,9 +35,16 @@ import {
 //   dollar, else the other side's where that does (at either end of the
 //   sweep, or beside another jump), else the wider (P3-a). So on figures
 //   that rise at one rate, rounded to the cent, a read misses the nearer
-//   side's true line by at most half a cent plus a cent a dollar carried.
-//   Only a sweep with no two rows outside a jump on either side reads the
-//   line across it.
+//   side's true line by at most half a cent plus a cent a dollar carried,
+//   divided by the reach where it is under a dollar: 0.005 + 0.01 x carry /
+//   min(1, reach), with reach the farther that rows run outside any jump on
+//   either side. A line under a dollar long takes the two rows' rounding
+//   over its own length, so a reach of a cent can put the rate a dollar a
+//   dollar out. Only a sweep with no two rows outside a jump on either side
+//   reads the line across it. Where a change of rate sits inside the dollar
+//   the line walks out, as beside the API's cent pairs, the line carries the
+//   rate beyond the change, and the read misses the rate beside the jump by
+//   up to the change times the distance carried; the page dims it (P2-3).
 // - Where the API holds no row at a draw inside a band it marks as a jump,
 //   jumpAround names that band; the page dims there and the tooltip says
 //   where the jump falls, not a figure (page2). The ladder and the tooltip
@@ -422,7 +429,33 @@ describe("rowAt", () => {
     expect(ledger(read)).toBeCloseTo(ledger(right), 6);
   });
 
-  it("reads figures rounded to the cent within half a cent plus a cent a dollar carried", () => {
+  it("carries the rate beyond a change of rate the dollar out crosses, off by the change times the carry", () => {
+    // P2-3: the API brackets a change of rate with rows a cent apart, so the
+    // walk out to a row a dollar away can cross it. Tax here takes 10c a
+    // dollar up to $1,000 and 30c above, and jumps by $100 between
+    // $1,000.01 and $1,010.42; $100.003 rounds to $100 at $1,000.01.
+    const tax = (draw: number) => 0.1 * Math.min(draw, 1_000) + 0.3 * Math.max(draw - 1_000, 0) + (draw > 1_000.01 ? 100 : 0);
+    const draws = [0, 990, 1_000, 1_000.01, 1_010.42, 2_000];
+    const sweep = draws.map((draw) => {
+      const owed = Math.round(tax(draw) * 100) / 100;
+      return { draw, money_to_spend: 1_000 + draw - owed, tax: owed };
+    });
+    const jump = [{ draw_from: 1_000.01, draw_to: 1_010.42, jump: true }];
+    // $1,005 sits nearer $1,000.01. The cent pair spans a cent, so the line
+    // runs on to $990 and takes 10c a dollar, the rate below the change.
+    const read = rowAt(sweep, 1_005, jump);
+    const lineRate = (100 - 99) / 10.01;
+    expect(read.tax).toBeCloseTo(100 + 4.99 * lineRate, 6);
+    expect(read.money_to_spend).toBeCloseTo(1_000 + 1_005 - read.tax, 6);
+    // The rate beside the jump is 30c, so the read misses that side's line
+    // by about the 20c change times the $4.99 carried, plus the rounding.
+    const beside = tax(1_000.01) + 0.3 * 4.99;
+    const miss = Math.abs(read.tax - beside);
+    expect(miss).toBeGreaterThan(0.99);
+    expect(miss).toBeLessThanOrEqual(0.2 * 4.99 + 0.005 + 0.01 * 4.99);
+  });
+
+  it("reads figures rounded to the cent within half a cent plus a cent a dollar carried over the reach up to $1", () => {
     fc.assert(
       fc.property(roundedWithJumps, ({ rate, jumps, exact, sweep, chosen, draw }) => {
         const bands = sweep.slice(1).map((row, index) => ({
