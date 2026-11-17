@@ -610,19 +610,26 @@ class _Calculation:
 
 
 def _slice(evaluated: _Evaluated, low: int, high: int) -> UKDrawdownSlice:
-    """Where the pounds between two draw amounts go."""
+    """Where the pounds between two draw amounts go.
+
+    Money to spend moves by the draw, less tax, plus Pension Credit
+    (_Calculation.evaluate), so kept is what tax and Pension Credit leave of
+    each pound, as on the US page (drawdown_us._slice). Taken from money to
+    spend instead, it would carry the float noise of figures near the
+    household's income divided by the band's width: a few billionths across
+    a band a penny wide."""
     width = float(evaluated.draws[high] - evaluated.draws[low])
-    kept = float(evaluated.money_to_spend[high] - evaluated.money_to_spend[low]) / width
     direct_tax = evaluated.direct_tax
+    to_tax = float(direct_tax[high] - direct_tax[low]) / width
+    to_pension_credit = (
+        float(evaluated.pension_credit[low] - evaluated.pension_credit[high]) / width
+    )
     return UKDrawdownSlice(
         draw_from=_money(evaluated.draws[low]),
         draw_to=_money(evaluated.draws[high]),
-        kept=kept,
-        to_tax=float(direct_tax[high] - direct_tax[low]) / width,
-        to_pension_credit=(
-            float(evaluated.pension_credit[low] - evaluated.pension_credit[high])
-            / width
-        ),
+        kept=1.0 - to_tax - to_pension_credit,
+        to_tax=to_tax,
+        to_pension_credit=to_pension_credit,
     )
 
 

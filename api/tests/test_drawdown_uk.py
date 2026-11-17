@@ -371,7 +371,36 @@ class TestAccounting:
         for band in result.bands:
             assert band.draw_to > band.draw_from
             assert band.kept + band.to_tax + band.to_pension_credit == pytest.approx(
-                1.0, abs=1e-6
+                1.0, abs=1e-9
+            )
+
+    def test_a_penny_band_beside_large_income_splits_each_pound_in_full(self):
+        """P3-a (verify3): kept came from money to spend, figures near
+        £50,000 divided by a penny, so a penny band's shares missed 1 by
+        2.9e-9 on this case from the 4,560-input digest. Kept is now what
+        tax and Pension Credit leave of each pound, as on the US page."""
+        inputs = UKDrawdownYearInput(
+            birth_date="1951-03-22",
+            region="England",
+            tax_year=2026,
+            state_pension=0.0,
+            other_pension_income=13_993.95,
+            savings_interest=17_855.49,
+            dividend_income=17_855.49,
+            sipp_balance=737_872.78,
+            draw_source="sipp",
+            draw_amount=10_330.22,
+            sipp_draw_pattern="one_off",
+            sipp_tax_free_fraction=0.25,
+            sipp_tax_free_cash_first=True,
+            lump_sum_allowance_remaining=268_275.0,
+            gilt_yield_percent=5.25,
+        )
+        result = run_uk_drawdown_year(inputs, STEPPED)
+        assert any(band.draw_to - band.draw_from < 0.015 for band in result.bands)
+        for piece in [*result.bands, result.next_1000]:
+            assert piece.kept + piece.to_tax + piece.to_pension_credit == pytest.approx(
+                1.0, abs=1e-9
             )
 
     @given(scenarios())
@@ -408,7 +437,7 @@ class TestAccounting:
             return
         assert step.draw_from == result.at_chosen_draw.draw
         assert step.kept + step.to_tax + step.to_pension_credit == pytest.approx(
-            1.0, abs=1e-6
+            1.0, abs=1e-9
         )
 
     @given(scenarios())
