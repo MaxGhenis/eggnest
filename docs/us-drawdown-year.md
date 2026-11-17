@@ -263,10 +263,19 @@ and leaves it out of taxes and money to spend.
   than $1 from every draw evaluated gets a third run, and one closer moves to
   the nearest, so each band's rates come from the engine. A band with `jump`
   set is the 1/24 of an interval that holds a jump; its rates spread the jump
-  over that width. Between that band's two rows the page reads the line on the
-  nearer row's side of the jump, not a line through it, and dims its figures
-  until the API answers for the draw, since the jump may fall either side. It
-  dims them too for a draw past the sweep's top.
+  over that width. Between that band's two rows the page reads the nearer
+  row's side of the jump, not a line through it: the nearer row, carried to
+  the draw at the rate of the rows beside the jump. It takes that rate from
+  rows $1 or more apart, since the API places a change of rate between rows a
+  cent apart and rounds each figure to the cent, and two rows a cent apart can
+  put a rate up to a dollar a dollar out. Where the nearer row's side holds no
+  row $1 away, at either end of the sweep or beside another jump, the page
+  takes the other side's rate, or the wider side's where neither does. Either
+  way it dims those figures until the API answers for the draw, since the
+  jump may fall either side, and the chart's tooltip there says where the
+  jump falls ("Between $7,292 and $7,302"), as the ladder does, and what
+  changes, with no figure for the draw. It dims them too for a draw past the
+  sweep's top.
 - `markers`: the draws where a benefit ends (`benefit_ends`), where Medicaid or
   a Medicare Savings Program ends (`coverage_ends`), where 2026 income crosses a
   Medicare line and the 2028 premium steps up (`medicare_surcharge_step`), and

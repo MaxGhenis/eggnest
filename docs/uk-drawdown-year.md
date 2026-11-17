@@ -104,7 +104,21 @@ carries the table, and `api/scripts/build_gad_drawdown_factors.py` rebuilds it.
   cash taken first, every pound past the cash is taxable, so the grid runs
   £180,000 past it. The page reads between rows in a straight line, so it
   answers as the slider moves and refreshes from the API when the slider stops.
-  For a draw past the sweep's top it dims its figures until the API answers.
+  Between the two rows of a band with `jump` set it reads the nearer row's
+  side of the jump instead: the nearer row, carried to the draw at the rate
+  of the rows beside the jump. It takes that rate from rows £1 or more apart,
+  since the API places a change of rate between rows a penny apart and rounds
+  each figure to the penny, and two rows a penny apart can put a rate up to
+  £1 a pound out. Where the nearer row's side holds no row £1 away, at either
+  end of the sweep or beside another jump, it takes the other side's rate, or
+  the wider side's where neither does. Either way it dims those figures until
+  the API answers for the draw, since the jump may fall either side. The
+  ladder says where each jump falls ("At £770" for one placed to the penny,
+  "Between" its ends for one the API leaves in a wider piece), and inside a
+  jump band the chart's tooltip says the same and what changes, with no
+  figure for the draw. The page's fields and slider give whole pennies, which
+  a penny band can't hold, so only a wider band shows these. For a draw past
+  the sweep's top it dims its figures until the API answers.
 - `bands`: the ranges of draw where each extra pound splits the same way. A
   second run cuts into 24 pieces each grid interval that may hold a jump in
   income tax, the intervals around each change of rate and those where Pension

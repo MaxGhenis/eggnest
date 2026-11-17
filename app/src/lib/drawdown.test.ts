@@ -361,7 +361,7 @@ describe("rowAt", () => {
   it("takes each side's rate from rows a pound or more apart where it can, else the widest", () => {
     // P3-a: pin_changes brackets a change of rate with rows a penny apart and
     // the API rounds each figure to the penny, so the line through two rows a
-    // penny apart can put tax at any rate from 0 to 100p a pound. Tax here
+    // penny apart can put a rate up to £1 a pound out. Tax here
     // takes 30p a pound and jumps by £100 between £1,000.01 and £1,010.42;
     // £300.003 rounds to £300 at £1,000.01.
     const sweep = [

@@ -71,7 +71,7 @@ const STEADY_CENTS = 100;
  * first row a dollar or more away, over rows outside any jump, or to the
  * farthest where none is that far: the API brackets a change of rate with
  * rows a cent apart and rounds each figure to the cent, so a line through
- * two such rows can show any rate from nothing to a dollar a dollar. The
+ * two such rows can put a rate up to a dollar a dollar out. The
  * nearer row's side serves where its line spans a dollar; else the other
  * side's where that does (at either end of the sweep, or beside another
  * jump), so the read still sits no further than half the band from one of
