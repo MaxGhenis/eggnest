@@ -53,7 +53,8 @@ export function compactPounds(value: number): string {
 
 /**
  * The result at any draw, read along the straight line between sweep rows,
- * or, inside a band the API marks as a jump, from the nearer row.
+ * or, inside a band the API marks as a jump, on the nearer row's side of it
+ * (rowAt). Either way its figures add up as the API's rows do.
  */
 export function outcomeAt(
   sweep: DrawdownOutcome[],

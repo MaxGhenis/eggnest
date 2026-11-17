@@ -17,12 +17,19 @@ import {
 } from "./drawdown";
 
 // Invariants these tests hold for every input:
-// - rowAt returns the API's own row at each of its draws; between two rows
-//   that bracket a jump the API located it reads the nearer row's side of the
-//   jump, along the line through that row and the one beyond it, never a
-//   blend across the jump that no draw yields (us-page-2). Either way the
-//   figures add up as the rows do, except at a jump at either end of the
-//   sweep, which has no row beyond it and gives the nearer row's figures.
+// - rowAt returns the API's own row at each of its draws, and every row it
+//   reads lies on a straight line through two of the API's rows, so at every
+//   draw its figures add up as the rows do: money to spend is income plus the
+//   draw, less tax, plus benefits, and the benefits by program sum to the
+//   benefits (page2, after us-page-2).
+// - Between two rows that bracket a jump the API located, rowAt reads one
+//   side of the jump, never a blend across it that no draw yields: the
+//   nearer row's side, along the line through that row and the one beyond
+//   it. Where the nearer row has no row beyond it outside a jump (at either
+//   end of the sweep, or beside another jump), it carries the nearer row at
+//   the rate of the other side's line, so it still reads no further than
+//   half the band from an API row. Only a sweep with no two rows outside a
+//   jump on either side reads the line across it.
 // - turningPoints lists only rows the API returned, once each: a band edge or
 //   the draw, never a figure read off a line (uk-page-09).
 // - A result is stale for a draw past its sweep's top (uk-page-03, us-page-1),
@@ -68,6 +75,92 @@ const sweepWithJump = sweeps.chain((sweep) =>
     })),
 );
 
+type Ledger = {
+  draw: number;
+  money_to_spend: number;
+  tax: number;
+  benefits: number;
+  by_program: Record<string, number>;
+};
+
+/**
+ * Rows that add up as the API's do: money to spend is income of 1,000 plus
+ * the draw, less tax, plus benefits, and the programs sum to the benefits.
+ */
+const ledgers = fc
+  .array(
+    fc.record({
+      gap: fc.integer({ min: 1, max: 2_000_000 }),
+      tax: fc.integer({ min: 0, max: 1_000_000 }),
+      snap: fc.integer({ min: 0, max: 50_000 }),
+      ssi: fc.integer({ min: 0, max: 100_000 }),
+    }),
+    { minLength: 2, maxLength: 12 },
+  )
+  .map((rows): Ledger[] => {
+    let pence = 0;
+    return rows.map(({ gap, tax, snap, ssi }, index) => {
+      if (index > 0) pence += gap;
+      return {
+        draw: pence / 100,
+        money_to_spend: 1_000 + (pence - tax + snap + ssi) / 100,
+        tax: tax / 100,
+        benefits: (snap + ssi) / 100,
+        by_program: { snap: snap / 100, ssi: ssi / 100 },
+      };
+    });
+  });
+
+/**
+ * A sweep with each interval marked a jump or not on its own, so jumps land
+ * at either end, side by side, on every interval or on a sweep of two rows,
+ * and a draw that falls inside a jump half the time.
+ */
+const sweepWithJumps = ledgers.chain((sweep) =>
+  fc
+    .record({
+      marks: fc.array(fc.boolean(), { minLength: sweep.length - 1, maxLength: sweep.length - 1 }),
+      end: fc.constantFrom("first", "last", "both", "none"),
+      inside: fc.boolean(),
+      at: fc.nat(),
+      share: fc.integer({ min: 1, max: 999 }),
+      pence: fc.integer({ min: 0, max: Math.round(sweep[sweep.length - 1].draw * 100) }),
+    })
+    .map(({ marks, end, inside, at, share, pence }) => {
+      const jumps = marks.map(
+        (mark, index) =>
+          mark ||
+          ((end === "first" || end === "both") && index === 0) ||
+          ((end === "last" || end === "both") && index === marks.length - 1),
+      );
+      const bands = sweep.slice(1).map((row, index) => ({
+        draw_from: sweep[index].draw,
+        draw_to: row.draw,
+        jump: jumps[index],
+      }));
+      const marked = bands.filter((band) => band.jump);
+      let draw = pence / 100;
+      if (inside && marked.length) {
+        // A draw strictly inside one of the jumps, on a whole penny.
+        const band = marked[at % marked.length];
+        const from = Math.round(band.draw_from * 100);
+        const to = Math.round(band.draw_to * 100);
+        if (to - from >= 2) draw = (from + 1 + Math.floor(((to - from - 2) * share) / 999)) / 100;
+      }
+      return { sweep, bands, draw };
+    }),
+);
+
+/** The anchor row carried to the draw at the rate of the line through rows x and y. */
+function carried(anchor: Ledger, x: Ledger, y: Ledger, draw: number) {
+  const at = (start: number, from: number, to: number) =>
+    start + ((draw - anchor.draw) / (y.draw - x.draw)) * (to - from);
+  return {
+    tax: at(anchor.tax, x.tax, y.tax),
+    snap: at(anchor.by_program.snap, x.by_program.snap, y.by_program.snap),
+  };
+}
+
 describe("rowAt", () => {
   it("reads the nearer row's side between rows that bracket a located jump", () => {
     // us-page-2: the example's SNAP jump sits between rows at $7,291.67 (SNAP
@@ -103,21 +196,78 @@ describe("rowAt", () => {
           const b = sweep[at + 1];
           const nearA = draw - a.draw <= b.draw - draw;
           const [x, y] = nearA ? [sweep[at - 1], a] : [b, sweep[at + 2]];
-          if (x && y) {
-            expect(read.tax).toBeCloseTo(x.tax + ((draw - x.draw) / (y.draw - x.draw)) * (y.tax - x.tax), 4);
-            expect(read.money_to_spend).toBeCloseTo(1_000 + draw - read.tax, 4);
+          // A jump at an end of the sweep has no row beyond the nearer row:
+          // there it carries the nearer row at the other side's rate.
+          const [p, q] = x && y ? [x, y] : nearA ? [b, sweep[at + 2]] : [sweep[at - 1], a];
+          if (p && q) {
+            const anchor = nearA ? a : b;
+            expect(read.tax).toBeCloseTo(anchor.tax + ((draw - anchor.draw) / (q.draw - p.draw)) * (q.tax - p.tax), 4);
           } else {
-            // A jump at an end of the sweep has no row beyond it: the nearer
-            // row's figures as they are.
-            expect(read.tax).toBe((nearA ? a : b).tax);
-            expect(read.money_to_spend).toBe((nearA ? a : b).money_to_spend);
+            // A sweep of the jump's two rows has only the line across it.
+            expect(read.tax).toBeCloseTo(plain.tax, 4);
           }
+          expect(read.money_to_spend).toBeCloseTo(1_000 + draw - read.tax, 4);
         } else {
           expect(read).toEqual(plain);
           expect(read.money_to_spend).toBeCloseTo(1_000 + draw - read.tax, 4);
         }
       }),
     );
+  });
+
+  it("adds up at every draw, jumps at either end, side by side or everywhere included", () => {
+    fc.assert(
+      fc.property(sweepWithJumps, ({ sweep, bands, draw }) => {
+        const read = rowAt(sweep, draw, bands);
+        expect(read.draw).toBe(draw);
+        // Money to spend is income plus the draw, less tax, plus benefits.
+        expect(read.money_to_spend).toBeCloseTo(1_000 + draw - read.tax + read.benefits, 4);
+        // The programs sum to the benefits, as on the ledger.
+        expect(read.by_program.snap + read.by_program.ssi).toBeCloseTo(read.benefits, 4);
+
+        const own = sweep.find((row) => row.draw === draw);
+        if (own) {
+          expect(read).toBe(own);
+          return;
+        }
+        const i = sweep.findIndex((row, index) => row.draw < draw && draw < sweep[index + 1].draw);
+        const [a, b] = [sweep[i], sweep[i + 1]];
+        if (!bands[i].jump) {
+          expect(read).toEqual(rowAt(sweep, draw));
+          return;
+        }
+        // Inside a jump: one side's line, the nearer row's where it has one.
+        const below = i > 0 && !bands[i - 1].jump ? ([sweep[i - 1], a] as const) : null;
+        const above = i + 2 < sweep.length && !bands[i + 1].jump ? ([b, sweep[i + 2]] as const) : null;
+        const nearA = draw - a.draw <= b.draw - draw;
+        const [x, y] = (nearA ? (below ?? above) : (above ?? below)) ?? [a, b];
+        const expected = carried(nearA ? a : b, x, y, draw);
+        expect(read.tax).toBeCloseTo(expected.tax, 4);
+        expect(read.by_program.snap).toBeCloseTo(expected.snap, 4);
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it("carries the nearer row at the other side's rate at either end of the sweep", () => {
+    // page2: a jump on the sweep's last interval left a draw nearer the top
+    // with the top row's figures, so money to spend no longer equalled income
+    // plus the draw less tax.
+    const sweep = [
+      { draw: 0, money_to_spend: 1_000, tax: 0 },
+      { draw: 9_950, money_to_spend: 8_960, tax: 1_990 },
+      { draw: 10_000, money_to_spend: 8_000, tax: 3_000 },
+    ];
+    // $9,990 sits nearer the top row; below the jump tax takes 20p a pound.
+    const late = rowAt(sweep, 9_990, [{ draw_from: 9_950, draw_to: 10_000, jump: true }]);
+    expect(late.draw).toBe(9_990);
+    expect(late.tax).toBeCloseTo(2_998, 6);
+    expect(late.money_to_spend).toBeCloseTo(7_992, 6);
+    // £10 sits nearer the first row; above the jump tax takes £20.20 a pound.
+    const early = rowAt(sweep, 10, [{ draw_from: 0, draw_to: 9_950, jump: true }]);
+    expect(early.draw).toBe(10);
+    expect(early.tax).toBeCloseTo(202, 6);
+    expect(early.money_to_spend).toBeCloseTo(808, 6);
   });
 
   it("ignores bands the API didn't mark as jumps", () => {

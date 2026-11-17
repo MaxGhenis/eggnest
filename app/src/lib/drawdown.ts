@@ -30,32 +30,26 @@ function isAmounts(value: unknown): value is Record<string, number> {
   );
 }
 
-/** A copy of a row at another draw, with its nested amounts copied too. */
-function movedTo<Row extends { draw: number }>(row: Row, draw: number): Row {
-  const copy = { ...row, draw };
-  for (const key of Object.keys(row) as (keyof Row)[]) {
-    const value = row[key];
-    if (isAmounts(value)) copy[key] = { ...value } as Row[keyof Row];
-  }
-  return copy;
-}
-
-/** The row at a draw on the straight line through two rows, nested amounts included. */
-function along<Row extends { draw: number }>(a: Row, b: Row, draw: number): Row {
-  const share = (draw - a.draw) / (b.draw - a.draw);
-  const row = { ...a, draw };
-  for (const key of Object.keys(a) as (keyof Row)[]) {
-    const from = a[key];
-    const to = b[key];
-    if (key !== "draw" && typeof from === "number" && typeof to === "number") {
-      row[key] = (from + share * (to - from)) as Row[keyof Row];
-    } else if (isAmounts(from) && isAmounts(to)) {
-      const mixed: Record<string, number> = {};
-      for (const name of new Set([...Object.keys(from), ...Object.keys(to)])) {
-        const start = from[name] ?? 0;
-        mixed[name] = start + share * ((to[name] ?? 0) - start);
+/**
+ * The anchor row carried to a draw at the rate of the line through rows x and
+ * y, nested amounts included. Every figure moves by the same share of y less
+ * x, so a row read this way adds up as the API's rows do.
+ */
+function carried<Row extends { draw: number }>(anchor: Row, x: Row, y: Row, draw: number): Row {
+  const share = (draw - anchor.draw) / (y.draw - x.draw);
+  const row = { ...anchor, draw };
+  for (const key of Object.keys(anchor) as (keyof Row)[]) {
+    const start = anchor[key];
+    const from = x[key];
+    const to = y[key];
+    if (key !== "draw" && typeof start === "number" && typeof from === "number" && typeof to === "number") {
+      row[key] = (start + share * (to - from)) as Row[keyof Row];
+    } else if (isAmounts(start) && isAmounts(from) && isAmounts(to)) {
+      const moved: Record<string, number> = {};
+      for (const name of new Set([...Object.keys(start), ...Object.keys(from), ...Object.keys(to)])) {
+        moved[name] = (start[name] ?? 0) + share * ((to[name] ?? 0) - (from[name] ?? 0));
       }
-      row[key] = mixed as Row[keyof Row];
+      row[key] = moved as Row[keyof Row];
     }
   }
   return row;
@@ -65,13 +59,17 @@ function along<Row extends { draw: number }>(a: Row, b: Row, draw: number): Row 
  * The result at any draw, read along the straight line between sweep rows.
  * Amounts nested one level down, such as benefits by program, follow the same
  * line. Between two rows inside a band the API marks as a jump, that line
- * would give a figure no draw yields, so this takes the nearer row's side of
- * the jump: the line through the nearer row and the row beyond it, carried to
- * the draw. Those figures are ones a draw on that side yields, and they add up
+ * would give a figure no draw yields, so this reads the nearer row's side of
+ * the jump: the nearer row, carried to the draw at the rate of the line
+ * through it and the row beyond it. Where the nearer row has no row beyond it
+ * outside a jump (at either end of the sweep, or beside another jump), the
+ * rate comes from the other row's side, so the read still sits no further
+ * than half the band from one of the API's rows. Only a sweep with no two
+ * rows outside the jump on either side reads the line across it. Every read
+ * is a sum of the API's rows whose weights add to one, so its figures add up
  * as the rows do. The API places the jump only to within the band, so they
- * can still be the other side's until the API answers for the draw. A jump
- * at either end of the sweep has no row beyond it, so there this gives the
- * nearer row's figures as they are. The API's own rows come back as they are.
+ * can still be the other side's until the API answers for the draw. The
+ * API's own rows come back as they are.
  */
 export function rowAt<Row extends { draw: number }>(
   sweep: readonly Row[],
@@ -94,11 +92,15 @@ export function rowAt<Row extends { draw: number }>(
   if (a.draw === draw) return a;
   const inJump = (x: Row, y: Row) =>
     bands.some((band) => band.jump && band.draw_from <= x.draw && y.draw <= band.draw_to);
-  if (!inJump(a, b)) return along(a, b, draw);
+  if (!inJump(a, b)) return carried(a, a, b, draw);
+  // The line beside the jump on each side, where two rows outside it make one.
+  const sideLine = (x: Row | undefined, y: Row | undefined): [Row, Row] | null =>
+    x && y && !inJump(x, y) ? [x, y] : null;
+  const below = sideLine(sweep[low - 1], a);
+  const above = sideLine(b, sweep[high + 1]);
   const nearA = draw - a.draw <= b.draw - draw;
-  const [x, y] = nearA ? [sweep[low - 1], a] : [b, sweep[high + 1]];
-  if (x && y && !inJump(x, y)) return along(x, y, draw);
-  return movedTo(nearA ? a : b, draw);
+  const [x, y] = (nearA ? (below ?? above) : (above ?? below)) ?? [a, b];
+  return carried(nearA ? a : b, x, y, draw);
 }
 
 /** "a", "a and b", "a, b and c". */
