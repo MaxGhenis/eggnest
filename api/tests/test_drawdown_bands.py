@@ -25,6 +25,17 @@ with three more evaluations at most:
   to the pound, ITA 2007 s.35(3)) between two straight lines gets its edges
   on the last cent before the first step and on the last step, and no edge
   or jump between them.
+
+Before pin_changes, the UK calculator looks again around crowded jumps:
+
+- crowded_jumps gives a stretch for each located jump with a band beside it
+  holding fewer than five evaluated draws, from the interval just past that
+  band's far edge through the jump's own piece; closer_look cuts no piece
+  narrower than asked.
+- With a jump a 24th of a grid interval from a change of rate, relocating
+  on the finer pieces leaves only the jump, which pin_changes puts on its
+  penny, and each change gets an edge within a cent plus half a cent over
+  its change of rate.
 """
 
 from __future__ import annotations
@@ -34,7 +45,16 @@ import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 
-from eggnest.drawdown_bands import band_edges, edges_between_jumps, pin_changes
+from eggnest.drawdown_bands import (
+    JumpRule,
+    band_edges,
+    closer_look,
+    crowded_jumps,
+    edges_between_jumps,
+    locate_jumps,
+    pin_changes,
+    relocated_jumps,
+)
 
 
 def _line(draws: np.ndarray, kinks: list[float], rates: list[float]) -> np.ndarray:
@@ -255,3 +275,99 @@ def test_whole_pound_steps_put_each_edge_on_the_end_steps(step):
     assert jumps == []
     assert edges[1:-1] == [100_001.99, 125_140.0]
     assert calls <= 3
+
+
+_JUMP_RULE = JumpRule(rate=1.05, minimum=5.0)  # the UK calculator's
+
+
+def _crowded_series(jump_at: float, size: float, stretch: float):
+    """Tax at 20p a pound that jumps ``size`` past ``jump_at``, then charges
+    40p for ``stretch``, 20p for £500 and 40p after: the Personal Savings
+    Allowance's fall at the higher rate (ITA 2007 s.12B), in cents."""
+    kink = jump_at + stretch
+
+    def series(points):
+        points = np.asarray(points, dtype=float)
+        return _cents(
+            0.2 * points
+            + np.where(points > jump_at, size, 0.0)
+            + 0.2 * np.maximum(points - jump_at, 0.0)
+            - 0.2 * np.maximum(points - kink, 0.0)
+            + 0.2 * np.maximum(points - kink - 500.0, 0.0)
+        )
+
+    return series, (kink, kink + 500.0)
+
+
+def test_a_closer_look_frees_a_change_of_rate_a_piece_past_a_jump():
+    """Case 1 of the 150-example run (test_drawdown_uk.py,
+    TestStepsInIncomeTax): pieces £208.33 apart (a 24th of a £5,000 grid),
+    an evaluated edge at £49,533.84, a £43.80 jump at £49,583 and the 40p
+    stretch past it only £219 wide. locate_jumps takes the stretch's piece
+    for a jump too, which leaves no band beside either; once those pieces
+    are cut finer, only the jump is one, and the changes of rate get their
+    edges, which pin_changes keeps."""
+    series, kinks = _crowded_series(49_583.0, 43.80, 219.0)
+    pieces = np.unique(
+        _cents(np.concatenate([np.linspace(45_000.0, 55_000.0, 49), [49_533.84]]))
+    )
+    values = series(pieces)
+    found = locate_jumps(pieces, [values], pieces[0], pieces[-1], _JUMP_RULE)
+    assert found == [(49_533.84, 49_583.33), (49_583.33, 49_791.67)]
+    edges = edges_between_jumps(pieces, [(values, 1.0)], found, 1.0)
+    crowded = crowded_jumps(pieces, edges, found)
+    assert len(crowded) == 1
+    assert crowded[0][0] <= 49_375.0 and crowded[0][1] >= 50_000.0
+    added = closer_look(pieces, crowded, 5.0, 24)
+    assert np.min(np.diff(np.unique(np.concatenate([pieces, added])))) >= 5.0
+    draws = np.unique(_cents(np.concatenate([pieces, added])))
+    values = series(draws)
+    jumps = relocated_jumps(draws, [values], found, crowded, _JUMP_RULE)
+    assert len(jumps) == 1 and jumps[0][0] < 49_583.0 < jumps[0][1]
+    edges = edges_between_jumps(draws, [(values, 1.0)], jumps, 1.0)
+    calls = []
+
+    def evaluate(points):
+        calls.append(points)
+        return series(points)
+
+    edges, jumps, _ = pin_changes(
+        draws,
+        values,
+        edges,
+        jumps,
+        evaluate,
+        tolerance=0.05,
+        step_min=1.0,
+        min_width=1.0,
+        also=draws[:0],
+    )
+    assert jumps == [(49_583.0, 49_583.01)]
+    for kink in kinks:
+        assert min(abs(edge - kink) for edge in edges) <= 0.01 + 0.005 / 0.2
+    assert len(calls) <= 3
+
+
+def test_crowded_jumps_reach_past_each_short_band():
+    draws = np.arange(0.0, 41.0)
+    # Nine draws on the left, two on the right of a £1 jump: the right band
+    # is short, and its far edge, at 23.50, sits in the interval to 24.
+    assert crowded_jumps(
+        draws, [0.0, 10.0, 20.0, 21.0, 23.5, 40.0], [(20.0, 21.0)]
+    ) == [(20.0, 24.0)]
+    assert (
+        crowded_jumps(draws, [0.0, 10.0, 20.0, 21.0, 30.0, 40.0], [(20.0, 21.0)]) == []
+    )
+    # Neighbouring jumps leave each an empty band beside the other: one
+    # stretch from the interval before the first to the one past the second.
+    jumps = [(20.0, 21.0), (21.0, 22.0)]
+    edges = [0.0, 10.0, 20.0, 21.0, 22.0, 30.0, 40.0]
+    assert crowded_jumps(draws, edges, jumps) == [(19.0, 23.0)]
+
+
+def test_a_closer_look_cuts_pieces_no_narrower_than_asked():
+    draws = np.array([0.0, 100.0, 110.0, 112.0])
+    points = closer_look(draws, [(0.0, 112.0)], 5.0, 24)
+    assert points == pytest.approx([*np.arange(5.0, 100.0, 5.0), 105.0])
+    assert len(closer_look(draws, [(0.0, 100.0)], 1.0, 24)) == 23
+    assert len(closer_look(draws, [], 1.0, 24)) == 0

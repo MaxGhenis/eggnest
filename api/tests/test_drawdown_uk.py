@@ -43,11 +43,19 @@ Invariants, for every input:
   band one penny wide with jump set, tax moves £1 or more across every jump
   band, and every other band charges 0p to 62p a pound and stays within £1
   of the straight line between its ends, so no step of £2 or more hides in
-  it. That holds on the 20 examples CI runs; with 150, about 4% fail where a
-  change of rate sits within a 24th of a grid interval of a jump (the change
-  lands up to that 24th away, or the jump keeps the 24th as its band). The taper's band runs from the last penny before its first 40p step to
-  the penny of its last, even where the grid samples each step at the same
-  point (4% or 16% tax free). A run evaluates the year six times at most. test_drawdown_uk_axiom.py checks the reviewers' cases on the
+  it. That holds where a change of rate sits within a 24th of a grid
+  interval of a jump too, since a run then looks again at the pieces around
+  the jump: on the 20 examples CI runs and on HYPOTHESIS_PROFILE=thorough
+  with 150 examples (two seeds) and 500, with interest from £600, so each
+  jump is £20 or more and the change £100 or more of taxable income past it.
+  (A jump under the £5 a piece must move beyond its neighbours' rates, as
+  from £520 of interest, can go unfound.) The taper's band runs from the
+  last penny before its first 40p step to the penny of its last, even where
+  the grid samples each step at the same point (4% or 16% tax free). A run
+  evaluates the year seven times at most: the grid, a closer look, one more
+  only where a jump has a band beside it too short to judge, three placing
+  changes to the penny, and one more only where a band is still not
+  straight. test_drawdown_uk_axiom.py checks the reviewers' cases on the
   real engine.
 """
 
@@ -65,7 +73,7 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 
 import eggnest.core.uk_drawdown_year as envelope
-from eggnest import axiom_uk, drawdown_uk
+from eggnest import axiom_uk, drawdown_bands, drawdown_uk
 from eggnest.citations import Citation
 from eggnest.cli import main as cli
 from eggnest.core.router import run_core_scenario
@@ -1056,6 +1064,24 @@ def _stepped_tax(inputs: UKDrawdownYearInput, draws) -> np.ndarray:
     return calculation.evaluate(np.asarray(draws, dtype=float)).income_tax
 
 
+def _assert_no_band_hides_a_step(
+    inputs: UKDrawdownYearInput, result: UKDrawdownYearResult
+) -> None:
+    """Every band without ``jump`` stays within £1 of the straight line
+    between its ends on the stepped stand-in and charges 0p to 62p a pound;
+    every jump band is one penny across which tax moves £1 or more."""
+    for band in result.bands:
+        if band.jump:
+            assert round(band.draw_to - band.draw_from, 2) == 0.01, band
+            assert abs(band.to_tax) * 0.01 >= 1.0, band
+            continue
+        assert -1e-6 <= band.to_tax <= 0.62, band
+        inside = np.round(np.linspace(band.draw_from, band.draw_to, 66), 2)
+        tax = _stepped_tax(inputs, inside)
+        chord = np.interp(inside, [inside[0], inside[-1]], [tax[0], tax[-1]])
+        assert np.max(np.abs(tax - chord)) <= 1.0, (band.draw_from, band.draw_to)
+
+
 def _jump_sizes(result: UKDrawdownYearResult) -> list[tuple[float, float]]:
     rows = {row.draw: row for row in result.sweep}
     return [
@@ -1148,17 +1174,67 @@ class TestStepsInIncomeTax:
         if tax_free is not None and not inputs.sipp_tax_free_cash_first:
             update["sipp_tax_free_fraction"] = tax_free
         inputs = inputs.model_copy(update=update)
+        _assert_no_band_hides_a_step(inputs, run_uk_drawdown_year(inputs, STEPPED))
+
+    # Hypothesis found these with 150 examples. Each draws a £400,000.50
+    # lump sum from a pot of £800,001, so the grid runs in £5,000 steps and
+    # its 24ths are £208.33 apart. Past the jump where the Personal Savings
+    # Allowance falls to £500 (ITA 2007 s.12B), tax rises 40p a pound until
+    # the allowance's slice reaches the higher rate, then 20p until all the
+    # non-savings income has, then 40p: the 40p stretch is £219 of draw in
+    # the first case and £440 in the second, about one 24th and two.
+    CROWDED = {
+        "birth_date": date(1972, 1, 1),
+        "sipp_balance": 800_001.0,
+        "draw_amount": 400_000.50,
+        "sipp_draw_pattern": "one_off",
+        "sipp_tax_free_fraction": 0.25,
+        "sipp_tax_free_cash_first": True,
+    }
+
+    CROWDED_CASES = [
+        # £32 of Lump Sum Allowance left and £719 of interest: the change
+        # at £49,802 sat on the 24th at £49,791.67, so the band above it
+        # charged 21p and strayed £1.97 from straight.
+        (
+            {"lump_sum_allowance_remaining": 32.0, "savings_interest": 719.0},
+            49_583.00,
+            43.80,
+            (49_802.00, 50_302.00),
+        ),
+        # £1,255 of dividends and £940 of interest: the jump kept its
+        # 24th, £208.33 wide, as its jump band.
+        (
+            {"dividend_income": 1_255.0, "savings_interest": 940.0},
+            248_075.25,
+            88.00,
+            (248_515.25, 249_015.25),
+        ),
+    ]
+
+    @pytest.mark.parametrize(("overrides", "jump", "size", "kinks"), CROWDED_CASES)
+    def test_a_change_of_rate_close_to_a_jump_gets_its_own_band(
+        self, overrides, jump, size, kinks
+    ):
+        inputs = UKDrawdownYearInput(**{**self.CROWDED, **overrides})
         result = run_uk_drawdown_year(inputs, STEPPED)
-        for band in result.bands:
-            if band.jump:
-                assert round(band.draw_to - band.draw_from, 2) == 0.01
-                assert abs(band.to_tax) * 0.01 >= 1.0
-                continue
-            assert -1e-6 <= band.to_tax <= 0.62
-            inside = np.round(np.linspace(band.draw_from, band.draw_to, 66), 2)
-            tax = _stepped_tax(inputs, inside)
-            chord = np.interp(inside, [inside[0], inside[-1]], [tax[0], tax[-1]])
-            assert np.max(np.abs(tax - chord)) <= 1.0, (band.draw_from, band.draw_to)
+        _assert_no_band_hides_a_step(inputs, result)
+        assert (jump, size) in _jump_sizes(result)
+        near = [
+            (band.draw_from, round(band.to_tax, 4), band.jump)
+            for band in result.bands
+            if jump - 1_000.0 < band.draw_to and band.draw_from < kinks[1] + 1_000.0
+        ]
+        assert [is_jump for _, _, is_jump in near] == [False, True, False, False, False]
+        assert [rate for _, rate, is_jump in near if not is_jump] == [
+            0.2,
+            0.4,
+            0.2,
+            0.4,
+        ]
+        # Changes of rate of 20p: within a cent plus half a penny over 20p.
+        assert near[3][0] == pytest.approx(kinks[0], abs=0.01 + 0.005 / 0.2)
+        assert near[4][0] == pytest.approx(kinks[1], abs=0.01 + 0.005 / 0.2)
 
     # Hypothesis found this one: the grid's piece after the £42.80 jump at
     # the higher rate holds 30p a pound to £66,360 and 15p after it (the
@@ -1189,10 +1265,11 @@ class TestStepsInIncomeTax:
         assert near[4][0] == pytest.approx(67_026.6667, abs=0.01 + 0.005 / 0.15)
         assert [rate for _, rate, _ in near[2:]] == [0.3, 0.15, 0.3]
 
-    def test_a_run_evaluates_the_year_at_most_six_times(self, monkeypatch):
-        # The grid, a closer look, three rounds placing changes in income tax
-        # to the penny (the first with any edge no run has evaluated), and
-        # one more only where a band is not straight.
+    def test_a_run_evaluates_the_year_at_most_seven_times(self, monkeypatch):
+        # The grid; a closer look; one more only where a located jump has a
+        # band beside it too short to judge a line; three rounds placing
+        # changes in income tax to the penny (the first with any edge no run
+        # has evaluated); and one more only where a band is not straight.
         calls = []
         evaluate = drawdown_uk._Calculation.evaluate
 
@@ -1200,11 +1277,26 @@ class TestStepsInIncomeTax:
             calls.append(len(draws))
             return evaluate(self, draws)
 
+        crowded = []
+        find = drawdown_bands.crowded_jumps
+
+        def found(*args):
+            crowded.append(find(*args))
+            return crowded[-1]
+
         monkeypatch.setattr(drawdown_uk._Calculation, "evaluate", counted)
-        for case in (self.PROBE, self.BESIDE_A_JUMP):
+        monkeypatch.setattr(drawdown_bands, "crowded_jumps", found)
+        cases = [
+            (self.PROBE, False),
+            (self.BESIDE_A_JUMP, True),
+            *(({**self.CROWDED, **case[0]}, True) for case in self.CROWDED_CASES),
+        ]
+        for case, looks_closer in cases:
             calls.clear()
+            crowded.clear()
             run_uk_drawdown_year(UKDrawdownYearInput(**case), STEPPED)
-            assert len(calls) <= 6
+            assert bool(crowded[0]) is looks_closer
+            assert len(calls) <= (7 if looks_closer else 6)
 
 
 class TestPotLockedAllYear:

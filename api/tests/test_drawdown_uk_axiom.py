@@ -434,6 +434,35 @@ class TestStepsInIncomeTax:
         assert near[1][0] == pytest.approx(66_360.0, abs=0.01 + 0.005 / 0.15)
         assert near[2][0] == pytest.approx(67_026.6667, abs=0.01 + 0.005 / 0.15)
 
+    def test_a_change_of_rate_a_24th_past_a_jump(self):
+        # The stand-in's first crowded case (test_drawdown_uk.py): £719 of
+        # interest, £32 of Lump Sum Allowance left and £400,000.50 drawn at
+        # once from £800,001, so the grid's 24ths are £208.33 apart. Taxable
+        # income passes £37,700 at a draw of £49,583.01 and £219 of interest
+        # is taxed at 20%, £43.80. Then 40p a pound until the £500 left of the
+        # allowance reaches £37,700 at £49,802, 20p to £50,302, and 40p.
+        result = run_uk_drawdown_year(
+            UKDrawdownYearInput(
+                birth_date=BORN,
+                state_pension=0.0,
+                savings_interest=719.0,
+                sipp_balance=800_001.0,
+                draw_amount=400_000.50,
+                sipp_draw_pattern="one_off",
+                sipp_tax_free_cash_first=True,
+                lump_sum_allowance_remaining=32.0,
+            )
+        )
+        assert _jumps(result)[0] == (49_583.0, 49_583.01, 43.8)
+        near = [
+            (band.draw_from, round(band.to_tax, 4))
+            for band in result.bands
+            if 49_583.01 <= band.draw_from < 50_400.0
+        ]
+        assert [rate for _, rate in near] == [0.4, 0.2, 0.4]
+        assert near[1][0] == pytest.approx(49_802.0, abs=0.01 + 0.005 / 0.2)
+        assert near[2][0] == pytest.approx(50_302.0, abs=0.01 + 0.005 / 0.2)
+
     @pytest.mark.parametrize(
         ("state_pension", "pot", "tax_free", "first_step", "last_step"),
         [

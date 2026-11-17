@@ -127,6 +127,11 @@ _JUMPS = drawdown_bands.JumpRule(rate=1.05, minimum=5.0)
 _PIN_ROUNDS = 3
 _PIN_TOLERANCE = 0.05
 _STEP_MIN = 1.0
+# Before those runs, where a located jump has a band beside it too short for
+# pin_changes to judge, one more run cuts each piece from the jump to the
+# change past that band into up to this many, none narrower than £5
+# (drawdown_bands.crowded_jumps).
+_CLOSER_PIECES = 24
 
 _GAD_FACTORS_PATH = Path(__file__).parent / "data" / "gad_drawdown_factors.json"
 
@@ -705,11 +710,18 @@ def _place_bands(
     change of rate (drawdown_bands.refined_intervals). A grid of round draws
     can step in time with the taper's 40p steps, which only those pieces
     show. Edges then come from all those
-    points, with each jump the pieces show cut out. Up to three more runs
-    place each change in income tax to the penny (drawdown_bands.pin_changes);
-    the first also evaluates every edge no run has. One more runs only where
-    a band's income tax, at every draw run so far, strays more than
-    _BAND_TAX_TOLERANCE from straight, to evaluate the edges found in it.
+    points, with each jump the pieces show cut out. Where a jump has a band
+    beside it with too few draws for pin_changes to judge its line, one more
+    run cuts the pieces from the jump to the change past that band finer and
+    locates the jumps there again (drawdown_bands.crowded_jumps): a change of
+    rate a 24th or two from a jump, as where the Personal Savings
+    Allowance's £500 slice crosses a rate band (ITA 2007 s.12B), leaves pieces
+    between them that pass for jumps. Up to three more runs place each change
+    in income tax to the penny (drawdown_bands.pin_changes); the first also
+    evaluates every edge no run has. One more runs only where a band's income
+    tax, at every draw run so far, strays more than _BAND_TAX_TOLERANCE from
+    straight, to evaluate the edges found in it. So the year is evaluated
+    seven times at most, the grid included.
     """
     refined = drawdown_bands.refined_intervals(
         first.draws,
@@ -738,6 +750,22 @@ def _place_bands(
     edges = drawdown_bands.edges_between_jumps(
         merged.draws, _band_series(merged), jumps, _BAND_MIN_WIDTH
     )
+    crowded = drawdown_bands.crowded_jumps(merged.draws, edges, jumps)
+    points = _new_draws(
+        merged,
+        drawdown_bands.closer_look(
+            merged.draws, crowded, _JUMPS.neighbour_min_width, _CLOSER_PIECES
+        ),
+    )
+    if points.size:
+        merged = merged.merged_with(calculation.evaluate(points))
+        tax = merged.direct_tax
+        jumps = drawdown_bands.relocated_jumps(
+            merged.draws, [tax], jumps, crowded, _JUMPS
+        )
+        edges = drawdown_bands.edges_between_jumps(
+            merged.draws, _band_series(merged), jumps, _BAND_MIN_WIDTH
+        )
 
     runs: list[_Evaluated] = []
 

@@ -17,6 +17,13 @@ each stretch between jumps on its own (``edges_between_jumps``), and
 ``band_pieces`` gives each located jump a band of its own. Both calculators
 use these; ``JumpRule`` holds the thresholds each one sets.
 
+A change of rate a piece or two from a jump leaves too few pieces between
+them to tell a rate from a jump, so the pieces between can pass for jumps
+too. ``crowded_jumps`` finds each located jump with a band beside it too
+short to judge, ``closer_look`` cuts the pieces around it finer for one more
+run, and ``relocated_jumps`` locates the jumps there again. The UK
+calculator does this before ``pin_changes``; the US one does not.
+
 ``pin_changes`` goes further, to the cent: it runs a few more evaluations to
 find where the straight line on each side of a change stops describing a
 series, which tells a kink from a jump beside it and puts an edge on the cent
@@ -442,6 +449,86 @@ def locate_jumps(
         for i in np.flatnonzero(jumps)
         if low <= part[i] and part[i + 1] <= high
     ]
+
+
+def crowded_jumps(
+    draws: np.ndarray,
+    edges: Sequence[float],
+    jumps: Sequence[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    """Stretches of ``draws`` to look at more closely: around each located
+    jump whose band on either side holds fewer evaluated draws than
+    pin_changes needs to judge the line a series follows there.
+
+    A change of rate a piece or two from a jump leaves the pieces between
+    them with a rate that neither neighbour giving a rate has, so
+    locate_jumps can take them for jumps too, and pin_changes then finds no
+    line beside the jump or them. Each stretch runs through the jump's own
+    piece and, on each such side, to the interval just past the band's far
+    edge, since the change there can lie on either side of that edge.
+    Stretches that touch or overlap are joined.
+    """
+    edges = sorted(float(edge) for edge in edges)
+    last = len(draws) - 1
+    found: list[tuple[float, float]] = []
+    for low, high in sorted(jumps):
+        far_left = max((edge for edge in edges if edge < low), default=draws[0])
+        far_right = min((edge for edge in edges if edge > high), default=draws[-1])
+        start, stop = low, high
+        if np.count_nonzero((draws > far_left) & (draws < low)) < _JUDGED:
+            start = float(draws[max(int(np.searchsorted(draws, far_left)) - 1, 0)])
+        if np.count_nonzero((draws > high) & (draws < far_right)) < _JUDGED:
+            after = int(np.searchsorted(draws, far_right, side="right"))
+            stop = float(draws[min(after, last)])
+        if (start, stop) != (low, high):
+            found.append((start, stop))
+    joined: list[tuple[float, float]] = []
+    for start, stop in sorted(found):
+        if joined and start <= joined[-1][1]:
+            joined[-1] = (joined[-1][0], max(joined[-1][1], stop))
+        else:
+            joined.append((start, stop))
+    return joined
+
+
+def closer_look(
+    draws: np.ndarray,
+    stretches: Sequence[tuple[float, float]],
+    min_width: float,
+    most: int,
+) -> np.ndarray:
+    """The points that cut every interval of ``draws`` inside ``stretches``
+    into up to ``most`` equal pieces, none narrower than ``min_width``."""
+    points = []
+    for start, stop in stretches:
+        inside = draws[(draws >= start) & (draws <= stop)]
+        for low, high in zip(inside, inside[1:], strict=False):
+            pieces = int(min(most, (high - low) // min_width))
+            if pieces > 1:
+                points.append(low + np.arange(1, pieces) / pieces * (high - low))
+    return np.concatenate(points) if points else np.zeros(0)
+
+
+def relocated_jumps(
+    draws: np.ndarray,
+    moving: Sequence[np.ndarray],
+    jumps: Sequence[tuple[float, float]],
+    stretches: Sequence[tuple[float, float]],
+    rule: JumpRule,
+) -> list[tuple[float, float]]:
+    """``jumps`` outside ``stretches``, and the ones locate_jumps finds inside
+    each stretch on ``draws``, which now cut it more finely."""
+    kept = [
+        (low, high)
+        for low, high in jumps
+        if not any(start <= low and high <= stop for start, stop in stretches)
+    ]
+    found = [
+        jump
+        for start, stop in stretches
+        for jump in locate_jumps(draws, moving, start, stop, rule)
+    ]
+    return sorted({*kept, *found})
 
 
 def edges_between_jumps(
