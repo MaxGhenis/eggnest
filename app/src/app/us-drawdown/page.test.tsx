@@ -2,13 +2,15 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import recorded from "../../test/fixtures/us-drawdown-recorded.json";
 import type {
+  USDrawdownOutcome,
   USDrawdownPerson,
   USDrawdownRun,
+  USDrawdownSlice,
   USDrawdownYearInput,
 } from "../../lib/api-us-drawdown";
 import { NetworkError, SimulationError } from "../../lib/api";
 import { runUSDrawdownYear } from "../../lib/api-us-drawdown";
-import { dollars, outcomeAt } from "../../lib/us-drawdown";
+import { dollars, outcomeAt, taxesOf } from "../../lib/us-drawdown";
 import USDrawdownPage from "./page";
 
 vi.mock("../../lib/api-us-drawdown", async (importOriginal) => ({
@@ -53,6 +55,39 @@ function runFor(inputs: USDrawdownYearInput): USDrawdownRun {
     (name) => withoutDraw(inputsOf(name)) === withoutDraw(inputs),
   );
   return runOf(match ?? "example");
+}
+
+/**
+ * A stand-in for a run with a jump at the top of its sweep: the run with its
+ * last interval marked as a jump, its rates read off that interval's rows.
+ */
+function withJumpAtTop(run: USDrawdownRun): USDrawdownRun {
+  const { sweep, bands } = run.result;
+  const [a, b]: USDrawdownOutcome[] = sweep.slice(-2);
+  const width = b.draw - a.draw;
+  const last = bands[bands.length - 1];
+  const jump: USDrawdownSlice = {
+    draw_from: a.draw,
+    draw_to: b.draw,
+    kept: (b.money_to_spend - a.money_to_spend) / width,
+    to_tax: (taxesOf(b) - taxesOf(a)) / width,
+    to_benefits: (a.benefits - b.benefits) / width,
+    social_security_taxed: (b.taxable_social_security - a.taxable_social_security) / width,
+    jump: true,
+  };
+  const before = last.draw_from < a.draw ? [{ ...last, draw_to: a.draw }] : [];
+  return { ...run, result: { ...run.result, bands: [...bands.slice(0, -1), ...before, jump] } };
+}
+
+/** Each ledger line's amount in the chosen draw's column, a deduction below zero. */
+function chosenColumn(table: HTMLElement): Map<string, number> {
+  const column = new Map<string, number>();
+  for (const row of table.querySelectorAll("tbody tr, tfoot tr")) {
+    const label = row.querySelector("th")!.textContent!;
+    const text = row.querySelectorAll("td")[1].textContent!;
+    column.set(label, (text.startsWith("−") ? -1 : 1) * Number(text.replace(/[^0-9.]/g, "")));
+  }
+  return column;
 }
 
 /** The page's visible text, not the screen-reader announcement of the API's answer. */
@@ -330,6 +365,25 @@ describe("USDrawdownPage", () => {
     expect(
       screen.getByText(/^Draw \$8,000 from your traditional IRA/, SHOWN).closest("[aria-busy]"),
     ).toHaveAttribute("aria-busy", "false");
+  });
+
+  it("adds up the year at a draw inside a jump at the sweep's top, and dims it", async () => {
+    // page2: inside a jump on the sweep's last interval, a draw nearer the top
+    // showed the top row's taxes and money to spend beside the new draw, so
+    // the ledger no longer added up. No recorded run has a jump at either end:
+    // this stand-in marks the example's last interval, $249,000 to $250,000,
+    // as one.
+    runMock.mockImplementation(async () => withJumpAtTop(runOf("example")));
+    await openPage();
+    runMock.mockImplementation(() => new Promise(() => {}));
+    edit(byLabel("Amount to draw in 2026"), 249_900);
+    const column = chosenColumn(ledger());
+    expect(column.get("Money you draw")).toBe(249_900);
+    const { "Money to spend": spend, ...lines } = Object.fromEntries(column);
+    const sum = Object.values(lines).reduce((total, value) => total + value, 0);
+    // Each line rounds to the dollar, so the sum can miss by a few dollars.
+    expect(Math.abs(sum - spend)).toBeLessThanOrEqual(3);
+    expect(ledger().closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
   });
 
   it("keeps the household's run in flight while only the draw moves", async () => {
