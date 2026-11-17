@@ -45,7 +45,14 @@ import { ApiError, NetworkError, SimulationError, TimeoutError } from "./api";
 // - The chart always contains the chosen draw, up to the top of the sweep.
 // - The draw never exceeds what the chosen source holds.
 // Differential: the page reads amounts off the sweep, the API computes them
-// directly; on recorded real-engine runs the two agree.
+// directly; on recorded real-engine runs the two agree at the API's rows. The
+// recorder also asked the engine for the year at draws between rows
+// ("probes"), where the page reads a straight line (uk-page-10). There each
+// figure is within 2p of the engine's, except two that move in steps no band
+// marks, where the line misses by at most half a step: income tax, where the
+// tapered Personal Allowance rounds up to the pound so tax rises in 40p steps
+// (ITA 2007 s.35(3)), and Pension Credit for a draw from savings, whose tariff
+// income rises £1 a week for each £500 or part (SPC Regs 2002 reg 15(6)).
 
 const OTHER_INCOME = 9_360;
 
@@ -201,6 +208,7 @@ describe("recorded real-engine runs", () => {
     {
       inputs: UKDrawdownYearInput;
       envelope: { outputs: { uk_drawdown_year_result: UKDrawdownYearResult }; caveats: string[] };
+      probes: DrawdownOutcome[];
     },
   ][];
 
@@ -240,6 +248,40 @@ describe("recorded real-engine runs", () => {
     expect(read.kept).toBeCloseTo(next!.kept, 5);
     expect(read.to_tax).toBeCloseTo(next!.to_tax, 5);
     expect(read.to_pension_credit).toBeCloseTo(next!.to_pension_credit, 5);
+  });
+
+  it.each(runs.filter(([, run]) => run.probes.length > 0))(
+    "%s: between rows, the page's figures are the engine's",
+    (_name, { inputs, envelope, probes }) => {
+      const { sweep, bands } = envelope.outputs.uk_drawdown_year_result;
+      for (const probe of probes) {
+        const above = sweep.findIndex((row) => row.draw > probe.draw);
+        const [a, b] = [sweep[above - 1], sweep[above]];
+        expect(a.draw).toBeLessThan(probe.draw);
+        const page = outcomeAt(sweep, probe.draw, bands);
+        const off = (key: keyof DrawdownOutcome) => Math.abs(page[key] - probe[key]);
+        const halfStep = (key: keyof DrawdownOutcome) => Math.abs(b[key] - a[key]) / 2;
+        const taxStep = 0.2;
+        const creditStep = inputs.draw_source === "sipp" ? 0 : halfStep("pension_credit");
+        expect(page.draw).toBe(probe.draw);
+        expect(off("taxable_draw")).toBeLessThanOrEqual(0.02);
+        expect(off("employee_ni")).toBeLessThanOrEqual(0.02);
+        expect(off("income_tax")).toBeLessThanOrEqual(0.02 + taxStep);
+        expect(off("pension_credit")).toBeLessThanOrEqual(0.02 + creditStep);
+        expect(off("money_to_spend")).toBeLessThanOrEqual(0.02 + taxStep + creditStep);
+      }
+    },
+  );
+
+  it("holds the Personal Savings Allowance's jumps, and probes for every sweep", () => {
+    const steps = recorded.savings_allowance_steps.envelope.outputs.uk_drawdown_year_result;
+    expect(steps.bands.filter((band) => band.jump).map((band) => band.draw_from)).toEqual([
+      770, 75_640,
+    ]);
+    for (const [name, run] of runs) {
+      const rows = run.envelope.outputs.uk_drawdown_year_result.sweep.length;
+      expect(run.probes.length > 0, name).toBe(rows > 1);
+    }
   });
 
   it.each(runs)("%s: bands agree with the sweep", (_name, { envelope }) => {

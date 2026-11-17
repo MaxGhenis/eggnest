@@ -68,7 +68,14 @@ import {
 //   as the API works it out; only a joint return
 //   carries a spouse or draws from a spouse's account.
 // Differential: the page reads amounts off the sweep, the API computes them
-// directly; on recorded real-engine runs the two agree.
+// directly; on recorded real-engine runs the two agree at the API's rows. The
+// recorder also asked PolicyEngine-US for the year at draws between rows
+// ("probes"), where the page reads a straight line (uk-page-10). There each
+// figure is within 2.5 cents of the engine's, except benefits and other taxes,
+// which the engine gives in whole dollars, so they move in steps no band
+// marks and the line misses by at most half the step between the two rows.
+// Between the rows of a band the API marks as a jump, the engine's figures lie
+// on one side's line and the page shows the nearer side's (us-page-2).
 
 const INCOME = 24_000;
 
@@ -556,6 +563,7 @@ type Recorded = {
     outputs: { us_drawdown_year_result: USDrawdownYearResult };
     caveats: string[];
   };
+  probes: USDrawdownOutcome[];
 };
 
 const runs = Object.entries(recorded) as unknown as [string, Recorded][];
@@ -615,6 +623,64 @@ describe("recorded real-engine runs", () => {
       expect(atDraw.withdrawn).toBeCloseTo(required.withdrawn, 2);
       expect(atDraw.shortfall).toBeCloseTo(required.shortfall, 2);
       expect(atDraw.excise).toBeCloseTo(required.excise_tax_on_shortfall, 2);
+    }
+  });
+
+  it.each(runs)("%s: between rows, the page's figures are the engine's", (_name, { envelope, probes }) => {
+    const { sweep, bands } = envelope.outputs.us_drawdown_year_result;
+    expect(probes.length).toBeGreaterThan(0);
+    const lineAt = (x: USDrawdownOutcome, y: USDrawdownOutcome, draw: number, key: "money_to_spend" | "benefits") =>
+      x[key] + ((draw - x.draw) / (y.draw - x.draw)) * (y[key] - x[key]);
+    for (const probe of probes) {
+      const above = sweep.findIndex((row) => row.draw > probe.draw);
+      const [a, b] = [sweep[above - 1], sweep[above]];
+      expect(a.draw).toBeLessThan(probe.draw);
+      const page = outcomeAt(sweep, probe.draw, bands);
+      expect(page.draw).toBe(probe.draw);
+      const jump = bands.some(
+        (band) => band.jump && band.draw_from <= a.draw && b.draw <= band.draw_to,
+      );
+      if (jump) {
+        // Each side's line: the jump's row and the row beyond it.
+        const before = (draw: number, key: "money_to_spend" | "benefits") =>
+          lineAt(sweep[above - 2], a, draw, key);
+        const after = (draw: number, key: "money_to_spend" | "benefits") =>
+          lineAt(b, sweep[above + 1], draw, key);
+        const nearer = probe.draw - a.draw <= b.draw - probe.draw ? before : after;
+        for (const key of ["money_to_spend", "benefits"] as const) {
+          expect(page[key]).toBeCloseTo(nearer(probe.draw, key), 6);
+          const offSide = Math.min(
+            Math.abs(probe[key] - before(probe.draw, key)),
+            Math.abs(probe[key] - after(probe.draw, key)),
+          );
+          expect(offSide).toBeLessThanOrEqual(0.025);
+        }
+        continue;
+      }
+      const off = (key: keyof USDrawdownOutcome) =>
+        Math.abs((page[key] as number) - (probe[key] as number));
+      const halfStep = (from: number, to: number) => Math.abs(to - from) / 2;
+      const benefitsStep = halfStep(a.benefits, b.benefits);
+      const otherStep = halfStep(a.other_taxes, b.other_taxes);
+      for (const key of [
+        "taxable_draw",
+        "federal_income_tax",
+        "state_income_tax",
+        "taxable_social_security",
+        "medicare_income",
+        "later_medicare_surcharge",
+      ] as const) {
+        expect(off(key), key).toBeLessThanOrEqual(0.025);
+      }
+      expect(off("other_taxes")).toBeLessThanOrEqual(0.025 + otherStep);
+      expect(off("benefits")).toBeLessThanOrEqual(0.025 + benefitsStep);
+      for (const [program, amount] of Object.entries(probe.benefits_by_program)) {
+        const step = halfStep(a.benefits_by_program[program] ?? 0, b.benefits_by_program[program] ?? 0);
+        expect(Math.abs((page.benefits_by_program[program] ?? 0) - amount), program).toBeLessThanOrEqual(
+          0.025 + step,
+        );
+      }
+      expect(off("money_to_spend")).toBeLessThanOrEqual(0.025 + benefitsStep + otherStep);
     }
   });
 

@@ -190,4 +190,11 @@ cd api
 uv run python scripts/record_uk_drawdown_fixture.py
 ```
 
-`TestFrontendFixture` fails when the recorded runs drift from the engine.
+Each recorded run also holds the engine's year at draws between the sweep's
+rows, where the page reads its figures off a line, and the page's tests check
+it there: within 2p, except income tax, within 22p because the tapering
+Personal Allowance moves it in 40p steps, and Pension Credit on a draw from
+savings, within half the step between the rows because its tariff income moves
+£1 a week for each £500 or part.
+`TestFrontendFixture` fails when any part of the recorded runs, those draws
+included, drifts from the engine.

@@ -4,6 +4,10 @@ The frontend reads amounts off the API's sweep. Its tests run against these
 recorded results, and tests/test_drawdown_us_policyengine.py fails when they
 drift from what PolicyEngine-US now produces.
 
+Each scenario also records PolicyEngine-US's answers at draws between the
+sweep's rows ("probes"), where the page reads its figures off a line, so the
+frontend's tests can check what it shows there against the engine.
+
 Run from api/:
 
     uv run python scripts/record_us_drawdown_fixture.py
@@ -11,11 +15,16 @@ Run from api/:
 
 from __future__ import annotations
 
+import bisect
 import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from eggnest.core.us_drawdown_year import run_us_drawdown_year_scenario
+from eggnest.drawdown_us import _evaluate, default_engine
+from eggnest.models_us_drawdown import USDrawdownYearInput
 
 FIXTURE = (
     Path(__file__).resolve().parents[2]
@@ -102,17 +111,50 @@ SCENARIOS: dict[str, dict[str, Any]] = {
 }
 
 
+def probe_draws(result: dict[str, Any]) -> list[float]:
+    """Draws off the sweep where the page reads its figures off a line: the
+    middle of each band's first, middle and last interval between rows."""
+    draws = [row["draw"] for row in result["sweep"]]
+    picked: set[float] = set()
+    for band in result["bands"]:
+        low = bisect.bisect_left(draws, band["draw_from"])
+        high = bisect.bisect_right(draws, band["draw_to"])
+        inside = draws[low:high]
+        gaps = list(zip(inside, inside[1:], strict=False))
+        for start, end in {gaps[0], gaps[len(gaps) // 2], gaps[-1]} if gaps else ():
+            middle = round((start + end) / 2, 2)
+            if start < middle < end:
+                picked.add(middle)
+    return sorted(picked)
+
+
+def probes(inputs: dict[str, Any], draws: list[float]) -> list[dict[str, Any]]:
+    """PolicyEngine-US's year at each draw, as the API reports a chosen draw."""
+    if not draws:
+        return []
+    model = USDrawdownYearInput(**inputs)
+    evaluated = _evaluate(
+        default_engine(), model, np.asarray(draws, dtype=float)
+    ).evaluated
+    return [
+        json.loads(evaluated.outcome(index).model_dump_json())
+        for index in range(len(evaluated.draws))
+    ]
+
+
+def record_one(inputs: dict[str, Any]) -> dict[str, Any]:
+    envelope = json.loads(run_us_drawdown_year_scenario(inputs).model_dump_json())
+    result = envelope["outputs"]["us_drawdown_year_result"]
+    return {
+        "inputs": inputs,
+        "envelope": envelope,
+        "probes": probes(inputs, probe_draws(result)),
+    }
+
+
 def record() -> dict[str, Any]:
     """Run every scenario and return what the frontend's tests read."""
-    return {
-        name: {
-            "inputs": inputs,
-            "envelope": json.loads(
-                run_us_drawdown_year_scenario(inputs).model_dump_json()
-            ),
-        }
-        for name, inputs in SCENARIOS.items()
-    }
+    return {name: record_one(inputs) for name, inputs in SCENARIOS.items()}
 
 
 def main() -> None:

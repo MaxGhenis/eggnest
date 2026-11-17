@@ -702,18 +702,28 @@ class TestFrontendFixture:
             assert saved["inputs"] == run["inputs"], name
             fresh = run["envelope"]["outputs"][OUTPUT_KEY]
             old = saved["envelope"]["outputs"][OUTPUT_KEY]
-            for field in (
-                "sweep",
-                "at_chosen_draw",
-                "with_no_draw",
-                "markers",
-                "required_minimums",
-                "medicare_surcharge",
-                "coverage_with_no_draw",
-                "coverage_at_chosen_draw",
-            ):
-                assert fresh[field] == old[field], f"{name}: {field}"
-            assert [b["draw_from"] for b in fresh["bands"]] == [
-                b["draw_from"] for b in old["bands"]
-            ], name
+            # The whole result, as the page tests read all of it (uk-page-11's
+            # point, which holds here too).
+            for field in sorted(set(fresh) | set(old)):
+                assert fresh.get(field) == old.get(field), f"{name}: {field}"
             assert run["envelope"]["caveats"] == saved["envelope"]["caveats"], name
+            # PolicyEngine-US's answers between the sweep's rows, for the
+            # page's differential test.
+            assert run["probes"] == saved["probes"], f"{name}: probes"
+
+    def test_a_probe_is_what_the_api_returns_at_its_draw(self):
+        """A probe is the API's at_chosen_draw for a run at that draw: here the
+        one inside the example's SNAP jump (us-page-2)."""
+        recorder = self.recorder()
+        saved = json.loads(recorder.FIXTURE.read_text())["example"]
+        result = saved["envelope"]["outputs"][OUTPUT_KEY]
+        jump = next(band for band in result["bands"] if band["jump"])
+        probe = next(
+            p
+            for p in saved["probes"]
+            if jump["draw_from"] < p["draw"] < jump["draw_to"]
+        )
+        fresh = run_us_drawdown_year(
+            USDrawdownYearInput(**{**saved["inputs"], "draw_amount": probe["draw"]})
+        )
+        assert json.loads(fresh.at_chosen_draw.model_dump_json()) == probe

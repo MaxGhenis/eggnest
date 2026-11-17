@@ -602,3 +602,24 @@ class TestFrontendFixture:
             for field in sorted(set(fresh) | set(old)):
                 assert fresh.get(field) == old.get(field), f"{name}: {field}"
             assert run["envelope"]["caveats"] == saved["envelope"]["caveats"], name
+            # The engine's answers between the sweep's rows, for the page's
+            # differential test (uk-page-10).
+            assert run["probes"] == saved["probes"], f"{name}: probes"
+
+    def test_probes_are_what_the_api_returns_at_their_draws(self):
+        """A probe is the API's at_chosen_draw for a run at that draw."""
+        recorder = self.recorder()
+        recorded = json.loads(recorder.FIXTURE.read_text())
+        for name in ("example", "savings_allowance_steps"):
+            saved = recorded[name]
+            probe = saved["probes"][len(saved["probes"]) // 2]
+            result = run_uk_drawdown_year(
+                UKDrawdownYearInput(**{**saved["inputs"], "draw_amount": probe["draw"]})
+            )
+            assert json.loads(result.at_chosen_draw.model_dump_json()) == probe, name
+            assert probe["draw"] not in {
+                row["draw"]
+                for row in saved["envelope"]["outputs"]["uk_drawdown_year_result"][
+                    "sweep"
+                ]
+            }, name
