@@ -19,8 +19,11 @@ with three more evaluations at most:
 - A jump that moves the series £1 or more in its penny, at a change of rate
   of 5p a pound or more, or a jump of £5 or more with none, gets a jump band
   from its last cent to its first, and no other edge lands within £1 of it.
-- A change of rate with no jump gets no jump, and its edge lies within a cent
-  plus the half cent of rounding over the change of rate (3p at 15p a pound).
+- A change of rate with no jump gets no jump, and its one edge lies within a
+  cent plus the half cent of rounding over the change of rate (3p at 15p a
+  pound), even where a second edge's band, too short to judge, takes in the
+  change: of edges placed under £1 apart, the one nearest the edge its change
+  replaces stays.
 - A series that rises in 40p steps (tax as the tapered allowance rounds up
   to the pound, ITA 2007 s.35(3)) between two straight lines gets its edges
   on the last cent before the first step and on the last step, and no edge
@@ -236,6 +239,28 @@ def test_a_change_of_rate_alone_keeps_its_edge(at, before, after):
     # Rounding each figure to the cent leaves the change itself uncertain by
     # half a cent over the change of rate.
     assert edges[1] == pytest.approx(at, abs=0.01 + 0.005 / abs(after - before))
+    assert calls <= 3
+
+
+def test_a_change_two_edges_find_keeps_one_edge():
+    """us-edge, from test_a_change_of_rate_alone_keeps_its_edge under the
+    thorough profile (seed 31): tax at 45p a pound, then 60p from 5,715.50.
+    On a 24th of £1,000 the grid point before the change sits 7.17 short of
+    it, so band_edges also leaves an edge on the break at 5,833.33, where
+    nothing changes. That edge's band below holds two draws, so it takes in
+    the band beyond, across the change, and is uneven; its 60p line runs back
+    to where it stops holding within 5p, 5,715.14. The change's own lines
+    cross at 5,715.49. Two edges 35p apart mark one change: the one placed
+    nearer the edge it replaces stays, and no two edges lie under £1 apart."""
+    at, before, after = 5_715.5, 0.45, 0.6
+
+    def series(points):
+        points = np.asarray(points, dtype=float)
+        return _cents(before * points + (after - before) * np.maximum(points - at, 0.0))
+
+    edges, jumps, calls = _pin(series, _FINE)
+    assert jumps == []
+    assert edges == pytest.approx([0.0, at, 20_000.0], abs=0.01 + 0.005 / 0.15)
     assert calls <= 3
 
 

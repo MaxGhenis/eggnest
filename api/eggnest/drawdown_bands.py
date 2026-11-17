@@ -779,12 +779,15 @@ def pin_changes(
       at every draw the first round evaluates on that side, since a grid can
       sample such steps at the same point of each.
 
-    A located jump with no straight line on either side keeps its piece. An
-    edge left within ``min_width`` of a placed one goes, and so does one with
-    no straight line on either side where the series' rate across it changes
-    by less than KINK_MIN_RATE_CHANGE and none of ``others_moving`` (the other
-    series, on ``draws``) moves: in a stretch the series crosses unevenly, a
-    grid point can pass for a change.
+    A located jump with no straight line on either side keeps its piece. Of
+    edges placed within ``min_width`` of one another, the one nearest the edge
+    its change replaces stays: an edge whose band is too short to judge takes
+    in the band beyond it, so its line can run back to the next change and
+    place a second edge there. An edge left within ``min_width`` of a placed
+    one goes, and so does one with no straight line on either side where the
+    series' rate across it changes by less than KINK_MIN_RATE_CHANGE and none
+    of ``others_moving`` (the other series, on ``draws``) moves: in a stretch
+    the series crosses unevenly, a grid point can pass for a change.
 
     With ``straight_within``, any band other than a jump's whose evaluated
     draws (``draws`` and every one the searches ran) stray further than that
@@ -1020,7 +1023,8 @@ def pin_changes(
         cents = _cents(draw)
         return known[cents] if cents in known else base[cents]
 
-    placed_edges: set[float] = set()
+    # Each placed edge, with how far it lies from the edge its change replaces.
+    placed: dict[float, float] = {}
     placed_jumps: set[tuple[float, float]] = set()
     replaced: set[float] = set()
     kept_jumps = list(jumps)
@@ -1071,9 +1075,20 @@ def pin_changes(
         replaced.update(change.own)
         if change.located is not None:
             kept_jumps.remove(change.located)
-        placed_edges.update(found_edges)
+        for edge in found_edges:
+            away = min(abs(edge - own) for own in change.own)
+            placed[edge] = min(away, placed.get(edge, away))
         placed_jumps.update(found_jumps)
 
+    # Two changes can place edges for one change of the series: an edge with
+    # a band too short to judge takes in the band beyond it, across the next
+    # change, and its one straight line then runs back to that change. Of
+    # edges placed within min_width of one another, the one nearest the edge
+    # its change replaces stays.
+    placed_edges: set[float] = set()
+    for edge in sorted(placed, key=lambda edge: (placed[edge], edge)):
+        if all(abs(edge - kept) >= min_width for kept in placed_edges):
+            placed_edges.add(edge)
     fixed = placed_edges | {end for jump in placed_jumps for end in jump}
     fixed |= {end for jump in kept_jumps for end in jump}
     fixed |= {float(draws[0]), float(draws[-1])}
