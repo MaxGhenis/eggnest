@@ -1039,6 +1039,9 @@ def pin_changes(
         # How far the series moves in the cent where a line ends, to the cent.
         # A line fitted to figures rounded to the penny can sit most of a
         # penny off the series where it ends, so the move is the series' own.
+        # A move near step_min is real: the Personal Savings Allowance's fall
+        # at the higher rate moves UK income tax 20% of the interest over
+        # £500, up to £100 (ITA 2007 s.12B), so £1 at £505 of interest.
         step_left = step_right = 0.0
         if from_left is not None:
             step_left = round(value_at(from_left.high) - value_at(from_left.low), 2)

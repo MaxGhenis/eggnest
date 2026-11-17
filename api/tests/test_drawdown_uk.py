@@ -39,9 +39,11 @@ Invariants, for every input:
   Otherwise next_1000 is missing only when the source is empty after the draw.
 - On a coarse grid, band_edges places each kink of a piecewise-linear series
   within £1. A whole run places each turning point within 2p on these
-  stand-in rules (two credit kinks £200 or more apart included) when it lies
-  £200 or more below the top of the sweep; one nearer the top can stay within
-  a band's tolerance (£60 of Pension Credit) and get no edge.
+  stand-in rules (two credit kinks £200 or more apart included), except one
+  just below the top of the sweep, which can leave the last band's line
+  within its tolerance and get no edge: a credit end up to £65 below it
+  (£60 of Pension Credit), a tax start up to £7 (£1 of income tax, at 15p a
+  pound).
 - On the stepped stand-in (stand_in_stepped_tax: the Personal Savings
   Allowance of ITA 2007 ss.12A-12B and the allowance rounded up to the pound
   of s.35(3), in pence), each fall in the Personal Savings Allowance gets a
@@ -51,17 +53,19 @@ Invariants, for every input:
   it. That holds where a change of rate sits within a 24th of a grid
   interval of a jump too, since a run then looks again at the pieces around
   the jump: on the 20 examples CI runs and on HYPOTHESIS_PROFILE=thorough
-  with 150 examples (two seeds) and 500, with interest from £600, so each
-  jump is £20 or more and the change £100 or more of taxable income past it.
-  (A jump under the £5 a piece must move beyond its neighbours' rates, as
-  from £520 of interest, can go unfound.) The taper's band runs from the
-  last penny before its first 40p step to the penny of its last, even where
-  the grid samples each step at the same point (4% or 16% tax free). A run
-  evaluates the year seven times at most: the grid, a closer look, one more
-  only where a jump has a band beside it too short to judge, three placing
-  changes to the penny, and one more only where a band is still not
-  straight. test_drawdown_uk_axiom.py checks the reviewers' cases on the
-  real engine.
+  with 150 examples (two seeds) and 500, with interest from £600. At the
+  higher rate the jump is 20% of the interest over £500, up to £100 (s.12B),
+  so these jumps are £20 or more and the change £100 or more of taxable
+  income past it; the law's can be smaller, £1 at £505 of interest. (A jump
+  under the £5 a piece must move beyond its neighbours' rates, as with
+  interest under £525 at the higher rate, can go unfound.) The taper's band
+  runs from the last penny before its first 40p step to the penny of its
+  last, even where the grid samples each step at the same point (4% or 16%
+  tax free). A run evaluates the year seven times at most: the grid, a
+  closer look, one more only where a jump has a band beside it too short to
+  judge, three placing changes to the penny, and one more only where a band
+  is still not straight. test_drawdown_uk_axiom.py checks the reviewers'
+  cases on the real engine.
 """
 
 from __future__ import annotations
@@ -981,10 +985,13 @@ class TestBandsAndMarkersOnWholeRuns:
         tax_starts = (12_570.0 - state_pension) / 0.75
         if credit_ends - annuity < 200.0:
             return
-        # A turn just below the top leaves the last band's line within its
-        # tolerance (£60 of Pension Credit), so it gets no edge: seed 31 found
-        # credit ending at 6,376 in a pot of 6,377.
-        if any(0.0 < pot - turn < 200.0 for turn in (credit_ends, tax_starts)):
+        # A turn just below the top can leave the last band's line within its
+        # tolerance, so it gets no edge. Credit falls £1 a pound to its end, so
+        # Pension Credit's £60 (_BAND_CREDIT_TOLERANCE) hides an end up to £65
+        # below the top (seed 31: credit ending at 6,376 in a pot of 6,377);
+        # tax rises 15p a pound from its start, so income tax's £1
+        # (_BAND_TAX_TOLERANCE) hides a start up to £7 below it.
+        if 0.0 < pot - credit_ends < 70.0 or 0.0 < pot - tax_starts < 8.0:
             return
         result = run(
             UKDrawdownYearInput(
@@ -1205,7 +1212,7 @@ class TestStepsInIncomeTax:
     CROWDED_CASES = [
         # £32 of Lump Sum Allowance left and £719 of interest: the change
         # at £49,802 sat on the 24th at £49,791.67, so the band above it
-        # charged 21p and strayed £1.97 from straight.
+        # charged 21p and strayed £1.94 from straight.
         (
             {"lump_sum_allowance_remaining": 32.0, "savings_interest": 719.0},
             49_583.00,

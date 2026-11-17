@@ -169,11 +169,13 @@ them with stand-in rules and Hypothesis:
   so none hides a step of £2 or more, including where a change of rate sits
   within a 24th of a grid interval of the jump. The tests check this on 20
   examples; with `HYPOTHESIS_PROFILE=thorough` it held on 150 (two seeds)
-  and on 500. They draw £600 to £20,000 of interest, so each jump is £20 or
-  more and the next change of rate £100 or more of taxable income past it. A
-  jump under £5 can go unfound, since a piece of draw must move £5 beyond
-  its neighbours' rates to count as one: at the higher rate that is under
-  £525 of interest.
+  and on 500. At the higher rate the jump is 20% of the interest over £500,
+  up to £100, so the tests' £600 to £20,000 of interest makes each jump £20
+  or more and the next change of rate £100 or more of taxable income past
+  it. The law's jump can be smaller, £1 at £505 of interest, and pin_changes
+  counts a move of £1 in a penny as one. A jump under £5 can go unfound,
+  since a piece of draw must move £5 beyond its neighbours' rates to count
+  as one: at the higher rate that is under £525 of interest.
 - Where the Personal Allowance tapers, it rounds up to the pound (s.35(3)), so
   tax rises in 40p steps; the taper's band runs from the last penny before its
   first step to the penny of its last, even where the grid samples each step
