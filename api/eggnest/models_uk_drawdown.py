@@ -167,7 +167,7 @@ class UKDrawdownYearInput(BaseModel):
             "rounded down to the next 0.25% as GAD's instructions require."
         ),
     )
-    annuity_income_per_1000: float | None = Field(
+    annuity_income_per_1000: Money | None = Field(
         default=None,
         ge=0.0,
         le=1000.0,

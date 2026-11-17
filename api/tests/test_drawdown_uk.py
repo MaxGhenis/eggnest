@@ -1546,12 +1546,15 @@ class TestInputRules:
             sipp_balance=typed,
             draw_amount=typed,
             lump_sum_allowance_remaining=typed,
+            annuity_income_per_1000=typed,
         )
         assert inputs.state_pension == kept
         assert inputs.savings_interest == kept
         assert inputs.sipp_balance == kept
         assert inputs.draw_amount == kept
         assert inputs.lump_sum_allowance_remaining == kept
+        # P3-d: a provider's annuity figure is pounds typed into a field too.
+        assert inputs.annuity_income_per_1000 == kept
 
     @pytest.mark.parametrize(
         ("pot", "draw"), [(0.125, 0.0), (0.0078125, 0.0), (1.005, 0.505)]
