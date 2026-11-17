@@ -34,7 +34,7 @@ meets a straight line.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -649,6 +649,15 @@ def _cents(draw: float) -> int:
     return int(round(draw * 100))
 
 
+def _apart(edge: float, others: Iterable[float], width: int) -> bool:
+    """Whether ``edge`` lies ``width`` cents or more from each of ``others``.
+
+    Measured in whole cents: two draws a whole dollar apart can differ by a
+    hair under 1.0 as floats (1024.07 - 1023.07), which would drop an edge
+    exactly ``width`` away."""
+    return all(_cents(abs(edge - other)) >= width for other in others)
+
+
 @dataclass
 class _Search:
     """A draw on each side of where a test of a series' value first holds."""
@@ -1096,24 +1105,20 @@ def pin_changes(
     # to judge on both sides takes both lines from the bands beyond, and where
     # the series gives a jump back, as the Personal Savings Allowance's fall
     # does, the line past the give-back meets the line before the jump beside
-    # the jump. Widths are compared in whole cents.
+    # the jump. Widths are compared in whole cents (_apart), here and for the
+    # grid's own edges below.
     ends_of_jumps = {end for jump in (*placed_jumps, *kept_jumps) for end in jump}
     width = _cents(min_width)
     placed_edges: set[float] = set()
     for edge in sorted(placed, key=lambda edge: (placed[edge], edge)):
-        if all(
-            _cents(abs(edge - kept)) >= width
-            for kept in (*ends_of_jumps, *placed_edges)
-        ):
+        if _apart(edge, (*ends_of_jumps, *placed_edges), width):
             placed_edges.add(edge)
     fixed = placed_edges | ends_of_jumps
     fixed |= {float(draws[0]), float(draws[-1])}
     others = [
         edge
         for edge in edges
-        if edge not in replaced
-        and edge not in fixed
-        and all(abs(edge - placed) >= min_width for placed in fixed)
+        if edge not in replaced and edge not in fixed and _apart(edge, fixed, width)
     ]
     final_edges = _without_uneven_edges(
         sorted({*fixed, *others}),

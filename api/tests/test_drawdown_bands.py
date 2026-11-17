@@ -57,6 +57,7 @@ from hypothesis import strategies as st
 
 from eggnest.drawdown_bands import (
     JumpRule,
+    _apart,
     band_edges,
     closer_look,
     crowded_jumps,
@@ -291,6 +292,17 @@ def test_a_change_two_edges_find_keeps_one_edge():
     assert jumps == []
     assert edges == pytest.approx([0.0, at, 20_000.0], abs=0.01 + 0.005 / 0.15)
     assert calls <= 3
+
+
+def test_edges_a_whole_pound_apart_count_as_a_pound_apart():
+    """P3-e (verify3): pin_changes compared placed edges' widths in whole
+    cents but dropped the grid's own edges on a float distance, under which
+    two draws a whole pound apart across a power of two sit a hair under
+    £1 apart. Both now go through _apart, in whole cents."""
+    assert abs(1_024.07 - 1_023.07) < 1.0
+    assert _apart(1_024.07, [1_023.07, 5_000.0], 100)
+    assert not _apart(1_024.06, [1_023.07], 100)
+    assert not _apart(1_024.07, [1_023.07, 1_024.5], 100)
 
 
 def _given_back(at, size, stretch, before, after, extra=0.0):
