@@ -22,7 +22,10 @@ draw_source: sipp
 draw_amount: 2500
 ```
 
-`api/eggnest/models_uk_drawdown.py` documents every input and output.
+`api/eggnest/models_uk_drawdown.py` documents every input and output. Every
+amount of money comes in rounded to the penny, half a penny up, on the decimal
+it prints as, which is what the page's fields show: 1.005 becomes £1.01 and
+0.125 becomes 13p (`api/eggnest/money.py`).
 
 ## What decides each number
 

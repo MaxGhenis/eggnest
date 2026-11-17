@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from .models_uk import UKCitationRef
+from .money import Money
 from .state_pension_age import anniversary
 
 UKDrawdownSource = Literal["sipp", "isa", "gia", "cash"]
@@ -63,7 +64,7 @@ class UKDrawdownYearInput(BaseModel):
     )
 
     # Income for the tax year before any draw, £
-    state_pension: float = Field(
+    state_pension: Money = Field(
         default=FULL_NEW_STATE_PENSION_2026,
         ge=0.0,
         le=_MAX_POUNDS,
@@ -83,20 +84,20 @@ class UKDrawdownYearInput(BaseModel):
             "it from the qualifying age (SI 2002/1792 reg 18(1))."
         ),
     )
-    other_pension_income: float = Field(
+    other_pension_income: Money = Field(
         default=0.0,
         ge=0.0,
         le=_MAX_POUNDS,
         description="Annual workplace, defined benefit or annuity pension income.",
     )
-    employment_income: float = Field(default=0.0, ge=0.0, le=_MAX_POUNDS)
-    savings_interest: float = Field(
+    employment_income: Money = Field(default=0.0, ge=0.0, le=_MAX_POUNDS)
+    savings_interest: Money = Field(
         default=0.0,
         ge=0.0,
         le=_MAX_POUNDS,
         description="Taxable interest outside ISAs.",
     )
-    dividend_income: float = Field(
+    dividend_income: Money = Field(
         default=0.0,
         ge=0.0,
         le=_MAX_POUNDS,
@@ -104,15 +105,15 @@ class UKDrawdownYearInput(BaseModel):
     )
 
     # Balances at the start of the tax year, £
-    sipp_balance: float = Field(
+    sipp_balance: Money = Field(
         default=0.0,
         ge=0.0,
         le=_MAX_POUNDS,
         description="Money purchase pension pot, SIPP or workplace.",
     )
-    isa_balance: float = Field(default=0.0, ge=0.0, le=_MAX_POUNDS)
-    gia_balance: float = Field(default=0.0, ge=0.0, le=_MAX_POUNDS)
-    cash_savings: float = Field(
+    isa_balance: Money = Field(default=0.0, ge=0.0, le=_MAX_POUNDS)
+    gia_balance: Money = Field(default=0.0, ge=0.0, le=_MAX_POUNDS)
+    cash_savings: Money = Field(
         default=0.0,
         ge=0.0,
         le=_MAX_POUNDS,
@@ -121,7 +122,7 @@ class UKDrawdownYearInput(BaseModel):
 
     # The decision
     draw_source: UKDrawdownSource = "sipp"
-    draw_amount: float = Field(default=0.0, ge=0.0, le=_MAX_POUNDS)
+    draw_amount: Money = Field(default=0.0, ge=0.0, le=_MAX_POUNDS)
     sipp_draw_pattern: UKDrawdownPattern = Field(
         default="regular",
         description=(
@@ -148,7 +149,7 @@ class UKDrawdownYearInput(BaseModel):
             "fraction of 0.25."
         ),
     )
-    lump_sum_allowance_remaining: float = Field(
+    lump_sum_allowance_remaining: Money = Field(
         default=LUMP_SUM_ALLOWANCE,
         ge=0.0,
         le=LUMP_SUM_ALLOWANCE,

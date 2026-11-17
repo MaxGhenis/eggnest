@@ -5,6 +5,9 @@ what the calculator gives each rule and how it reports the answers. The real
 rules run in test_drawdown_uk_axiom.py.
 
 Invariants, for every input:
+- Every amount of money comes in rounded to the penny, half a penny up, as
+  the page's fields show it, so the sweep's draws are distinct and the pot
+  left is the pot less the draw.
 - Every sweep row accounts for every pound: money to spend equals the State
   Pension paid in the year plus other income, the draw and Pension Credit,
   less income tax and NI.
@@ -1421,6 +1424,44 @@ class TestGadTable:
 
 
 class TestInputRules:
+    @pytest.mark.parametrize(
+        ("typed", "kept"),
+        [(0.125, 0.13), (1.005, 1.01), (2.675, 2.68), (0.0078125, 0.01), (0.004, 0.0)],
+    )
+    def test_amounts_round_to_the_penny_as_the_page_shows_them(self, typed, kept):
+        """P2-a: every amount of money comes in rounded to the penny, half a
+        penny up, on the decimal the number prints as, which is what the
+        page's fields show (Intl.NumberFormat with two decimals gives 1.01
+        for 1.005)."""
+        inputs = person(
+            state_pension=typed,
+            savings_interest=typed,
+            sipp_balance=typed,
+            draw_amount=typed,
+            lump_sum_allowance_remaining=typed,
+        )
+        assert inputs.state_pension == kept
+        assert inputs.savings_interest == kept
+        assert inputs.sipp_balance == kept
+        assert inputs.draw_amount == kept
+        assert inputs.lump_sum_allowance_remaining == kept
+
+    @pytest.mark.parametrize(
+        ("pot", "draw"), [(0.125, 0.0), (0.0078125, 0.0), (1.005, 0.505)]
+    )
+    def test_a_pot_in_fractions_of_a_penny_keeps_its_invariants(self, pot, draw):
+        """P2-a, as on the US page: a pot of 12.5p left 12p, and a pot of
+        £1.005 drawn £0.505 put the chosen draw at 51p and £1.00 twice in the
+        sweep. The amounts now come in as 13p, 1p, £1.01 and 51p."""
+        inputs = person(sipp_balance=pot, draw_amount=draw)
+        result = run(inputs)
+        draws = [row.draw for row in result.sweep]
+        assert draws == sorted(set(draws))
+        assert draws[-1] == inputs.sipp_balance
+        assert result.at_chosen_draw.draw == inputs.draw_amount
+        assert result.pot_left == round(inputs.sipp_balance - inputs.draw_amount, 2)
+        assert result.bands[-1].draw_to == inputs.sipp_balance
+
     def test_cannot_draw_more_than_the_pot_holds(self):
         with pytest.raises(ValidationError, match="exceeds"):
             person(sipp_balance=1_000.0, draw_amount=1_000.01)

@@ -421,18 +421,26 @@ def refined_intervals(first: _Evaluated) -> list[tuple[float, float]]:
 
 
 def _slice(evaluated: _Evaluated, low: int, high: int) -> USDrawdownSlice:
-    """Where the dollars between two draw amounts go."""
+    """Where the dollars between two draw amounts go.
+
+    Money to spend moves by the draw, less taxes, plus benefits (_evaluate),
+    so kept is what tax and benefits leave of each dollar. Taken from money
+    to spend instead, it would carry the float noise of figures near the
+    household's income divided by the band's width: a few billionths across
+    a band a cent wide."""
     width = float(evaluated.draws[high] - evaluated.draws[low])
 
     def rate(values: np.ndarray) -> float:
         return float(values[high] - values[low]) / width
 
+    to_tax = rate(evaluated.taxes)
+    to_benefits = -rate(evaluated.benefits)
     return USDrawdownSlice(
         draw_from=_money(evaluated.draws[low]),
         draw_to=_money(evaluated.draws[high]),
-        kept=rate(evaluated.money_to_spend),
-        to_tax=rate(evaluated.taxes),
-        to_benefits=-rate(evaluated.benefits),
+        kept=1.0 - to_tax - to_benefits,
+        to_tax=to_tax,
+        to_benefits=to_benefits,
         social_security_taxed=rate(evaluated.taxable_social_security),
     )
 

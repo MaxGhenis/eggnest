@@ -30,7 +30,10 @@ draw_source: traditional
 draw_amount: 30000
 ```
 
-`api/eggnest/models_us_drawdown.py` documents every input and output.
+`api/eggnest/models_us_drawdown.py` documents every input and output. Every
+amount of money comes in rounded to the cent, half a cent up, on the decimal
+it prints as, which is what the page's fields show: 1.005 becomes $1.01 and
+0.125 becomes 13 cents (`api/eggnest/money.py`).
 
 ## What decides each number
 

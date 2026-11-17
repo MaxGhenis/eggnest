@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .citations import Citation
 from .constants import STATE_FIPS
+from .money import Money
 
 USDrawdownSource = Literal["traditional", "roth", "taxable", "cash"]
 USDrawdownFilingStatus = Literal["single", "married_filing_jointly"]
@@ -33,6 +34,7 @@ _MAX_DOLLARS = 100_000_000.0
 
 
 def _dollars(description: str | None = None) -> float:
+    """An amount of money, rounded to the cent as it comes in (money.py)."""
     return Field(default=0.0, ge=0.0, le=_MAX_DOLLARS, description=description)
 
 
@@ -48,23 +50,23 @@ class USDrawdownPerson(BaseModel):
             "minimum distributions. Everyone must be 65 or older by then."
         ),
     )
-    social_security: float = _dollars(
+    social_security: Money = _dollars(
         "Social Security benefits for 2026, before Medicare premiums come out."
     )
-    pension_income: float = _dollars(
+    pension_income: Money = _dollars(
         "Taxable private pension and annuity income for 2026."
     )
-    government_pension_income: float = _dollars(
+    government_pension_income: Money = _dollars(
         "Taxable federal, state or local government pension income for 2026. "
         "Some states tax it differently from private pensions."
     )
-    earnings: float = _dollars("Wages for 2026.")
-    traditional_balance: float = _dollars(
+    earnings: Money = _dollars("Wages for 2026.")
+    traditional_balance: Money = _dollars(
         "Traditional IRA and 401(k) balances on December 31, 2025, which also "
         "set the 2026 required minimum distribution."
     )
-    roth_balance: float = _dollars("Roth IRA balances at the start of 2026.")
-    other_traditional_withdrawals: float = _dollars(
+    roth_balance: Money = _dollars("Roth IRA balances at the start of 2026.")
+    other_traditional_withdrawals: Money = _dollars(
         "Withdrawals from traditional IRAs and 401(k)s in 2026 besides the draw "
         "being tested, such as a required minimum distribution already planned."
     )
@@ -77,7 +79,7 @@ class USDrawdownPerson(BaseModel):
             "cover workplace plans but not IRAs."
         ),
     )
-    roth_conversion: float = _dollars(
+    roth_conversion: Money = _dollars(
         "Amount converted from traditional accounts to a Roth IRA in 2026. It "
         "is taxable income but not money to spend."
     )
@@ -103,15 +105,15 @@ class USDrawdownYearInput(BaseModel):
     )
 
     # Household income for 2026 before any draw, $
-    taxable_interest: float = _dollars("Taxable interest.")
-    tax_exempt_interest: float = _dollars(
+    taxable_interest: Money = _dollars("Taxable interest.")
+    tax_exempt_interest: Money = _dollars(
         "Tax-exempt interest, such as from municipal bonds. It adds to the income "
         "that decides how much Social Security is taxed and Medicare premiums."
     )
-    dividends: float = _dollars("Dividends, all treated as qualified dividends.")
+    dividends: Money = _dollars("Dividends, all treated as qualified dividends.")
 
     # Balances at the start of 2026, $
-    taxable_balance: float = _dollars(
+    taxable_balance: Money = _dollars(
         "Value of investments in taxable brokerage accounts."
     )
     taxable_gain_share: float = Field(
@@ -123,7 +125,7 @@ class USDrawdownYearInput(BaseModel):
             "than a year. The rest returns what was paid."
         ),
     )
-    cash_savings: float = _dollars("Checking, savings and money market balances.")
+    cash_savings: Money = _dollars("Checking, savings and money market balances.")
 
     # The decision
     draw_source: USDrawdownSource = "traditional"
@@ -140,7 +142,7 @@ class USDrawdownYearInput(BaseModel):
             "workplace plans but not IRAs."
         ),
     )
-    draw_amount: float = _dollars("Amount to take from the source in 2026.")
+    draw_amount: Money = _dollars("Amount to take from the source in 2026.")
 
     @field_validator("state")
     @classmethod

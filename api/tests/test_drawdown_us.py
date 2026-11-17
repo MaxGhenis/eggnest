@@ -11,8 +11,10 @@ rules put them, so tests can check that the calculator finds them.
 
 Invariants held for every input:
 
+- Every amount of money comes in rounded to the cent, half a cent up, as the
+  page's fields show it.
 - Each band and the next $1,000 split into kept, tax and benefits that add
-  to 1.
+  to 1, however narrow the band.
 - Money to spend equals income entered plus the draw, less taxes, plus
   benefits, at every point of the sweep.
 - Bands tile the sweep, from nothing to its top, in order.
@@ -1321,6 +1323,90 @@ def test_inputs_are_checked(overrides, message):
 
 def test_state_codes_are_normalized():
     assert _inputs(state=" ny ").state == "NY"
+
+
+@pytest.mark.parametrize(
+    ("typed", "kept"),
+    [(0.125, 0.13), (1.005, 1.01), (2.675, 2.68), (0.0078125, 0.01), (0.004, 0.0)],
+)
+def test_amounts_round_to_the_cent_as_the_page_shows_them(typed, kept):
+    """P2-a: every amount of money comes in rounded to the cent, half a cent
+    up, on the decimal the number prints as, which is what the page's fields
+    show (Intl.NumberFormat with two decimals gives 1.01 for 1.005)."""
+    inputs = _inputs(
+        you={
+            "birth_year": 1955,
+            "social_security": typed,
+            "traditional_balance": typed,
+        },
+        cash_savings=typed,
+        draw_source="cash",
+        draw_amount=typed,
+    )
+    assert inputs.you.social_security == kept
+    assert inputs.you.traditional_balance == kept
+    assert inputs.cash_savings == kept
+    assert inputs.draw_amount == kept
+
+
+@pytest.mark.parametrize(
+    ("you", "spouse"),
+    [
+        pytest.param({"birth_year": 1930, "traditional_balance": 0.125}, None, id="1"),
+        pytest.param(
+            {
+                "birth_year": 1930,
+                "social_security": 1_552.0,
+                "pension_income": 31_980.0,
+                "traditional_balance": 0.0078125,
+            },
+            {
+                "birth_year": 1930,
+                "pension_income": 31_963.0,
+                "traditional_balance": 5_000.0,
+                "other_traditional_withdrawals": 5_000.0,
+            },
+            id="2",
+        ),
+        pytest.param(
+            {
+                "birth_year": 1930,
+                "social_security": 1_234.56,
+                "pension_income": 39_999.99,
+                "traditional_balance": 0.01,
+            },
+            {
+                "birth_year": 1930,
+                "pension_income": 39_999.99,
+                "traditional_balance": 5_000.0,
+                "other_traditional_withdrawals": 5_000.0,
+            },
+            id="3",
+        ),
+    ],
+)
+def test_an_account_under_a_cent_or_a_band_a_cent_wide_keeps_its_invariants(
+    you, spouse
+):
+    """P2-a, from test_invariants_hold_for_any_household under the thorough
+    profile (seed 7349). Before, (1) a balance of 12.5 cents left an account
+    of 12 cents, and (2) a balance under a cent beside $65,495 of income gave
+    a band from nothing to a cent whose shares added to 0.9999999987. (3) A
+    whole cent beside $81,234.54 gave 0.9999999986: each share divided a
+    difference of figures near $80,000 by a cent, so float noise of a
+    hundred-billionth of a dollar showed. Balances now come in as 13 cents
+    and 1 cent, and kept is what tax and benefits leave of each dollar, so
+    the shares add to 1 however narrow the band."""
+    inputs = _inputs(
+        filing_status="married_filing_jointly" if spouse else "single",
+        you=you,
+        spouse=spouse,
+        draw_amount=0.0,
+    )
+    result = _run(inputs)
+    _assert_invariants(inputs, result)
+    assert result.account_left == inputs.you.traditional_balance
+    assert result.bands[-1].draw_to == inputs.you.traditional_balance
 
 
 def test_envelope_round_trips_the_result():
