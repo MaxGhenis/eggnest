@@ -7,7 +7,7 @@ import type {
   DrawSource,
   UKDrawdownYearInput,
 } from "../../lib/api-uk-drawdown";
-import { LUMP_SUM_ALLOWANCE } from "../../lib/uk-drawdown";
+import { LUMP_SUM_ALLOWANCE, drawLimitNote } from "../../lib/uk-drawdown";
 import { Choice, Group, INPUT_CLASS, Label, NumberField, Toggle, hintId } from "../drawdown/fields";
 
 type TaxFreeChoice = "quarter" | "none" | "first";
@@ -69,6 +69,7 @@ export function DrawdownForm({
         />
         <NumberField
           label="Amount to draw in 2026/27"
+          note={drawLimitNote(inputs)}
           prefix="£"
           value={inputs.draw_amount}
           onChange={(draw_amount) => onChange({ draw_amount })}

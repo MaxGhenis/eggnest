@@ -6,6 +6,7 @@ import type {
   USDrawdownRun,
   USDrawdownYearInput,
 } from "../../lib/api-us-drawdown";
+import { NetworkError, SimulationError } from "../../lib/api";
 import { runUSDrawdownYear } from "../../lib/api-us-drawdown";
 import { dollars, outcomeAt } from "../../lib/us-drawdown";
 import USDrawdownPage from "./page";
@@ -54,13 +55,16 @@ function runFor(inputs: USDrawdownYearInput): USDrawdownRun {
   return runOf(match ?? "example");
 }
 
+/** The page's visible text, not the screen-reader announcement of the API's answer. */
+const SHOWN = { ignore: "script, style, [role=status]" };
+
 const HEADLINE =
   "Draw $30,000 from your traditional IRA in 2026 and you’ll have $51,474 to spend.";
 const BANNER = /These figures describe an example person/;
 
 async function openPage() {
   render(<USDrawdownPage />);
-  await screen.findByText(HEADLINE, undefined, { timeout: 3_000 });
+  await screen.findByText(HEADLINE, SHOWN, { timeout: 3_000 });
 }
 
 function lastInputs(): USDrawdownYearInput {
@@ -136,7 +140,7 @@ async function openScenario(name: Scenario, headline: string) {
   // The form sends exactly what the recorder sent, before any wording is checked.
   await waitFor(() => expect(runMock).toHaveBeenCalled());
   expect(lastInputs()).toEqual(inputsOf(name));
-  await screen.findByText(headline);
+  await screen.findByText(headline, SHOWN);
 }
 
 function rowText(table: HTMLElement, name: string) {
@@ -250,6 +254,7 @@ describe("USDrawdownPage", () => {
     expect(
       screen.getByText(
         `Draw $8,000 from your traditional IRA in 2026 and you’ll have ${dollars(atDraw.money_to_spend)} to spend.`,
+        SHOWN,
       ),
     ).toBeInTheDocument();
     expect(runMock).not.toHaveBeenCalled();
@@ -284,6 +289,78 @@ describe("USDrawdownPage", () => {
     expect(lastInputs().draw_amount).toBe(250_000);
   });
 
+  it("says beside the draw field that the draw stops at the account", async () => {
+    // us-page-4: the field kept $400,000 while the page worked out $250,000.
+    await openPage();
+    edit(byLabel("Amount to draw in 2026"), 400_000);
+    const note = screen.getByText(
+      "You can draw up to $250,000 from your traditional IRA, so we use $250,000.",
+    );
+    expect(byLabel("Amount to draw in 2026").getAttribute("aria-describedby")?.split(" ")).toContain(
+      note.id,
+    );
+    edit(byLabel("Amount to draw in 2026"), 200_000);
+    expect(screen.queryByText(/You can draw up to/)).not.toBeInTheDocument();
+  });
+
+  it("dims the result for a draw past the sweep's top until the API answers", async () => {
+    // us-page-1: the couple's sweep stops at $250,000 of $2,000,000; a draw of
+    // $600,000 showed the $250,000 row's figures, undimmed.
+    await openScenario(
+      "couple",
+      "Draw $150,000 from your traditional IRA in 2026 and you’ll have $205,884 to spend.",
+    );
+    runMock.mockImplementation(() => new Promise(() => {}));
+    edit(byLabel("Amount to draw in 2026"), 600_000);
+    expect(
+      screen.getByText(/^Draw \$600,000 from your traditional IRA/, SHOWN).closest("[aria-busy]"),
+    ).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("dims a draw between the rows of a jump until the API answers", async () => {
+    // us-page-2: SNAP falls $216 somewhere between $7,291.67 and $7,302.08,
+    // so the page can't know which side $7,300 is on.
+    await openPage();
+    runMock.mockImplementation(() => new Promise(() => {}));
+    edit(byLabel("Amount to draw in 2026"), 7_300);
+    expect(
+      screen.getByText(/^Draw \$7,300 from your traditional IRA/, SHOWN).closest("[aria-busy]"),
+    ).toHaveAttribute("aria-busy", "true");
+    edit(byLabel("Amount to draw in 2026"), 8_000);
+    expect(
+      screen.getByText(/^Draw \$8,000 from your traditional IRA/, SHOWN).closest("[aria-busy]"),
+    ).toHaveAttribute("aria-busy", "false");
+  });
+
+  it("keeps the household's run in flight while only the draw moves", async () => {
+    // us-page-3: each draw change aborted the run for a changed household.
+    await openPage();
+    runMock.mockClear();
+    const aborted: number[] = [];
+    let answer: (run: USDrawdownRun) => void = () => {};
+    runMock.mockImplementation(
+      (inputs, signal) =>
+        new Promise((resolve) => {
+          answer = resolve;
+          signal?.addEventListener("abort", () => aborted.push(inputs.draw_amount));
+        }),
+    );
+    edit(byLabel("Pensions and annuities"), 5_000);
+    await waitFor(() => expect(runMock).toHaveBeenCalledTimes(1));
+    const slider = screen.getByRole("slider", { name: "Amount to draw" });
+    fireEvent.change(slider, { target: { value: "20000" } });
+    await debounceSettles();
+    fireEvent.change(slider, { target: { value: "21000" } });
+    await debounceSettles();
+    expect(aborted).toEqual([]);
+    expect(runMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => answer(runOf("example")));
+    await waitFor(() => expect(runMock).toHaveBeenCalledTimes(2));
+    expect(lastInputs().draw_amount).toBe(21_000);
+    expect(lastInputs().you.pension_income).toBe(5_000);
+  });
+
   it("asks for a birth year it covers without calling the API", async () => {
     await openPage();
     runMock.mockClear();
@@ -294,19 +371,45 @@ describe("USDrawdownPage", () => {
     await debounceSettles();
     expect(runMock).not.toHaveBeenCalled();
 
-    edit(byLabel("Your birth year"), 1952);
+    edit(byLabel("Your birth year"), 1953);
     await waitFor(() => expect(runMock).toHaveBeenCalledTimes(1));
-    expect(lastInputs().you.birth_year).toBe(1952);
+    expect(lastInputs().you.birth_year).toBe(1953);
   });
 
-  it("offers a retry when the API fails", async () => {
-    runMock.mockRejectedValueOnce(new Error("network down"));
+  it("asks again for nothing it already has", async () => {
+    await openPage();
+    runMock.mockClear();
+    edit(byLabel("Your birth year"), 1965);
+    edit(byLabel("Your birth year"), 1952);
+    await debounceSettles();
+    expect(runMock).not.toHaveBeenCalled();
+    expect(screen.getByText(HEADLINE, SHOWN)).toBeInTheDocument();
+  });
+
+  it("offers a retry when the API can't be reached, and shows it working", async () => {
+    // us-page-8: the retry gave no sign it was running.
+    runMock.mockRejectedValueOnce(new NetworkError("network down"));
+    let answer: (run: USDrawdownRun) => void = () => {};
     render(<USDrawdownPage />);
     expect(await screen.findByRole("alert", undefined, { timeout: 3_000 })).toHaveTextContent(
-      "We couldn’t work this out. Check your connection and try again.",
+      "We couldn’t reach the calculator. Check your connection and try again.",
     );
+    runMock.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
+    await waitFor(() => expect(runMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Working out your year");
+    await act(async () => answer(runOf("example")));
+    expect(await screen.findByText(HEADLINE, SHOWN)).toBeInTheDocument();
+  });
+
+  it("words a server error as one, not as a connection problem", async () => {
+    // us-page-8: every failure said to check the connection.
+    runMock.mockRejectedValueOnce(new SimulationError("engine failed", 500));
+    render(<USDrawdownPage />);
+    expect(await screen.findByRole("alert", undefined, { timeout: 3_000 })).toHaveTextContent(
+      "The calculator couldn’t work out this year. Try again, or change a figure.",
+    );
   });
 
   it("ignores the result of a superseded request", async () => {

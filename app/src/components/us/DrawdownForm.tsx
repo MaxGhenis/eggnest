@@ -8,7 +8,7 @@ import type {
   USFilingStatus,
   USTraditionalAccount,
 } from "../../lib/api-us-drawdown";
-import { STATES, type USDrawdownForm } from "../../lib/us-drawdown";
+import { STATES, drawLimitNote, inputsFrom, type USDrawdownForm } from "../../lib/us-drawdown";
 import { Choice, Group, INPUT_CLASS, Label, NumberField, hintId } from "../drawdown/fields";
 
 const SOURCES: { value: USDrawSource; label: string }[] = [
@@ -173,6 +173,7 @@ export function DrawdownForm({
         )}
         <NumberField
           label="Amount to draw in 2026"
+          note={drawLimitNote(inputsFrom(form), form.draw_amount)}
           prefix="$"
           value={form.draw_amount}
           onChange={(draw_amount) => onChange({ draw_amount })}

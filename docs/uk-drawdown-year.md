@@ -101,6 +101,7 @@ carries the table, and `api/scripts/build_gad_drawdown_factors.py` rebuilds it.
   cash taken first, every pound past the cash is taxable, so the grid runs
   £180,000 past it. The page reads between rows in a straight line, so it
   answers as the slider moves and refreshes from the API when the slider stops.
+  For a draw past the sweep's top it dims its figures until the API answers.
 - `bands`: the ranges of draw where each extra pound splits the same way. A
   second run cuts into 24 pieces each grid interval that may hold a jump in
   income tax, the intervals around each change of rate and those where Pension

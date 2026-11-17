@@ -20,6 +20,17 @@ export function hintId(fieldId: string): string {
   return `${fieldId}-hint`;
 }
 
+/** The id of a note that a field's current value calls for. */
+export function noteId(fieldId: string): string {
+  return `${fieldId}-note`;
+}
+
+/** The ids a field names as its description: its hint, then any note. */
+function describedBy(fieldId: string, hint?: string, note?: string | null): string | undefined {
+  const ids = [...(hint ? [hintId(fieldId)] : []), ...(note ? [noteId(fieldId)] : [])];
+  return ids.length ? ids.join(" ") : undefined;
+}
+
 export function Label({ htmlFor, text, hint }: { htmlFor: string; text: string; hint?: string }) {
   return (
     <>
@@ -38,6 +49,7 @@ export function Label({ htmlFor, text, hint }: { htmlFor: string; text: string; 
 export function NumberField({
   label,
   hint,
+  note,
   value,
   prefix,
   suffix,
@@ -45,6 +57,8 @@ export function NumberField({
 }: {
   label: string;
   hint?: string;
+  /** Said under the field about the figure in it, such as a limit the page applies. */
+  note?: string | null;
   value: number;
   prefix?: string;
   suffix?: string;
@@ -69,7 +83,7 @@ export function NumberField({
           type="text"
           inputMode="decimal"
           autoComplete="off"
-          aria-describedby={hint ? hintId(id) : undefined}
+          aria-describedby={describedBy(id, hint, note)}
           className={`${INPUT_CLASS} tabular-nums ${prefix ? "pl-7" : ""}`}
           value={draft ?? grouped(value)}
           onFocus={() => setDraft(value ? String(value) : "")}
@@ -88,6 +102,11 @@ export function NumberField({
           </span>
         )}
       </div>
+      {note && (
+        <p id={noteId(id)} className="mt-1 text-sm text-[var(--color-warning-text)]">
+          {note}
+        </p>
+      )}
     </div>
   );
 }

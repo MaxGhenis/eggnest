@@ -3,12 +3,13 @@
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { ResultAnnouncement } from "../../components/drawdown/ResultAnnouncement";
+import { useDrawdownRun } from "../../components/drawdown/useDrawdownRun";
 import { DollarLadder } from "../../components/us/DollarLadder";
 import { DollarSplitBar, DollarSplitLegend } from "../../components/us/DollarSplitBar";
 import { DrawdownCurve } from "../../components/us/DrawdownCurve";
 import { DrawdownForm } from "../../components/us/DrawdownForm";
-import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
   runUSDrawdownYear,
   type USCitation,
@@ -18,7 +19,7 @@ import {
   type USDrawdownRun,
   type USDrawdownYearInput,
 } from "../../lib/api-us-drawdown";
-import { joined } from "../../lib/drawdown";
+import { joined, resultIsStale, turningPoints } from "../../lib/drawdown";
 import {
   COVERAGE_NAMES,
   COVERAGE_SUBJECTS,
@@ -219,12 +220,10 @@ function CitationList({ citations }: { citations: USCitation[] }) {
   );
 }
 
+/** The API's own rows at each band edge and at the draw, never a figure read off a line. */
 function TurningPoints({ run, draw }: { run: USDrawdownRun; draw: number }) {
   const { sweep, bands } = run.result;
-  const amounts = [
-    ...new Set([...bands.flatMap((band) => [band.draw_from, band.draw_to]), draw]),
-  ].sort((a, b) => a - b);
-  const rows = amounts.map((amount) => outcomeAt(sweep, amount));
+  const rows = turningPoints(sweep, bands, draw);
   const showMedicare = rows.some((row) => Math.round(row.later_medicare_surcharge) > 0);
   return (
     <details>
@@ -324,11 +323,14 @@ function Sources({ run }: { run: USDrawdownRun }) {
 
 function Results({
   run,
+  sent,
   inputs,
   stale,
   onDraw,
 }: {
   run: USDrawdownRun;
+  /** The inputs the API answered for. */
+  sent: USDrawdownYearInput;
   inputs: USDrawdownYearInput;
   stale: boolean;
   onDraw: (draw: number) => void;
@@ -337,12 +339,13 @@ function Results({
   const balance = sourceBalance(inputs);
   const sweepTop = result.sweep[result.sweep.length - 1].draw;
   const top = chartTop(sweepTop, balance, inputs.draw_amount);
-  const chosen = outcomeAt(result.sweep, inputs.draw_amount);
+  const chosen = outcomeAt(result.sweep, inputs.draw_amount, result.bands);
   const none = result.with_no_draw;
   const next = sliceBetween(
     result.sweep,
     inputs.draw_amount,
     Math.min(inputs.draw_amount + NEXT_STEP, balance),
+    result.bands,
   );
   const showNext = next !== null && next.draw_to - next.draw_from >= 1;
   const comparison = comparedWithNoDraw(chosen, none);
@@ -356,7 +359,16 @@ function Results({
 
   return (
     <div className={`min-w-0 space-y-10 ${stale ? "opacity-60" : ""}`} aria-busy={stale}>
-      <section aria-live="polite">
+      <ResultAnnouncement
+        text={headline(
+          sent.draw_source,
+          sent.draw_owner,
+          result.at_chosen_draw.draw,
+          result.at_chosen_draw.money_to_spend,
+          sent.draw_account,
+        )}
+      />
+      <section>
         <p className="font-[var(--font-display)] text-[clamp(1.85rem,1.3rem+1.9vw,2.85rem)] leading-[1.12]">
           {headline(
             inputs.draw_source,
@@ -391,6 +403,7 @@ function Results({
         <div>
           <DrawdownCurve
             sweep={result.sweep}
+            bands={result.bands}
             draw={Math.min(inputs.draw_amount, top)}
             top={top}
             step={drawStep(top)}
@@ -432,8 +445,8 @@ function Results({
             <p className="mt-2">
               {describeNextStep(
                 next,
-                outcomeAt(result.sweep, next.draw_from),
-                outcomeAt(result.sweep, next.draw_to),
+                outcomeAt(result.sweep, next.draw_from, result.bands),
+                outcomeAt(result.sweep, next.draw_to, result.bands),
               )}
             </p>
           </div>
@@ -495,35 +508,13 @@ function Results({
 
 export default function USDrawdownPage() {
   const [form, setForm] = useState<USDrawdownForm>(EXAMPLE_FORM);
-  const [run, setRun] = useState<{
-    baseKey: string;
-    data: USDrawdownRun;
-  } | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-
   const inputs = useMemo(() => inputsFrom(form), [form]);
   const problem = inputProblem(inputs);
-  const key = JSON.stringify(inputs);
-  const baseKey = JSON.stringify({ ...inputs, draw_amount: 0 });
-  const debouncedKey = useDebouncedValue(key, 300);
-
-  useEffect(() => {
-    if (problem || debouncedKey !== key) return;
-    const controller = new AbortController();
-    const sent = JSON.parse(debouncedKey) as USDrawdownYearInput;
-    runUSDrawdownYear(sent, controller.signal)
-      .then((data) => {
-        setRun({ baseKey: JSON.stringify({ ...sent, draw_amount: 0 }), data });
-        setFailure(null);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setFailure("We couldn’t work this out. Check your connection and try again.");
-        }
-      });
-    return () => controller.abort();
-  }, [debouncedKey, key, problem, attempt]);
+  const { run, failure, baseKey, retry } = useDrawdownRun(inputs, problem, runUSDrawdownYear);
+  const sent = useMemo(
+    () => (run ? (JSON.parse(run.key) as USDrawdownYearInput) : null),
+    [run],
+  );
 
   const update = (change: Partial<USDrawdownForm>) =>
     setForm((current) => ({ ...current, ...change }));
@@ -571,20 +562,29 @@ export default function USDrawdownPage() {
                 <button
                   type="button"
                   className="mt-3 rounded-[var(--radius-sm)] bg-[var(--color-primary-dark)] px-4 py-2 font-medium text-white"
-                  onClick={() => setAttempt((count) => count + 1)}
+                  onClick={retry}
                 >
                   Try again
                 </button>
               </div>
-            ) : run ? (
+            ) : run && sent ? (
               <Results
                 run={run.data}
+                sent={sent}
                 inputs={inputs}
-                stale={run.baseKey !== baseKey}
+                stale={resultIsStale(
+                  run.baseKey,
+                  baseKey,
+                  run.data.result.sweep,
+                  inputs.draw_amount,
+                  run.data.result.bands,
+                )}
                 onDraw={(draw_amount) => update({ draw_amount })}
               />
             ) : (
-              <p className="text-lg text-[var(--color-text-muted)]">Working out your year</p>
+              <p role="status" className="text-lg text-[var(--color-text-muted)]">
+                Working out your year
+              </p>
             )}
           </div>
         </div>

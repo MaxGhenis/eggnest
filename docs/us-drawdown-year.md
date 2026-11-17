@@ -259,7 +259,10 @@ and leaves it out of taxes and money to spend.
   located jump cut out so no line runs through it, and an edge that lands more
   than $1 from every draw evaluated gets a third run. A band with `jump` set is
   the 1/24 of an interval that holds a jump; its rates spread the jump over
-  that width.
+  that width. Between that band's two rows the page reads the line on the
+  nearer row's side of the jump, not a line through it, and dims its figures
+  until the API answers for the draw, since the jump may fall either side. It
+  dims them too for a draw past the sweep's top.
 - `markers`: the draws where a benefit ends (`benefit_ends`), where Medicaid or
   a Medicare Savings Program ends (`coverage_ends`), where 2026 income crosses a
   Medicare line and the 2028 premium steps up (`medicare_surcharge_step`), and
