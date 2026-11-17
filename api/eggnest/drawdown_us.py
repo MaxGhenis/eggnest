@@ -20,9 +20,11 @@ out so no line runs through it. An edge that lands more than $1 from every
 evaluated draw gets a third run; one closer moves to the nearest. On the
 stand-in rules of ``tests/test_drawdown_us.py``, which are piecewise linear,
 each change of rate of 5 cents a dollar or more then lands on an edge within
-$1 plus $1 divided by the change: a change too small for the bands to notice
-can tilt the line beside a larger one, but the band's line still misses the
-series at the larger change by less than $1. A jump of $30 or more gets a
+$1 plus 25 cents divided by the change, where the band's line misses the
+series by under the change times $1, plus 25 cents. Moving an edge up to $1
+to an evaluated draw takes the line up to the change times $1 off the series,
+and a change too small for the bands to notice can tilt the line beside a
+larger one, which moves where the lines cross. A jump of $30 or more gets a
 band 1/24 of its grid interval wide, unless it sits within 1/12 of an
 interval of a change of rate and is no larger than $25 plus that change
 times 1/24 of the interval.

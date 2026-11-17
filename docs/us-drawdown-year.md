@@ -336,10 +336,13 @@ rules put them:
   and any two side by side of $60 or more.
 - Over a whole run on such a series in the draw, changes of rate alone give no
   jump band, and each change of 5 cents a dollar or more lands on a band edge
-  within $1 plus $1 divided by the change ($3.50 for 40 cents, $21 for 5
-  cents). The edge moves up to $1 to an evaluated draw, and a change too small
-  for the bands to notice can tilt the line beside a larger one, but the
-  band's line still misses the series at the larger change by less than $1. A
+  within $1 plus 25 cents divided by the change ($1.63 for 40 cents, $6 for 5
+  cents), where the band's line misses the series by under the change times
+  $1, plus 25 cents. The edge moves up to $1 to an evaluated draw, which takes
+  the line up to the change times $1 off the series, so past a change of 75
+  cents a dollar the line can miss by more than $1 (one case misses by $1.48
+  at a change of $1.87), and a change too small for the bands to notice can
+  tilt the line beside a larger one, which moves where the lines cross. A
   jump of $30 or more gets the one jump band, no wider than 1/24 of its grid
   interval, wherever it sits, unless it lies within 1/12 of an interval of a
   change of rate and is no larger than $25 plus that change times 1/24 of the
