@@ -366,8 +366,30 @@ def test_crowded_jumps_reach_past_each_short_band():
 
 
 def test_a_closer_look_cuts_pieces_no_narrower_than_asked():
-    draws = np.array([0.0, 100.0, 110.0, 112.0])
-    points = closer_look(draws, [(0.0, 112.0)], 5.0, 24)
-    assert points == pytest.approx([*np.arange(5.0, 100.0, 5.0), 105.0])
+    # £100 takes 19 pieces of £5.26, since 20 of £5 could round to £4.99;
+    # £10.03 takes two; £2 none.
+    draws = np.array([0.0, 100.0, 110.03, 112.03])
+    points = closer_look(draws, [(0.0, 112.03)], 5.0, 24)
+    assert len(points) == 18 + 1
+    assert points == pytest.approx(np.round(points, 2))
+    cut = np.unique(np.concatenate([draws, points]))
+    assert np.min(np.diff(cut)[:-1]) >= 5.0  # all but the £2 left whole
     assert len(closer_look(draws, [(0.0, 100.0)], 1.0, 24)) == 23
     assert len(closer_look(draws, [], 1.0, 24)) == 0
+
+
+@given(
+    st.lists(
+        st.floats(0.0, 500.0).map(lambda value: round(value, 2)),
+        min_size=2,
+        max_size=12,
+        unique=True,
+    ),
+    st.sampled_from([1.0, 5.0]),
+)
+def test_no_piece_of_a_closer_look_is_narrower_than_asked(draws, min_width):
+    draws = np.array(sorted(draws))
+    points = closer_look(draws, [(draws[0], draws[-1])], min_width, 24)
+    cut = np.unique(np.concatenate([draws, points]))
+    new = np.diff(cut)[~np.isin(cut[1:], draws) | ~np.isin(cut[:-1], draws)]
+    assert np.all(new >= min_width - 1e-9)

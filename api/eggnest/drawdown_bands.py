@@ -497,16 +497,19 @@ def closer_look(
     min_width: float,
     most: int,
 ) -> np.ndarray:
-    """The points that cut every interval of ``draws`` inside ``stretches``
-    into up to ``most`` equal pieces, none narrower than ``min_width``."""
+    """The points, to the cent, that cut every interval of ``draws`` inside
+    ``stretches`` into up to ``most`` equal pieces. Rounding a point moves it
+    half a cent at most, so pieces a cent wider than ``min_width`` leave
+    none narrower than it once rounded (locate_jumps takes rates only from
+    pieces that wide)."""
     points = []
     for start, stop in stretches:
         inside = draws[(draws >= start) & (draws <= stop)]
         for low, high in zip(inside, inside[1:], strict=False):
-            pieces = int(min(most, (high - low) // min_width))
+            pieces = int(min(most, (high - low) // (min_width + CENT)))
             if pieces > 1:
                 points.append(low + np.arange(1, pieces) / pieces * (high - low))
-    return np.concatenate(points) if points else np.zeros(0)
+    return np.round(np.concatenate(points), 2) if points else np.zeros(0)
 
 
 def relocated_jumps(
