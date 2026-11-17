@@ -218,9 +218,9 @@ def _person_inputs(
     owns_draw = inputs.draw_owner == who
     # Traditional withdrawals by kind of account.
     traditional = {"ira": 0.0, "workplace_plan": 0.0}
-    traditional[person.other_withdrawals_account] += (
-        person.other_traditional_withdrawals
-    )
+    traditional[
+        person.other_withdrawals_account
+    ] += person.other_traditional_withdrawals
     if owns_draw and inputs.draw_source == "traditional":
         traditional[inputs.draw_account] += draw
     roth = draw if owns_draw and inputs.draw_source == "roth" else 0.0

@@ -363,9 +363,9 @@ def test_each_traditional_withdrawal_reaches_its_account_kind(inputs, share):
     for who, person in inputs.people:
         values = situation["people"][f"{who}_0"]
         expected = {"ira": 0.0, "workplace_plan": 0.0}
-        expected[person.other_withdrawals_account] += (
-            person.other_traditional_withdrawals
-        )
+        expected[
+            person.other_withdrawals_account
+        ] += person.other_traditional_withdrawals
         if inputs.draw_source == "traditional" and inputs.draw_owner == who:
             expected[inputs.draw_account] += draw
         assert values["taxable_ira_distributions"][year] == pytest.approx(
