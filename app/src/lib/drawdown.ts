@@ -56,20 +56,31 @@ function carried<Row extends { draw: number }>(anchor: Row, x: Row, y: Row, draw
 }
 
 /**
+ * Rows at least this many cents apart give a rate that rounding each figure
+ * to the cent moves by a cent a dollar at most.
+ */
+const STEADY_CENTS = 100;
+
+/**
  * The result at any draw, read along the straight line between sweep rows.
  * Amounts nested one level down, such as benefits by program, follow the same
  * line. Between two rows inside a band the API marks as a jump, that line
  * would give a figure no draw yields, so this reads the nearer row's side of
- * the jump: the nearer row, carried to the draw at the rate of the line
- * through it and the row beyond it. Where the nearer row has no row beyond it
- * outside a jump (at either end of the sweep, or beside another jump), the
- * rate comes from the other row's side, so the read still sits no further
- * than half the band from one of the API's rows. Only a sweep with no two
- * rows outside the jump on either side reads the line across it. Every read
- * is a sum of the API's rows whose weights add to one, so its figures add up
- * as the rows do. The API places the jump only to within the band, so they
- * can still be the other side's until the API answers for the draw. The
- * API's own rows come back as they are.
+ * the jump: the nearer row, carried to the draw at the rate of a line beside
+ * the jump. Each side's line runs from the row beside the jump out to the
+ * first row a dollar or more away, over rows outside any jump, or to the
+ * farthest where none is that far: the API brackets a change of rate with
+ * rows a cent apart and rounds each figure to the cent, so a line through
+ * two such rows can show any rate from nothing to a dollar a dollar. The
+ * nearer row's side serves where its line spans a dollar; else the other
+ * side's where that does (at either end of the sweep, or beside another
+ * jump), so the read still sits no further than half the band from one of
+ * the API's rows; else the wider line. Only a sweep with no two rows outside
+ * the jump on either side reads the line across it. Every read is a sum of
+ * the API's rows whose weights add to one, so its figures add up as the rows
+ * do. The API places the jump only to within the band, so they can still be
+ * the other side's until the API answers for the draw. The API's own rows
+ * come back as they are.
  */
 export function rowAt<Row extends { draw: number }>(
   sweep: readonly Row[],
@@ -93,13 +104,33 @@ export function rowAt<Row extends { draw: number }>(
   const inJump = (x: Row, y: Row) =>
     bands.some((band) => band.jump && band.draw_from <= x.draw && y.draw <= band.draw_to);
   if (!inJump(a, b)) return carried(a, a, b, draw);
-  // The line beside the jump on each side, where two rows outside it make one.
-  const sideLine = (x: Row | undefined, y: Row | undefined): [Row, Row] | null =>
-    x && y && !inJump(x, y) ? [x, y] : null;
-  const below = sideLine(sweep[low - 1], a);
-  const above = sideLine(b, sweep[high + 1]);
+  const cents = (line: readonly [Row, Row] | null) =>
+    line ? Math.round((line[1].draw - line[0].draw) * 100) : 0;
+  // The line beside the jump on one side: from the row next to it out to the
+  // first row a dollar or more away, over rows outside any jump, or the
+  // farthest such row. Null where the next row out is past a jump or the end.
+  const sideLine = (from: number, step: 1 | -1): [Row, Row] | null => {
+    let far = from;
+    for (let next = from + step; next >= 0 && next < sweep.length; next += step) {
+      const [x, y] = step < 0 ? [sweep[next], sweep[far]] : [sweep[far], sweep[next]];
+      if (inJump(x, y)) break;
+      far = next;
+      if (Math.round(Math.abs(sweep[far].draw - sweep[from].draw) * 100) >= STEADY_CENTS) break;
+    }
+    if (far === from) return null;
+    return step < 0 ? [sweep[far], sweep[from]] : [sweep[from], sweep[far]];
+  };
   const nearA = draw - a.draw <= b.draw - draw;
-  const [x, y] = (nearA ? (below ?? above) : (above ?? below)) ?? [a, b];
+  const below = sideLine(low, -1);
+  const above = sideLine(high, 1);
+  const [near, other] = nearA ? [below, above] : [above, below];
+  const line =
+    cents(near) >= STEADY_CENTS
+      ? near
+      : cents(other) >= STEADY_CENTS || cents(other) > cents(near)
+        ? other
+        : near;
+  const [x, y] = line ?? [a, b];
   return carried(nearA ? a : b, x, y, draw);
 }
 
