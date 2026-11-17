@@ -1,6 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { USDrawdownMarker, USDrawdownOutcome } from "../../lib/api-us-drawdown";
+import recorded from "../../test/fixtures/us-drawdown-recorded.json";
+import type {
+  USDrawdownMarker,
+  USDrawdownOutcome,
+  USDrawdownSlice,
+} from "../../lib/api-us-drawdown";
+import { describeStep, ladderRange, ladderRows, outcomeAt } from "../../lib/us-drawdown";
 import { DrawdownCurve } from "./DrawdownCurve";
 
 function row(draw: number, snap: number, tax = 0, surcharge = 0): USDrawdownOutcome {
@@ -115,6 +121,29 @@ describe("DrawdownCurve", () => {
     expect(screen.getByText("$19,100 to spend")).toBeInTheDocument();
     expect(screen.getByText("$900 tax")).toBeInTheDocument();
     expect(screen.getByText("$1,148 more for Medicare in 2028")).toBeInTheDocument();
+  });
+
+  it("says where the example's SNAP jump falls under the pointer, in the ladder's words", () => {
+    // page2: at $7,300 the tooltip read $31,370 to spend where the engine
+    // gives $31,586; the API places SNAP's fall only between $7,291.67 and
+    // $7,302.08.
+    const result = recorded.example.envelope.outputs.us_drawdown_year_result;
+    const sweep = result.sweep as USDrawdownOutcome[];
+    const bands = result.bands as USDrawdownSlice[];
+    renderCurve({ sweep, bands, top: 10_000, step: 1, markers: [], draw: 0 });
+    fireEvent.pointerMove(sizedSurface(), { clientX: 465, pointerId: 1 });
+    expect(screen.getByText("Draw $7,300")).toBeInTheDocument();
+    expect(screen.getByText("Between $7,292 and $7,302")).toBeInTheDocument();
+    expect(screen.getByText("SNAP falls by $216 all at once.")).toBeInTheDocument();
+    expect(screen.queryByText(/^\$[\d,]+ to spend$/)).not.toBeInTheDocument();
+    expect(screen.queryByText("$31,370 to spend")).not.toBeInTheDocument();
+    // The ladder's row for the same band says the same.
+    const rows = ladderRows(bands);
+    const index = rows.findIndex((row) => row.step && row.draw_from === 7_291.67);
+    expect(ladderRange(rows, index, 250_000)).toBe("Between $7,292 and $7,302");
+    expect(describeStep(outcomeAt(sweep, 7_291.67), outcomeAt(sweep, 7_302.08))).toBe(
+      "SNAP falls by $216 all at once.",
+    );
   });
 
   it("sets the draw where the pointer lands", () => {

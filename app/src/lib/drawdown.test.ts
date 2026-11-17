@@ -7,12 +7,15 @@ import {
   drawLimitNote,
   failureMessage,
   joinBands,
+  jumpAround,
   keyedDraw,
   labelPlacement,
+  ladderRangeIn,
   ladderRowsOf,
   resultIsStale,
   rowAt,
   sameDraw,
+  stepPlaceIn,
   turningPoints,
 } from "./drawdown";
 
@@ -30,6 +33,10 @@ import {
 //   the rate of the other side's line, so it still reads no further than
 //   half the band from an API row. Only a sweep with no two rows outside a
 //   jump on either side reads the line across it.
+// - Where the API holds no row at a draw inside a band it marks as a jump,
+//   jumpAround names that band; the page dims there and the tooltip says
+//   where the jump falls, not a figure (page2). The ladder and the tooltip
+//   say where a jump falls in the same words.
 // - turningPoints lists only rows the API returned, once each: a band edge or
 //   the draw, never a figure read off a line (uk-page-09).
 // - A result is stale for a draw past its sweep's top (uk-page-03, us-page-1),
@@ -368,6 +375,60 @@ describe("resultIsStale", () => {
   it("compares draws to the penny", () => {
     expect(sameDraw(2_500, 2_500.004)).toBe(true);
     expect(sameDraw(2_500, 2_500.01)).toBe(false);
+  });
+});
+
+describe("jumpAround", () => {
+  const rows = [{ draw: 0 }, { draw: 7_291.67 }, { draw: 7_300 }, { draw: 7_302.08 }, { draw: 10_000 }];
+  const bands = [
+    { draw_from: 0, draw_to: 7_291.67, jump: false },
+    { draw_from: 7_291.67, draw_to: 7_302.08, jump: true },
+    { draw_from: 7_302.08, draw_to: 10_000, jump: false },
+  ];
+
+  it("names the jump a draw falls inside where the API holds no row for it", () => {
+    expect(jumpAround(rows, 7_295, bands)).toBe(bands[1]);
+    expect(jumpAround(rows, 7_301, bands)).toBe(bands[1]);
+  });
+
+  it("names none at the API's own rows, outside a jump, or in a band not marked as one", () => {
+    for (const draw of [7_291.67, 7_300, 7_302.08, 8_000, 0]) expect(jumpAround(rows, draw, bands)).toBeNull();
+    expect(jumpAround(rows, 7_295, bands.map((band) => ({ ...band, jump: false })))).toBeNull();
+  });
+
+  it("holds a draw stale exactly where it names a jump", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 1_000_000 }), (pence) => {
+        const draw = pence / 100;
+        expect(resultIsStale("a", "a", rows, draw, bands)).toBe(jumpAround(rows, draw, bands) !== null);
+      }),
+    );
+  });
+});
+
+describe("stepPlaceIn", () => {
+  const dollars = (value: number) => "$" + Math.round(value).toLocaleString("en-US");
+
+  it("says a jump falls somewhere between its band's ends", () => {
+    // page2: the API places the example's SNAP jump only to within $7,291.67
+    // to $7,302.08; "At about $7,302" said more than it knows.
+    expect(stepPlaceIn(dollars, { draw_from: 7_291.67, draw_to: 7_302.08 })).toBe(
+      "Between $7,292 and $7,302",
+    );
+  });
+
+  it("places a jump to the penny where it lands, and one whose ends print alike at about there", () => {
+    expect(stepPlaceIn(dollars, { draw_from: 770, draw_to: 770.01 })).toBe("At $770");
+    expect(stepPlaceIn(dollars, { draw_from: 16_499.6, draw_to: 16_500.4 })).toBe("At about $16,500");
+  });
+
+  it("is the ladder's range for a step", () => {
+    const rows = [
+      { draw_from: 0, draw_to: 7_291.67, step: false },
+      { draw_from: 7_291.67, draw_to: 7_302.08, step: true },
+      { draw_from: 7_302.08, draw_to: 9_000, step: false },
+    ];
+    expect(ladderRangeIn(dollars, rows, 1, 9_000)).toBe("Between $7,292 and $7,302");
   });
 });
 

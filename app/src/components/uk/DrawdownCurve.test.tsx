@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { DrawdownMarker, DrawdownOutcome } from "../../lib/api-uk-drawdown";
+import type { DrawdownBand, DrawdownMarker, DrawdownOutcome } from "../../lib/api-uk-drawdown";
 import { DrawdownCurve } from "./DrawdownCurve";
 
 function row(draw: number, pension_credit: number, income_tax = 0): DrawdownOutcome {
@@ -114,6 +114,36 @@ describe("DrawdownCurve", () => {
     expect(onDraw).toHaveBeenLastCalledWith(9_980);
     fireEvent.pointerMove(surface, { clientX: 0, pointerId: 1 });
     expect(onDraw).toHaveBeenLastCalledWith(0);
+  });
+
+  it("says where a jump falls under the pointer, not a figure", () => {
+    // page2: the API places the UK's income tax jumps to the penny, so no
+    // pointer lands inside one; this stand-in band places a £101 jump only
+    // within £770 to £775, as a wider band would.
+    const band = (draw_from: number, draw_to: number, to_tax: number, jump = false): DrawdownBand => ({
+      draw_from,
+      draw_to,
+      kept: 1 - to_tax,
+      to_tax,
+      to_pension_credit: 0,
+      jump,
+    });
+    renderCurve({
+      sweep: [row(0, 0), row(770, 0, 154), row(775, 0, 255), row(1_770, 0, 455)],
+      bands: [band(0, 770, 0.2), band(770, 775, 20.2, true), band(775, 1_770, 0.2)],
+      top: 1_770,
+      step: 1,
+      markers: [],
+      draw: 0,
+    });
+    const surface = sizedSurface();
+    // 773 of 1,770 across the plot's 500 px.
+    fireEvent.pointerMove(surface, { clientX: 100 + (500 * 773) / 1_770, pointerId: 1 });
+    expect(screen.getByText("Draw £773")).toBeInTheDocument();
+    expect(screen.getByText("Between £770 and £775")).toBeInTheDocument();
+    expect(screen.getByText("Your tax rises by £101 all at once.")).toBeInTheDocument();
+    expect(screen.queryByText(/^£[\d,]+ to spend$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^£[\d,]+ Pension Credit$/)).not.toBeInTheDocument();
   });
 
   it("shows the figures under the pointer and clears them on leaving", () => {

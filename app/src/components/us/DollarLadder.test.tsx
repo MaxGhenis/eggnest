@@ -67,7 +67,7 @@ describe("DollarLadder", () => {
     expect(rows()).toHaveLength(4);
     expect(within(first).getByText("Up to $5,000")).toBeInTheDocument();
     expect(within(first).getByText("You keep the whole dollar.")).toBeInTheDocument();
-    expect(within(jump).getByText("At about $5,010")).toBeInTheDocument();
+    expect(within(jump).getByText("Between $5,000 and $5,010")).toBeInTheDocument();
     expect(within(jump).getByText("SNAP falls by $216 all at once.")).toBeInTheDocument();
     expect(within(phaseOut).getByText("$5,010 to $6,000")).toBeInTheDocument();
     expect(within(phaseOut).getByText("You keep 92¢ and lose 8¢ of SNAP.")).toBeInTheDocument();

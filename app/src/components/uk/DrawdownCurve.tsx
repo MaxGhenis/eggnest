@@ -1,7 +1,7 @@
 "use client";
 
 import type { DrawdownBand, DrawdownMarker, DrawdownOutcome } from "../../lib/api-uk-drawdown";
-import { compactPounds, pounds } from "../../lib/uk-drawdown";
+import { compactPounds, describeStep, pounds } from "../../lib/uk-drawdown";
 import { DrawdownChart } from "../drawdown/DrawdownChart";
 
 const MARKER_LABELS: Record<DrawdownMarker["kind"], string> = {
@@ -56,6 +56,7 @@ export function DrawdownCurve({
       taxAbove={(row, noDraw) => taxOf(row) - taxOf(noDraw)}
       lostAt={(row, noDraw) => noDraw.pension_credit - row.pension_credit}
       details={(row) => [`${pounds(taxOf(row))} tax`, `${pounds(row.pension_credit)} Pension Credit`]}
+      describeStep={describeStep}
       money={pounds}
       compact={compactPounds}
       labels={LABELS}

@@ -10,10 +10,12 @@ import {
 } from "react";
 import {
   estimatedLabelWidth,
+  jumpAround,
   keyedDraw,
   labelPlacement,
   niceTicks,
   rowAt,
+  stepPlaceIn,
   type MarkedSpan,
 } from "../../lib/drawdown";
 import { SPLIT_COLORS } from "./SplitBar";
@@ -71,7 +73,10 @@ function pathThrough(points: [number, number][]): string {
  * Money to spend at every draw. The horizontal axis doubles as the slider that
  * sets the draw, and dragging across the plot moves it too. A mouse sets the
  * draw where it presses; a touch sets it on a tap or a drag across the plot,
- * and leaves a vertical swipe to scroll the page.
+ * and leaves a vertical swipe to scroll the page. Under the pointer, inside a
+ * jump the API holds no row for, the tooltip says what changes there and
+ * between which draws, in the ladder's words, rather than a figure the engine
+ * may not give.
  */
 export function DrawdownChart<Row extends ChartRow>({
   sweep,
@@ -84,12 +89,13 @@ export function DrawdownChart<Row extends ChartRow>({
   taxAbove,
   lostAt,
   details,
+  describeStep,
   money,
   compact,
   labels,
 }: {
   sweep: Row[];
-  /** The API's bands; between rows inside a jump the chart reads the nearer row. */
+  /** The API's bands; the chart reads a jump from them as the page does. */
   bands?: readonly MarkedSpan[];
   draw: number;
   top: number;
@@ -102,6 +108,8 @@ export function DrawdownChart<Row extends ChartRow>({
   lostAt: (row: Row, noDraw: Row) => number;
   /** Lines under the amount to spend in the tooltip. */
   details: (row: Row) => string[];
+  /** What changes all at once across a jump, from the API's rows at its band's ends, as the ladder says it. */
+  describeStep: (from: Row, to: Row) => string;
   money: (value: number) => string;
   compact: (value: number) => string;
   labels: ChartLabels;
@@ -188,7 +196,10 @@ export function DrawdownChart<Row extends ChartRow>({
     ).slice(1)}Z`;
 
   const chosen = rowAt(sweep, draw, bands);
-  const inspected = hover === null ? null : rowAt(sweep, hover, bands);
+  // Inside a jump the API places only to within its band, the tooltip shows
+  // the jump instead of a row.
+  const jump = hover === null ? null : jumpAround(sweep, hover, bands);
+  const inspected = hover === null || jump ? null : rowAt(sweep, hover, bands);
   const xTicks = niceTicks(0, top, width < 480 ? 3 : 6);
 
   const drawAtPointer = (event: PointerEvent<SVGRectElement>) => {
@@ -393,24 +404,25 @@ export function DrawdownChart<Row extends ChartRow>({
             strokeWidth={2}
           />
 
+          {hover !== null && (
+            <line
+              x1={x(hover)}
+              x2={x(hover)}
+              y1={marginTop}
+              y2={plotBottom}
+              stroke="var(--color-gray-500)"
+            />
+          )}
           {inspected && (
-            <>
-              <line
-                x1={x(inspected.draw)}
-                x2={x(inspected.draw)}
-                y1={marginTop}
-                y2={plotBottom}
-                stroke="var(--color-gray-500)"
-              />
-              <circle
-                cx={x(inspected.draw)}
-                cy={y(inspected.money_to_spend)}
-                r={4}
-                fill={SPLIT_COLORS.kept}
-                stroke="var(--color-bg-card)"
-                strokeWidth={2}
-              />
-            </>
+            <circle
+              data-testid="hover-point"
+              cx={x(inspected.draw)}
+              cy={y(inspected.money_to_spend)}
+              r={4}
+              fill={SPLIT_COLORS.kept}
+              stroke="var(--color-bg-card)"
+              strokeWidth={2}
+            />
           )}
 
           <rect
@@ -469,23 +481,34 @@ export function DrawdownChart<Row extends ChartRow>({
           }}
         />
 
-        {inspected && (
+        {hover !== null && (
           <div
-            className="pointer-events-none absolute rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2 text-sm shadow-[var(--shadow-md)]"
+            className="pointer-events-none absolute max-w-[16rem] rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2 text-sm shadow-[var(--shadow-md)]"
             style={{
               top: marginTop + 6,
-              ...(x(inspected.draw) > width / 2
-                ? { right: width - x(inspected.draw) + 10 }
-                : { left: x(inspected.draw) + 10 }),
+              ...(x(hover) > width / 2 ? { right: width - x(hover) + 10 } : { left: x(hover) + 10 }),
             }}
           >
-            <div className="text-[var(--color-text-muted)]">Draw {money(inspected.draw)}</div>
-            <div className="font-semibold tabular-nums">{money(inspected.money_to_spend)} to spend</div>
-            {details(inspected).map((line) => (
-              <div key={line} className="tabular-nums">
-                {line}
-              </div>
-            ))}
+            <div className="text-[var(--color-text-muted)]">Draw {money(hover)}</div>
+            {jump ? (
+              <>
+                <div className="font-semibold tabular-nums">{stepPlaceIn(money, jump)}</div>
+                <div>{describeStep(rowAt(sweep, jump.draw_from), rowAt(sweep, jump.draw_to))}</div>
+              </>
+            ) : (
+              inspected && (
+                <>
+                  <div className="font-semibold tabular-nums">
+                    {money(inspected.money_to_spend)} to spend
+                  </div>
+                  {details(inspected).map((line) => (
+                    <div key={line} className="tabular-nums">
+                      {line}
+                    </div>
+                  ))}
+                </>
+              )
+            )}
           </div>
         )}
       </div>

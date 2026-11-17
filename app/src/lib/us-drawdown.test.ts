@@ -336,7 +336,7 @@ describe("ladderRows", () => {
     const located = slice(59_583.33, 59_625, 0.9799, 0, 0, true);
     const rows = ladderRows([slice(0, 59_583.33), located, slice(59_625, 80_000, 0.26)]);
     expect(rows.map((row) => row.step)).toEqual([false, true, false]);
-    expect(ladderRange(rows, 1, 250_000)).toBe("At about $59,625");
+    expect(ladderRange(rows, 1, 250_000)).toBe("Between $59,583 and $59,625");
     // A fast rate the API didn't locate as a jump reads as a rate.
     expect(ladderRows([slice(0, 10, 0, 20.7)])[0].step).toBe(false);
   });
@@ -1010,7 +1010,7 @@ describe("wording", () => {
     ).toBe("Covers the required minimum");
   });
 
-  it("names the ladder's ranges, a jump by where it lands", () => {
+  it("names the ladder's ranges, a jump by the range the API places it in", () => {
     const rows = ladderRows([
       slice(0, 7_291.67),
       slice(7_291.67, 7_302.08, 0, 20.75, 0, true),
@@ -1018,7 +1018,7 @@ describe("wording", () => {
     ]);
     expect(rows.map((_row, index) => ladderRange(rows, index, 250_000))).toEqual([
       "Up to $7,292",
-      "At about $7,302",
+      "Between $7,292 and $7,302",
       "Above $7,302",
     ]);
   });

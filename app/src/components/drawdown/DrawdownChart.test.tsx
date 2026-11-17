@@ -9,8 +9,10 @@ import { DrawdownChart, type ChartMarker } from "./DrawdownChart";
 // - The slider's keys reach the top of the range, the balance itself
 //   (uk-page-18a).
 // - Every marker label sits inside the chart (us-page-6).
-// - Under the pointer, a draw inside a located jump reads the nearer row,
-//   never a blend (us-page-2).
+// - Under the pointer, inside a jump the API holds no row for, the tooltip
+//   says what changes there and between which draws, never a figure the
+//   engine may not give, and the chart marks no point on the curve there
+//   (us-page-2, page2). Elsewhere it shows the figures at the draw.
 
 interface Row {
   draw: number;
@@ -41,6 +43,7 @@ function renderChart(overrides: Partial<Parameters<typeof DrawdownChart<Row>>[0]
       taxAbove={(r, none) => r.tax - none.tax}
       lostAt={() => 0}
       details={(r) => [`£${r.tax} tax`]}
+      describeStep={(from, to) => `Tax rises by £${to.tax - from.tax} all at once.`}
       money={(value) => `£${Math.round(value).toLocaleString("en-GB")}`}
       compact={(value) => `£${value}`}
       labels={LABELS}
@@ -204,10 +207,16 @@ describe("DrawdownChart markers", () => {
 });
 
 describe("DrawdownChart tooltip", () => {
-  it("reads the nearer row's side inside a located jump", () => {
-    // us-page-2: a hover at $7,300 inside the SNAP jump showed a blend. It
-    // sits nearer $7,302.08, so it reads that side's line back to $7,300.
-    const sweep = [row(0, 24_000), row(7_291.67, 31_577.67), row(7_302.08, 31_372.08), row(10_000, 34_070)];
+  it("says where a located jump falls, not a figure the engine may not give", () => {
+    // us-page-2, page2: at $7,300, inside the SNAP jump the API places only
+    // between $7,291.67 and $7,302.08, the tooltip read £31,370 to spend where
+    // the engine gives £31,586.
+    const sweep = [
+      row(0, 24_000),
+      row(7_291.67, 31_577.67),
+      row(7_302.08, 31_372.08, 216),
+      row(10_000, 34_070, 216),
+    ];
     renderChart({
       sweep,
       top: 10_000,
@@ -221,6 +230,35 @@ describe("DrawdownChart tooltip", () => {
     const plot = surface();
     fireEvent.pointerMove(plot, { pointerId: 1, pointerType: "mouse", clientX: 465, buttons: 0 });
     expect(screen.getByText("Draw £7,300")).toBeInTheDocument();
-    expect(screen.getByText("£31,370 to spend")).toBeInTheDocument();
+    expect(screen.getByText("Between £7,292 and £7,302")).toBeInTheDocument();
+    expect(screen.getByText("Tax rises by £216 all at once.")).toBeInTheDocument();
+    expect(screen.queryByText(/^£[\d,]+ to spend$/)).not.toBeInTheDocument();
+    expect(screen.queryByText("£0 tax")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("hover-point")).not.toBeInTheDocument();
+
+    // Outside the jump, the figures at the draw.
+    fireEvent.pointerMove(plot, { pointerId: 1, pointerType: "mouse", clientX: 500, buttons: 0 });
+    expect(screen.getByText("Draw £8,000")).toBeInTheDocument();
+    expect(screen.getByText("£32,070 to spend")).toBeInTheDocument();
+    expect(screen.getByText("£216 tax")).toBeInTheDocument();
+    expect(screen.queryByText("Between £7,292 and £7,302")).not.toBeInTheDocument();
+    expect(screen.getByTestId("hover-point")).toBeInTheDocument();
+  });
+
+  it("shows the API's own row at a band's end", () => {
+    const sweep = [row(0, 24_000), row(7_300, 31_300), row(7_310, 31_094, 216), row(10_000, 33_784, 216)];
+    renderChart({
+      sweep,
+      top: 10_000,
+      bands: [
+        { draw_from: 0, draw_to: 7_300, jump: false },
+        { draw_from: 7_300, draw_to: 7_310, jump: true },
+        { draw_from: 7_310, draw_to: 10_000, jump: false },
+      ],
+      step: 1,
+    });
+    fireEvent.pointerMove(surface(), { pointerId: 1, pointerType: "mouse", clientX: 465, buttons: 0 });
+    expect(screen.getByText("£31,300 to spend")).toBeInTheDocument();
+    expect(screen.queryByText(/^Between/)).not.toBeInTheDocument();
   });
 });

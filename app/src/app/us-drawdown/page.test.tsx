@@ -520,7 +520,7 @@ describe("USDrawdownPage", () => {
     expect(rowText(coverage(), "Medicaid")).toBe("YesYes");
     expect(rowText(coverage(), "Medicare Savings Program")).toBe("YesYes");
     expect(screen.queryByText(/ends at a draw of about/)).not.toBeInTheDocument();
-    expect(screen.getByText("At about $11,942")).toBeInTheDocument();
+    expect(screen.getByText("Between $11,940 and $11,942")).toBeInTheDocument();
     expect(screen.getByText("CSFP food boxes end, taking $651 all at once.")).toBeInTheDocument();
     expect(screen.queryByText(/You’d lose/)).not.toBeInTheDocument();
 

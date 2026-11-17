@@ -146,11 +146,25 @@ export function turningPoints<Row extends { draw: number }>(
 }
 
 /**
+ * The band the API marks as a jump that a draw falls inside, where the API
+ * holds no row at the draw; otherwise null. The API places a jump only to
+ * within its band, so there it doesn't know which side of the jump the draw
+ * falls.
+ */
+export function jumpAround<Band extends MarkedSpan>(
+  sweep: readonly { draw: number }[],
+  draw: number,
+  bands: readonly Band[],
+): Band | null {
+  if (rowOn(sweep, draw) !== null) return null;
+  return bands.find((band) => band.jump && band.draw_from < draw && draw < band.draw_to) ?? null;
+}
+
+/**
  * True while the figures on show can't be the API's for the inputs on the
  * page: a run for other figures; a draw past the top of its sweep, where the
- * page would repeat the top row's figures; or a draw between the rows of a
- * band the API marks as a jump, where it doesn't know which side of the jump
- * the draw falls.
+ * page would repeat the top row's figures; or a draw inside a jump the API
+ * holds no row for (jumpAround).
  */
 export function resultIsStale(
   runBaseKey: string,
@@ -160,10 +174,19 @@ export function resultIsStale(
   bands: readonly MarkedSpan[] = [],
 ): boolean {
   if (runBaseKey !== baseKey || draw > sweep[sweep.length - 1].draw + 0.005) return true;
-  return (
-    rowOn(sweep, draw) === null &&
-    bands.some((band) => band.jump && band.draw_from < draw && draw < band.draw_to)
-  );
+  return jumpAround(sweep, draw, bands) !== null;
+}
+
+/**
+ * Where a jump falls, in words, for the ladder and the chart's tooltip alike.
+ * A jump placed to the penny lands there; a wider one lies somewhere between
+ * its band's ends, which this names unless they print alike.
+ */
+export function stepPlaceIn(format: (value: number) => string, band: DrawSpan): string {
+  if (band.draw_to - band.draw_from <= 0.015) return `At ${format(band.draw_to)}`;
+  const from = format(band.draw_from);
+  const to = format(band.draw_to);
+  return from === to ? `At about ${to}` : `Between ${from} and ${to}`;
 }
 
 /** What the draw field says when it holds more than the source the draw comes from. */
@@ -230,7 +253,7 @@ export function ladderRowsOf<Band extends DrawSpan & { jump: boolean }>(
   return rows;
 }
 
-/** A ladder row's draw amounts, in words; a jump by where it lands. */
+/** A ladder row's draw amounts, in words; a jump by where it falls (stepPlaceIn). */
 export function ladderRangeIn(
   format: (value: number) => string,
   rows: readonly (DrawSpan & { step: boolean })[],
@@ -238,12 +261,7 @@ export function ladderRangeIn(
   balance: number,
 ): string {
   const row = rows[index];
-  if (row.step) {
-    // A jump placed to the penny lands there; a wider one lies somewhere in it.
-    const exact = row.draw_to - row.draw_from <= 0.015;
-    return `At ${exact ? "" : "about "}${format(row.draw_to)}`;
-  }
-  return bandRangeIn(format, rows, index, balance);
+  return row.step ? stepPlaceIn(format, row) : bandRangeIn(format, rows, index, balance);
 }
 
 /** A band's draw amounts, in words. The sweep can stop short of a large balance. */

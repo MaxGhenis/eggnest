@@ -1,7 +1,7 @@
 "use client";
 
 import type { USDrawdownSlice, USDrawdownMarker, USDrawdownOutcome } from "../../lib/api-us-drawdown";
-import { compactDollars, dollars, markerLabel, taxesOf } from "../../lib/us-drawdown";
+import { compactDollars, describeStep, dollars, markerLabel, taxesOf } from "../../lib/us-drawdown";
 import { DrawdownChart } from "../drawdown/DrawdownChart";
 
 const LABELS = {
@@ -55,6 +55,7 @@ export function DrawdownCurve({
           ? [`${dollars(row.later_medicare_surcharge)} more for Medicare in 2028`]
           : []),
       ]}
+      describeStep={describeStep}
       money={dollars}
       compact={compactDollars}
       labels={LABELS}

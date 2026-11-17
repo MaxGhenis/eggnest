@@ -201,7 +201,7 @@ export function ladderRows(bands: readonly DrawdownBand[]): PoundLadderRow[] {
   return ladderRowsOf(bands, sameInPence);
 }
 
-/** A ladder row's draw amounts, in words; a jump by the penny it lands on. */
+/** A ladder row's draw amounts, in words; a jump by where it falls, to the penny. */
 export function ladderRange(rows: readonly PoundLadderRow[], index: number, balance: number): string {
   return ladderRangeIn(pounds, rows, index, balance);
 }
