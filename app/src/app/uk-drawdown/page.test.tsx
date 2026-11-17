@@ -1,9 +1,15 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import recorded from "../../test/fixtures/uk-drawdown-recorded.json";
-import type { UKDrawdownRun, UKDrawdownYearInput } from "../../lib/api-uk-drawdown";
+import type {
+  DrawdownBand,
+  DrawdownOutcome,
+  UKDrawdownRun,
+  UKDrawdownYearInput,
+} from "../../lib/api-uk-drawdown";
 import { NetworkError, SimulationError } from "../../lib/api";
 import { runUKDrawdownYear } from "../../lib/api-uk-drawdown";
+import { pounds } from "../../lib/uk-drawdown";
 import UKDrawdownPage from "./page";
 
 vi.mock("../../lib/api-uk-drawdown", async (importOriginal) => ({
@@ -23,12 +29,48 @@ function exampleRun(name: keyof typeof recorded = "example"): UKDrawdownRun {
   };
 }
 
+/**
+ * A stand-in for a run with a jump at the top of its sweep: the run with its
+ * last interval marked as a jump, its rates read off that interval's rows.
+ */
+function withJumpAtTop(run: UKDrawdownRun): UKDrawdownRun {
+  const { sweep, bands } = run.result;
+  const [a, b] = sweep.slice(-2);
+  const width = b.draw - a.draw;
+  const tax = (row: DrawdownOutcome) => row.income_tax + row.employee_ni;
+  const last = bands[bands.length - 1];
+  const jump: DrawdownBand = {
+    draw_from: a.draw,
+    draw_to: b.draw,
+    kept: (b.money_to_spend - a.money_to_spend) / width,
+    to_tax: (tax(b) - tax(a)) / width,
+    to_pension_credit: (a.pension_credit - b.pension_credit) / width,
+    jump: true,
+  };
+  const before = last.draw_from < a.draw ? [{ ...last, draw_to: a.draw }] : [];
+  return { ...run, result: { ...run.result, bands: [...bands.slice(0, -1), ...before, jump] } };
+}
+
+/** Each ledger line's amount in the chosen draw's column, a deduction below zero. */
+function chosenColumn(table: HTMLElement): Map<string, number> {
+  const column = new Map<string, number>();
+  for (const row of table.querySelectorAll("tbody tr, tfoot tr")) {
+    const label = row.querySelector("th")!.textContent!;
+    const text = row.querySelectorAll("td")[1].textContent!;
+    column.set(label, (text.startsWith("−") ? -1 : 1) * Number(text.replace(/[^0-9.]/g, "")));
+  }
+  return column;
+}
+
+/** The page's visible text, not the screen-reader announcement of the API's answer. */
+const SHOWN = { ignore: "script, style, [role=status]" };
+
 const HEADLINE =
   "Draw £2,500 from your pension pot in 2026/27 and you’ll have £12,376 to spend.";
 
 async function openPage() {
   render(<UKDrawdownPage />);
-  await screen.findByText(HEADLINE, undefined, { timeout: 3_000 });
+  await screen.findByText(HEADLINE, SHOWN, { timeout: 3_000 });
 }
 
 function lastInputs(): UKDrawdownYearInput {
@@ -104,7 +146,7 @@ describe("UKDrawdownPage", () => {
 
     // £3,000 sits on the sweep, so the preview needs no second request.
     expect(
-      screen.getByText("Draw £3,000 from your pension pot in 2026/27 and you’ll have £12,376 to spend."),
+      screen.getByText("Draw £3,000 from your pension pot in 2026/27 and you’ll have £12,376 to spend.", SHOWN),
     ).toBeInTheDocument();
     expect(runMock).not.toHaveBeenCalled();
 
@@ -135,6 +177,153 @@ describe("UKDrawdownPage", () => {
     edit("Amount to draw in 2026/27", "50000");
     await waitFor(() => expect(runMock).toHaveBeenCalled());
     expect(lastInputs().draw_amount).toBe(10_000);
+  });
+
+  it("says beside the draw field that the draw stops at the pot", async () => {
+    // uk-page-02: the field kept £50,000 while the page worked out £10,000,
+    // and raising the pot later revived the hidden figure.
+    await openPage();
+    edit("Amount to draw in 2026/27", "50000");
+    const note = screen.getByText(
+      "You can draw up to £10,000 from your pension pot, so we use £10,000.",
+    );
+    expect(
+      screen.getByLabelText("Amount to draw in 2026/27").getAttribute("aria-describedby")?.split(" "),
+    ).toContain(note.id);
+
+    edit("Pension pots", "100000");
+    expect(screen.queryByText(/You can draw up to/)).not.toBeInTheDocument();
+    await waitFor(() => expect(lastInputs().draw_amount).toBe(50_000));
+  });
+
+  it("dims the result for a draw past the sweep's top until the API answers", async () => {
+    // uk-page-03: a draw past the last row showed that row's figures under the
+    // new draw's headline, undimmed. The API's sweep can stop short of a large
+    // pot, as this one does at £180,000 of £400,000.
+    const large = exampleRun("large_pot");
+    const short = {
+      ...large,
+      result: { ...large.result, sweep: large.result.sweep.filter((row) => row.draw <= 180_000) },
+    };
+    await openPage();
+    runMock.mockImplementation(async () => short);
+    edit("Pension pots", "400000");
+    await waitFor(() => expect(lastInputs().sipp_balance).toBe(400_000));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/^Draw £2,500 from your pension pot/, SHOWN).closest("[aria-busy]"),
+      ).toHaveAttribute("aria-busy", "false"),
+    );
+
+    let answer: (run: UKDrawdownRun) => void = () => {};
+    runMock.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    edit("Amount to draw in 2026/27", "300000");
+    const headline = screen.getByText(/^Draw £300,000 from your pension pot/, SHOWN);
+    expect(headline.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
+
+    await waitFor(() => expect(lastInputs().draw_amount).toBe(300_000));
+    const at = large.result.sweep.find((row) => row.draw === 300_000)!;
+    await act(async () => answer({ ...large, result: { ...large.result, at_chosen_draw: at } }));
+    expect(
+      screen.getByText(/^Draw £300,000 from your pension pot/, SHOWN).closest("[aria-busy]"),
+    ).toHaveAttribute("aria-busy", "false");
+  });
+
+  it("adds up the year at a draw inside a jump at the sweep's top, and dims it", async () => {
+    // page2: inside a jump on the sweep's last interval, a draw nearer the top
+    // showed the top row's tax and money to spend beside the new draw, so the
+    // ledger no longer added up. No recorded run has a jump at either end:
+    // this stand-in marks the example's last interval, £9,950 to £10,000, as one.
+    runMock.mockImplementation(async () => withJumpAtTop(exampleRun()));
+    await openPage();
+    runMock.mockImplementation(() => new Promise(() => {}));
+    edit("Amount to draw in 2026/27", "9990");
+    const table = screen.getByRole("table", {
+      name: "Your tax year with no draw and with your chosen draw",
+    });
+    const column = chosenColumn(table);
+    expect(column.get("Money you draw")).toBe(9_990);
+    const { "Money to spend": spend, ...lines } = Object.fromEntries(column);
+    const sum = Object.values(lines).reduce((total, value) => total + value, 0);
+    // Each line rounds to the pound, so the sum can miss by a pound or two.
+    expect(Math.abs(sum - spend)).toBeLessThanOrEqual(2);
+    expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("dims the weekly working until the API answers for the new draw", async () => {
+    // uk-page-06: the working showed the old draw's weekly figures under the
+    // new draw's headline.
+    await openPage();
+    runMock.mockClear();
+    let answer: (run: UKDrawdownRun) => void = () => {};
+    runMock.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    fireEvent.change(screen.getByRole("slider", { name: "Amount to draw in the tax year" }), {
+      target: { value: "5000" },
+    });
+    const working = screen.getByRole("region", { name: "What DWP counts each week" });
+    expect(working).toHaveAttribute("aria-busy", "true");
+
+    await waitFor(() => expect(runMock).toHaveBeenCalledTimes(1));
+    const run = exampleRun();
+    const at = run.result.sweep.find((row) => row.draw === 5_000)!;
+    await act(async () => answer({ ...run, result: { ...run.result, at_chosen_draw: at } }));
+    expect(screen.getByRole("region", { name: "What DWP counts each week" })).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+  });
+
+  it("lists only the API's own rows as turning points", async () => {
+    // uk-page-09: the table read rows off a straight line, which misses the
+    // engine's figures most at a band's edge.
+    await openPage();
+    runMock.mockClear();
+    let answer: (run: UKDrawdownRun) => void = () => {};
+    runMock.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    edit("Amount to draw in 2026/27", "2345");
+    const drawsListed = () =>
+      [
+        ...(screen
+          .getByText("See the turning points as a table")
+          .closest("details")
+          ?.querySelectorAll("tbody th") ?? []),
+      ].map((cell) => cell.textContent);
+    const sweep = exampleRun().result.sweep;
+    expect(drawsListed()).not.toContain("£2,345");
+    for (const amount of drawsListed()) {
+      expect(sweep.some((row) => pounds(row.draw) === amount)).toBe(true);
+    }
+
+    await waitFor(() => expect(runMock).toHaveBeenCalledTimes(1));
+    const run = exampleRun();
+    const at = { ...run.result.with_no_draw, draw: 2_345 };
+    const withDraw = [...sweep.filter((row) => row.draw < 2_345), at, ...sweep.filter((row) => row.draw > 2_345)];
+    await act(async () =>
+      answer({ ...run, result: { ...run.result, sweep: withDraw, at_chosen_draw: at } }),
+    );
+    expect(drawsListed()).toContain("£2,345");
+  });
+
+  it("announces the API's answer once, not each figure on the way", async () => {
+    // uk-page-15: every figure typed re-announced the headline.
+    await openPage();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent(HEADLINE);
+    runMock.mockClear();
+    let answer: (run: UKDrawdownRun) => void = () => {};
+    runMock.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    const slider = screen.getByRole("slider", { name: "Amount to draw in the tax year" });
+    fireEvent.change(slider, { target: { value: "1000" } });
+    fireEvent.change(slider, { target: { value: "3000" } });
+    expect(status).toHaveTextContent(HEADLINE);
+
+    await waitFor(() => expect(runMock).toHaveBeenCalledTimes(1));
+    const run = exampleRun();
+    const at = run.result.sweep.find((row) => row.draw === 3_000)!;
+    await act(async () => answer({ ...run, result: { ...run.result, at_chosen_draw: at } }));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Draw £3,000 from your pension pot in 2026/27 and you’ll have £12,376 to spend.",
+    );
   });
 
   it("explains an under-age pension draw without calling the API", async () => {
@@ -168,7 +357,7 @@ describe("UKDrawdownPage", () => {
       "We couldn’t reach the calculator. Check your connection and try again.",
     );
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText(HEADLINE)).toBeInTheDocument();
+    expect(await screen.findByText(HEADLINE, SHOWN)).toBeInTheDocument();
   });
 
   it("words a server error as one, not as a connection problem", async () => {

@@ -3,12 +3,13 @@
 import { IconAlertTriangle, IconInfoCircle } from "@tabler/icons-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { ResultAnnouncement } from "../../components/drawdown/ResultAnnouncement";
+import { useDrawdownRun } from "../../components/drawdown/useDrawdownRun";
 import { DrawdownCurve } from "../../components/uk/DrawdownCurve";
 import { DrawdownForm } from "../../components/uk/DrawdownForm";
 import { PoundLadder } from "../../components/uk/PoundLadder";
 import { PoundSplitBar, PoundSplitLegend } from "../../components/uk/PoundSplitBar";
-import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import {
   runUKDrawdownYear,
   type DrawdownCitation,
@@ -16,6 +17,7 @@ import {
   type UKDrawdownRun,
   type UKDrawdownYearInput,
 } from "../../lib/api-uk-drawdown";
+import { resultIsStale, sameDraw, turningPoints } from "../../lib/drawdown";
 import { citationLabel } from "../../lib/uk-benefits";
 import {
   EXAMPLE_INPUTS,
@@ -26,7 +28,6 @@ import {
   describeNextStep,
   drawStep,
   emptySourceMessage,
-  failureMessage,
   headline,
   inputProblem,
   inputsToSend,
@@ -121,6 +122,7 @@ function YearLedger({
   );
 }
 
+/** The weekly working DWP's Pension Credit rests on, at the draw the API answered for. */
 function PensionCreditWorking({ run, deferred }: { run: UKDrawdownRun; deferred: boolean }) {
   const working = run.result.pension_credit_working;
   if (working.status === "under_qualifying_age") {
@@ -235,6 +237,7 @@ function CitationList({ citations }: { citations: DrawdownCitation[] }) {
   );
 }
 
+/** The API's own rows at each band edge and at the draw, never a figure read off a line. */
 function TurningPoints({
   run,
   draw,
@@ -242,9 +245,7 @@ function TurningPoints({
   run: UKDrawdownRun;
   draw: number;
 }) {
-  const amounts = [
-    ...new Set([...run.result.bands.flatMap((band) => [band.draw_from, band.draw_to]), draw]),
-  ].sort((a, b) => a - b);
+  const rows = turningPoints(run.result.sweep, run.result.bands, draw);
   return (
     <details>
       <summary className="cursor-pointer font-medium">See the turning points as a table</summary>
@@ -267,19 +268,16 @@ function TurningPoints({
             </tr>
           </thead>
           <tbody>
-            {amounts.map((amount) => {
-              const row = outcomeAt(run.result.sweep, amount);
-              return (
-                <tr key={amount} className="border-t border-[var(--color-border)]">
-                  <th scope="row" className="py-1 text-left font-normal">
-                    {pounds(row.draw)}
-                  </th>
-                  <td>{pounds(row.money_to_spend)}</td>
-                  <td>{pounds(row.income_tax + row.employee_ni)}</td>
-                  <td>{pounds(row.pension_credit)}</td>
-                </tr>
-              );
-            })}
+            {rows.map((row) => (
+              <tr key={row.draw} className="border-t border-[var(--color-border)]">
+                <th scope="row" className="py-1 text-left font-normal">
+                  {pounds(row.draw)}
+                </th>
+                <td>{pounds(row.money_to_spend)}</td>
+                <td>{pounds(row.income_tax + row.employee_ni)}</td>
+                <td>{pounds(row.pension_credit)}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -304,7 +302,7 @@ function Results({
   const balance = sourceBalance(inputs);
   const sweepTop = result.sweep[result.sweep.length - 1].draw;
   const top = chartTop(sweepTop, balance, inputs.draw_amount);
-  const chosen = outcomeAt(result.sweep, inputs.draw_amount);
+  const chosen = outcomeAt(result.sweep, inputs.draw_amount, result.bands);
   const none = result.with_no_draw;
   const next = locked
     ? null
@@ -312,7 +310,11 @@ function Results({
         result.sweep,
         inputs.draw_amount,
         Math.min(inputs.draw_amount + NEXT_STEP, balance),
+        result.bands,
       );
+  // The weekly working is the API's at the draw it answered for, so it waits
+  // for the answer at a new draw.
+  const workingStale = stale || !sameDraw(result.at_chosen_draw.draw, inputs.draw_amount);
   const income =
     result.state_pension_paid +
     inputs.other_pension_income +
@@ -328,7 +330,15 @@ function Results({
 
   return (
     <div className={`min-w-0 space-y-10 ${stale ? "opacity-60" : ""}`} aria-busy={stale}>
-      <section aria-live="polite">
+      <ResultAnnouncement
+        text={headline(
+          result.draw_source,
+          result.at_chosen_draw.draw,
+          result.at_chosen_draw.money_to_spend,
+          result.tax_year_label,
+        )}
+      />
+      <section>
         <p className="font-[var(--font-display)] text-[clamp(1.85rem,1.3rem+1.9vw,2.85rem)] leading-[1.12]">
           {headline(inputs.draw_source, inputs.draw_amount, chosen.money_to_spend, result.tax_year_label)}
         </p>
@@ -358,6 +368,7 @@ function Results({
         <div>
           <DrawdownCurve
             sweep={result.sweep}
+            bands={result.bands}
             draw={Math.min(inputs.draw_amount, top)}
             top={top}
             step={drawStep(top)}
@@ -397,10 +408,19 @@ function Results({
       </section>
 
       {!locked && result.bands.length > 0 && (
-        <PoundLadder bands={result.bands} draw={inputs.draw_amount} balance={balance} />
+        <PoundLadder
+          bands={result.bands}
+          sweep={result.sweep}
+          draw={inputs.draw_amount}
+          balance={balance}
+        />
       )}
 
-      <section aria-labelledby="working-heading">
+      <section
+        aria-labelledby="working-heading"
+        aria-busy={workingStale}
+        className={workingStale && !stale ? "opacity-60" : undefined}
+      >
         <h2 id="working-heading" className="font-[var(--font-display)] text-2xl">
           What DWP counts each week
         </h2>
@@ -462,30 +482,9 @@ function Results({
 
 export default function UKDrawdownPage() {
   const [form, setForm] = useState<UKDrawdownYearInput>(EXAMPLE_INPUTS);
-  const [run, setRun] = useState<{ baseKey: string; data: UKDrawdownRun } | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-
   const inputs = useMemo(() => inputsToSend(form), [form]);
   const problem = inputProblem(inputs);
-  const key = JSON.stringify(inputs);
-  const baseKey = JSON.stringify({ ...inputs, draw_amount: 0 });
-  const debouncedKey = useDebouncedValue(key, 300);
-
-  useEffect(() => {
-    if (problem || debouncedKey !== key) return;
-    const controller = new AbortController();
-    const sent = JSON.parse(debouncedKey) as UKDrawdownYearInput;
-    runUKDrawdownYear(sent, controller.signal)
-      .then((data) => {
-        setRun({ baseKey: JSON.stringify({ ...sent, draw_amount: 0 }), data });
-        setFailure(null);
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) setFailure(failureMessage(error));
-      });
-    return () => controller.abort();
-  }, [debouncedKey, key, problem, attempt]);
+  const { run, failure, baseKey, retry } = useDrawdownRun(inputs, problem, runUKDrawdownYear);
 
   const update = (change: Partial<UKDrawdownYearInput>) =>
     setForm((current) => ({ ...current, ...change }));
@@ -533,7 +532,7 @@ export default function UKDrawdownPage() {
                 <button
                   type="button"
                   className="mt-3 rounded-[var(--radius-sm)] bg-[var(--color-primary-dark)] px-4 py-2 font-medium text-white"
-                  onClick={() => setAttempt((count) => count + 1)}
+                  onClick={retry}
                 >
                   Try again
                 </button>
@@ -542,11 +541,19 @@ export default function UKDrawdownPage() {
               <Results
                 run={run.data}
                 inputs={inputs}
-                stale={run.baseKey !== baseKey}
+                stale={resultIsStale(
+                  run.baseKey,
+                  baseKey,
+                  run.data.result.sweep,
+                  inputs.draw_amount,
+                  run.data.result.bands,
+                )}
                 onDraw={(draw_amount) => update({ draw_amount })}
               />
             ) : (
-              <p className="text-lg text-[var(--color-text-muted)]">Working out your year</p>
+              <p role="status" className="text-lg text-[var(--color-text-muted)]">
+                Working out your year
+              </p>
             )}
           </div>
         </div>

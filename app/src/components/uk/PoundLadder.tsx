@@ -1,55 +1,59 @@
-import type { DrawdownSlice } from "../../lib/api-uk-drawdown";
-import { bandRange, describePound, splitPence } from "../../lib/uk-drawdown";
+import { IconArrowDownRight } from "@tabler/icons-react";
+import type { DrawdownBand, DrawdownOutcome } from "../../lib/api-uk-drawdown";
+import {
+  describePound,
+  describeStep,
+  ladderRange,
+  ladderRows,
+  outcomeAt,
+  splitPence,
+} from "../../lib/uk-drawdown";
+import { Ladder } from "../drawdown/Ladder";
+import { SPLIT_COLORS } from "../drawdown/SplitBar";
 import { PoundSplitBar, PoundSplitLegend } from "./PoundSplitBar";
 
-/** The draw amounts where each extra pound changes hands, lowest first. */
+/**
+ * The draw amounts where each extra pound changes hands, lowest first. A band
+ * the API marks as a jump shows what changes all at once there.
+ */
 export function PoundLadder({
   bands,
+  sweep,
   draw,
   balance,
 }: {
-  bands: DrawdownSlice[];
+  bands: DrawdownBand[];
+  sweep: DrawdownOutcome[];
   draw: number;
   balance: number;
 }) {
-  const showLost = bands.some((band) => splitPence(band).lost > 0);
-  const current = bands.findIndex(
-    (band, index) =>
-      draw >= band.draw_from && (draw < band.draw_to || index === bands.length - 1),
-  );
-
+  const rows = ladderRows(bands);
+  const showLost = rows.some((row) => !row.step && splitPence(row).lost > 0);
   return (
-    <section aria-labelledby="ladder-heading">
-      <h2 id="ladder-heading" className="font-[var(--font-display)] text-2xl">
-        Where each extra pound goes
-      </h2>
-      <div className="mt-3">
-        <PoundSplitLegend showLost={showLost} />
-      </div>
-      <ol className="mt-4">
-        {bands.map((band, index) => (
-          <li
-            key={band.draw_from}
-            aria-current={index === current ? "true" : undefined}
-            className={`grid gap-x-6 gap-y-2 border-t border-[var(--color-border)] py-3 sm:grid-cols-[9.5rem_minmax(0,1fr)] ${
-              index === current ? "font-medium" : ""
-            }`}
-          >
-            <div className="tabular-nums">
-              <div>{bandRange(bands, index, balance)}</div>
-              {index === current && (
-                <div className="text-sm font-normal text-[var(--color-text-muted)]">
-                  Your draw sits here
-                </div>
-              )}
-            </div>
-            <div>
-              <PoundSplitBar split={splitPence(band)} />
-              <p className="mt-1.5 text-[0.95rem]">{describePound(band)}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-    </section>
+    <Ladder
+      heading="Where each extra pound goes"
+      legend={<PoundSplitLegend showLost={showLost} />}
+      bands={rows}
+      draw={draw}
+      range={(index) => ladderRange(rows, index, balance)}
+      row={(row) =>
+        row.step ? (
+          <p className="flex items-start gap-2 text-[0.95rem]">
+            <IconArrowDownRight
+              aria-hidden="true"
+              size={20}
+              className="mt-0.5 shrink-0"
+              style={{ color: SPLIT_COLORS.tax }}
+            />
+            {describeStep(outcomeAt(sweep, row.draw_from), outcomeAt(sweep, row.draw_to))}
+          </p>
+        ) : (
+          <>
+            <PoundSplitBar split={splitPence(row)} />
+            <p className="mt-1.5 text-[0.95rem]">{describePound(row)}</p>
+          </>
+        )
+      }
+    />
   );
 }

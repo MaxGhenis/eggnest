@@ -14,6 +14,14 @@ function headlineAt(draw: number) {
   return `Draw ${wholePounds(draw)} from your pension pot in 2026/27 and you’ll have ${wholePounds(row.money_to_spend)} to spend.`;
 }
 
+/**
+ * The headline on show. A hidden status line repeats the API's answer for
+ * screen readers, so a bare text match can find two elements.
+ */
+function shown(page: Page, text: string) {
+  return page.getByText(text).and(page.locator(":not([role=status])"));
+}
+
 /** Serves the run recorded from the real engine and fails on console errors. */
 async function openPage(page: Page) {
   const errors: string[] = [];
@@ -22,7 +30,7 @@ async function openPage(page: Page) {
   });
   await page.route("**/core/simulate", (route) => route.fulfill({ json: envelope }));
   await page.goto("/uk-drawdown");
-  await expect(page.getByText(headlineAt(2_500))).toBeVisible();
+  await expect(shown(page, headlineAt(2_500))).toBeVisible();
   return errors;
 }
 
@@ -47,7 +55,7 @@ test("dragging across the curve sets the draw", async ({ page }) => {
   await page.mouse.move(box.x + box.width * 0.5, box.y + 40, { steps: 5 });
 
   await expect(page.getByRole("slider", { name: "Amount to draw in the tax year" })).toHaveValue("5000");
-  await expect(page.getByText(headlineAt(5_000))).toBeVisible();
+  await expect(shown(page, headlineAt(5_000))).toBeVisible();
   await page.mouse.up();
 });
 

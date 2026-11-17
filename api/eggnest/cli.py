@@ -32,6 +32,8 @@ from .core.uk_retirement import (
 from .core.uk_retirement import (
     build_uk_retirement_scenario,
 )
+from .core.us_drawdown_year import OUTPUT_KEY as US_DRAWDOWN_OUTPUT_KEY
+from .core.us_drawdown_year import build_us_drawdown_year_scenario
 from .core.us_household_resources import (
     OUTPUT_KEY as HOUSEHOLD_OUTPUT_KEY,
 )
@@ -49,6 +51,7 @@ from .models import (
 )
 from .models_uk import UKSimulationInput
 from .models_uk_drawdown import UKDrawdownYearInput
+from .models_us_drawdown import USDrawdownYearInput
 from .programs import list_programs
 from .sync import DEFAULT_SCENARIOS_DIR, get_sync_client
 
@@ -114,6 +117,8 @@ def _output_key_for_engine(engine: str) -> str:
         return HOUSEHOLD_OUTPUT_KEY
     if engine == "uk_drawdown_year":
         return UK_DRAWDOWN_OUTPUT_KEY
+    if engine == "us_drawdown_year":
+        return US_DRAWDOWN_OUTPUT_KEY
     raise ValueError(f"Unsupported engine: {engine}")
 
 
@@ -228,6 +233,10 @@ def _build_core_scenario(
     elif resolved_engine == "uk_drawdown_year":
         scenario = build_uk_drawdown_year_scenario(
             UKDrawdownYearInput.model_validate(data)
+        )
+    elif resolved_engine == "us_drawdown_year":
+        scenario = build_us_drawdown_year_scenario(
+            USDrawdownYearInput.model_validate(data)
         )
     else:
         raise ValueError(f"Unsupported engine: {resolved_engine}")
@@ -501,6 +510,7 @@ def core() -> None:
             "us-input",
             "uk-input",
             "uk-drawdown-input",
+            "us-drawdown-input",
             "household-input",
         ]
     ),
@@ -514,6 +524,7 @@ def core_schema(kind: str) -> None:
         "us-input": SimulationInput,
         "uk-input": UKSimulationInput,
         "uk-drawdown-input": UKDrawdownYearInput,
+        "us-drawdown-input": USDrawdownYearInput,
         "household-input": HouseholdInput,
     }[kind]
     _write_json_payload(model.model_json_schema())
@@ -530,6 +541,7 @@ def core_schema(kind: str) -> None:
             "uk_retirement",
             "us_household_resources",
             "uk_drawdown_year",
+            "us_drawdown_year",
         ]
     ),
     default="auto",

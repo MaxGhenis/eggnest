@@ -5,11 +5,22 @@
 
 import type {
   DrawSource,
+  DrawdownBand,
   DrawdownOutcome,
   DrawdownSlice,
   UKDrawdownYearInput,
 } from "./api-uk-drawdown";
-import { ApiError, NetworkError, TimeoutError } from "./api";
+import {
+  bandRangeIn,
+  drawLimitNote as drawLimitNoteIn,
+  joined,
+  ladderRangeIn,
+  ladderRowsOf,
+  rowAt,
+  type MarkedSpan,
+} from "./drawdown";
+
+export { chartTop, drawStep, failureMessage, niceTicks } from "./drawdown";
 
 const wholePounds = new Intl.NumberFormat("en-GB", {
   style: "currency",
@@ -40,32 +51,17 @@ export function compactPounds(value: number): string {
   return `£${Math.round(value)}`;
 }
 
-/** The result at any draw, read along the straight line between sweep rows. */
-export function outcomeAt(sweep: DrawdownOutcome[], draw: number): DrawdownOutcome {
-  const first = sweep[0];
-  const last = sweep[sweep.length - 1];
-  if (draw <= first.draw) return first;
-  if (draw >= last.draw) return last;
-  let low = 0;
-  let high = sweep.length - 1;
-  while (high - low > 1) {
-    const middle = (low + high) >> 1;
-    if (sweep[middle].draw <= draw) low = middle;
-    else high = middle;
-  }
-  const a = sweep[low];
-  const b = sweep[high];
-  if (a.draw === draw) return a;
-  const share = (draw - a.draw) / (b.draw - a.draw);
-  const mix = (field: keyof DrawdownOutcome) => a[field] + share * (b[field] - a[field]);
-  return {
-    draw,
-    taxable_draw: mix("taxable_draw"),
-    income_tax: mix("income_tax"),
-    employee_ni: mix("employee_ni"),
-    pension_credit: mix("pension_credit"),
-    money_to_spend: mix("money_to_spend"),
-  };
+/**
+ * The result at any draw, read along the straight line between sweep rows,
+ * or, inside a band the API marks as a jump, on the nearer row's side of it
+ * (rowAt). Either way its figures add up as the API's rows do.
+ */
+export function outcomeAt(
+  sweep: DrawdownOutcome[],
+  draw: number,
+  bands: readonly MarkedSpan[] = [],
+): DrawdownOutcome {
+  return rowAt(sweep, draw, bands);
 }
 
 /** Where the pounds between two draw amounts go. */
@@ -73,9 +69,10 @@ export function sliceBetween(
   sweep: DrawdownOutcome[],
   from: number,
   to: number,
+  bands: readonly MarkedSpan[] = [],
 ): DrawdownSlice | null {
-  const a = outcomeAt(sweep, from);
-  const b = outcomeAt(sweep, to);
+  const a = outcomeAt(sweep, from, bands);
+  const b = outcomeAt(sweep, to, bands);
   const width = b.draw - a.draw;
   if (width <= 0) return null;
   return {
@@ -99,12 +96,6 @@ export function splitPence(slice: DrawdownSlice): PoundSplit {
   const tax = Math.round(slice.to_tax * 100) || 0;
   const lost = Math.round(slice.to_pension_credit * 100) || 0;
   return { kept: 100 - tax - lost, tax, lost };
-}
-
-function joined(parts: string[]): string {
-  return parts.length < 2
-    ? (parts[0] ?? "")
-    : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
 /** What happens to each extra pound of draw. */
@@ -188,40 +179,46 @@ export function emptySourceMessage(source: DrawSource): string {
 
 /** A band's draw amounts, in words. The sweep can stop short of a large pot. */
 export function bandRange(bands: DrawdownSlice[], index: number, balance: number): string {
-  const band = bands[index];
-  if (index === 0) return `Up to ${pounds(band.draw_to)}`;
-  if (index === bands.length - 1 && band.draw_to < balance) {
-    return `Above ${pounds(band.draw_from)}`;
-  }
-  return `${pounds(band.draw_from)} to ${pounds(band.draw_to)}`;
+  return bandRangeIn(pounds, bands, index, balance);
 }
 
-/** Most draws of interest sit below this, whatever the size of the pot. */
-const CHART_VIEW = 100_000;
+export type PoundLadderRow = DrawdownBand & {
+  /** A jump the API placed: income tax changes all at once at this penny. */
+  step: boolean;
+};
 
-export function chartTop(sweepTop: number, balance: number, draw: number): number {
-  return Math.min(sweepTop, Math.max(Math.min(balance, CHART_VIEW), draw * 1.1));
+function sameInPence(a: DrawdownSlice, b: DrawdownSlice): boolean {
+  const x = splitPence(a);
+  const y = splitPence(b);
+  return x.tax === y.tax && x.lost === y.lost;
 }
 
-export function drawStep(top: number): number {
-  if (top <= 30_000) return 50;
-  if (top <= 120_000) return 100;
-  return 500;
+/**
+ * The API's bands for the ladder: each band the API marks as a jump stands
+ * alone as a step, and neighbours that read the same in whole pence join.
+ */
+export function ladderRows(bands: readonly DrawdownBand[]): PoundLadderRow[] {
+  return ladderRowsOf(bands, sameInPence);
 }
 
-/** Round axis values across a range; always at least the two ends' worth. */
-export function niceTicks(low: number, high: number, count: number): number[] {
-  if (!(high > low)) return [low];
-  const rough = (high - low) / Math.max(count, 1);
-  const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const step =
-    [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((candidate) => candidate >= rough) ??
-    10 * magnitude;
-  const ticks: number[] = [];
-  for (let tick = Math.ceil(low / step) * step; tick <= high + step * 1e-9; tick += step) {
-    ticks.push(Math.round(tick * 1e6) / 1e6);
-  }
-  return ticks;
+/** A ladder row's draw amounts, in words; a jump by where it falls, to the penny. */
+export function ladderRange(rows: readonly PoundLadderRow[], index: number, balance: number): string {
+  return ladderRangeIn(pounds, rows, index, balance);
+}
+
+/** What changes all at once across a jump. */
+export function describeStep(from: DrawdownOutcome, to: DrawdownOutcome): string {
+  const tax = to.income_tax + to.employee_ni - from.income_tax - from.employee_ni;
+  const credit = to.pension_credit - from.pension_credit;
+  const parts = [
+    ...(Math.round(tax) > 0 ? [`your tax rises by ${pounds(tax)}`] : []),
+    ...(Math.round(tax) < 0 ? [`your tax falls by ${pounds(-tax)}`] : []),
+    ...(Math.round(credit) < 0 ? [`your Pension Credit falls by ${pounds(-credit)}`] : []),
+    ...(Math.round(credit) > 0 ? [`your Pension Credit rises by ${pounds(credit)}`] : []),
+  ];
+  if (!parts.length) return "Your tax changes all at once here.";
+  const sentence = joined(parts);
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)} all at once.`;
 }
 
 export const FULL_NEW_STATE_PENSION = 12_547.6;
@@ -347,6 +344,16 @@ export function inputProblem(inputs: UKDrawdownYearInput): string | null {
   return null;
 }
 
+/** What the draw field says when it holds more than the chosen source. */
+export function drawLimitNote(inputs: UKDrawdownYearInput): string | null {
+  return drawLimitNoteIn(
+    pounds,
+    inputs.draw_amount,
+    sourceBalance(inputs),
+    SOURCE_NAMES[inputs.draw_source],
+  );
+}
+
 /** Keeps the draw inside what the chosen source holds. */
 export function withDrawInBounds(inputs: UKDrawdownYearInput): UKDrawdownYearInput {
   const balance = sourceBalance(inputs);
@@ -370,21 +377,4 @@ export function withTaxFreeChoiceInBounds(inputs: UKDrawdownYearInput): UKDrawdo
 /** What the page sends: the draw within the balance and a tax-free choice that applies. */
 export function inputsToSend(inputs: UKDrawdownYearInput): UKDrawdownYearInput {
   return withDrawInBounds(withTaxFreeChoiceInBounds(inputs));
-}
-
-/** Why a run failed, in words that say what to do next. */
-export function failureMessage(error: unknown): string {
-  if (error instanceof NetworkError) {
-    return "We couldn’t reach the calculator. Check your connection and try again.";
-  }
-  if (error instanceof TimeoutError) {
-    return "The calculator took too long to answer. Try again.";
-  }
-  if (error instanceof ApiError && error.statusCode === 503) {
-    return "The calculator isn’t running right now. Try again later.";
-  }
-  if (error instanceof ApiError && error.statusCode !== undefined) {
-    return "The calculator couldn’t work out this year. Try again, or change a figure.";
-  }
-  return "We couldn’t work this out. Try again.";
 }
