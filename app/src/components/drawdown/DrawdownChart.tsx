@@ -1,7 +1,21 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { niceTicks, rowAt } from "../../lib/drawdown";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
+import {
+  estimatedLabelWidth,
+  keyedDraw,
+  labelPlacement,
+  niceTicks,
+  rowAt,
+  type MarkedSpan,
+} from "../../lib/drawdown";
 import { SPLIT_COLORS } from "./SplitBar";
 
 const REFERENCE_LINE = "#78716c";
@@ -12,6 +26,22 @@ const THUMB_SIZE = 26;
 /** Marker labels stack above the plot, one line each. */
 const LABEL_LINE = 18;
 const LABEL_SPACE = 20;
+/**
+ * A touch must travel this far before it counts as a drag or a pan; across
+ * the plot it moves the draw, up or down it scrolls the page.
+ */
+const TOUCH_SLOP = 8;
+
+const NO_BANDS: readonly MarkedSpan[] = [];
+
+/** A pointer pressed on the plot, until it lifts or the browser takes it. */
+interface Press {
+  pointerId: number;
+  touch: boolean;
+  x: number;
+  y: number;
+  dragging: boolean;
+}
 
 export interface ChartMarker {
   key: string;
@@ -39,10 +69,13 @@ function pathThrough(points: [number, number][]): string {
 
 /**
  * Money to spend at every draw. The horizontal axis doubles as the slider that
- * sets the draw, and dragging across the plot moves it too.
+ * sets the draw, and dragging across the plot moves it too. A mouse sets the
+ * draw where it presses; a touch sets it on a tap or a drag across the plot,
+ * and leaves a vertical swipe to scroll the page.
  */
 export function DrawdownChart<Row extends ChartRow>({
   sweep,
+  bands = NO_BANDS,
   draw,
   top,
   step,
@@ -56,6 +89,8 @@ export function DrawdownChart<Row extends ChartRow>({
   labels,
 }: {
   sweep: Row[];
+  /** The API's bands; between rows inside a jump the chart reads the nearer row. */
+  bands?: readonly MarkedSpan[];
   draw: number;
   top: number;
   step: number;
@@ -74,7 +109,9 @@ export function DrawdownChart<Row extends ChartRow>({
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
   const [hover, setHover] = useState<number | null>(null);
-  const dragging = useRef(false);
+  const press = useRef<Press | null>(null);
+  const labelNodes = useRef(new Map<string, SVGTextElement>());
+  const [measured, setMeasured] = useState<Record<string, number>>({});
 
   // Measures before the first paint, so a phone never sees the default width.
   useLayoutEffect(() => {
@@ -90,10 +127,36 @@ export function DrawdownChart<Row extends ChartRow>({
   const noDraw = sweep[0];
   const rows = useMemo(() => {
     const inside = sweep.filter((row) => row.draw <= top);
-    return inside[inside.length - 1].draw < top ? [...inside, rowAt(sweep, top)] : inside;
-  }, [sweep, top]);
+    return inside[inside.length - 1].draw < top ? [...inside, rowAt(sweep, top, bands)] : inside;
+  }, [sweep, top, bands]);
 
   const visibleMarkers = markers.filter((marker) => marker.draw <= top);
+  const labelText = visibleMarkers.map((marker) => marker.label).join("\n");
+
+  // Measures each marker label once the browser has laid it out (a resize
+  // observer reports on its first look), so a label sits on the side of its
+  // line with room for it. Until then, and where nothing lays text out, an
+  // estimate stands in.
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const lengths: Record<string, number> = {};
+      for (const [label, node] of labelNodes.current) {
+        const length = node.getComputedTextLength?.();
+        if (typeof length === "number" && length > 0) lengths[label] = length;
+      }
+      setMeasured((current) =>
+        Object.keys(lengths).length === Object.keys(current).length &&
+        Object.entries(lengths).every(([label, length]) => current[label] === length)
+          ? current
+          : lengths,
+      );
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [labelText]);
+
   // Room above the plot for every marker's label; two fit the default margin.
   const extra = Math.max(0, LABEL_SPACE + LABEL_LINE * visibleMarkers.length - MARGIN.top);
   const marginTop = MARGIN.top + extra;
@@ -124,14 +187,76 @@ export function DrawdownChart<Row extends ChartRow>({
       rows.map((row, i) => [x(row.draw), y(lower[i])] as [number, number]).reverse(),
     ).slice(1)}Z`;
 
-  const chosen = rowAt(sweep, draw);
-  const inspected = hover === null ? null : rowAt(sweep, hover);
+  const chosen = rowAt(sweep, draw, bands);
+  const inspected = hover === null ? null : rowAt(sweep, hover, bands);
   const xTicks = niceTicks(0, top, width < 480 ? 3 : 6);
 
   const drawAtPointer = (event: PointerEvent<SVGRectElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
     const share = Math.min(Math.max((event.clientX - bounds.left) / bounds.width, 0), 1);
     return Math.min(Math.round((share * top) / step) * step, top);
+  };
+
+  const onPointerDown = (event: PointerEvent<SVGRectElement>) => {
+    const touch = event.pointerType === "touch" || event.pointerType === "pen";
+    press.current = {
+      pointerId: event.pointerId,
+      touch,
+      x: event.clientX,
+      y: event.clientY,
+      dragging: !touch,
+    };
+    if (touch) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    onDraw(drawAtPointer(event));
+  };
+
+  const onPointerMove = (event: PointerEvent<SVGRectElement>) => {
+    const value = drawAtPointer(event);
+    const current = press.current;
+    if (!current || current.pointerId !== event.pointerId) {
+      if (event.pointerType !== "touch") setHover(value);
+      return;
+    }
+    if (!current.dragging) {
+      const across = Math.abs(event.clientX - current.x);
+      const down = Math.abs(event.clientY - current.y);
+      if (down >= TOUCH_SLOP && down >= across) {
+        // A vertical swipe: the page scrolls and the draw stays put.
+        press.current = null;
+        return;
+      }
+      if (across < TOUCH_SLOP) return;
+      current.dragging = true;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+    if (event.pointerType === "mouse" && event.buttons === 0) {
+      // The button came up somewhere this element never heard about.
+      press.current = null;
+      setHover(value);
+      return;
+    }
+    setHover(value);
+    onDraw(value);
+  };
+
+  const onPointerUp = (event: PointerEvent<SVGRectElement>) => {
+    const current = press.current;
+    press.current = null;
+    if (current?.touch && !current.dragging && current.pointerId === event.pointerId) {
+      onDraw(drawAtPointer(event));
+    }
+  };
+
+  const endPress = () => {
+    press.current = null;
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    const next = keyedDraw(event.key, draw, top, step);
+    if (next === null) return;
+    event.preventDefault();
+    onDraw(next);
   };
 
   return (
@@ -221,7 +346,11 @@ export function DrawdownChart<Row extends ChartRow>({
           />
 
           {visibleMarkers.map((marker, index) => {
-            const nearEnd = x(marker.draw) > width * 0.62;
+            const placed = labelPlacement(
+              x(marker.draw),
+              measured[marker.label] ?? estimatedLabelWidth(marker.label),
+              width,
+            );
             const labelY = 14 + index * LABEL_LINE;
             return (
               <g key={marker.key}>
@@ -233,9 +362,13 @@ export function DrawdownChart<Row extends ChartRow>({
                   stroke="var(--color-gray-400)"
                 />
                 <text
-                  x={x(marker.draw) + (nearEnd ? -5 : 5)}
+                  ref={(node) => {
+                    if (node) labelNodes.current.set(marker.label, node);
+                    else labelNodes.current.delete(marker.label);
+                  }}
+                  x={placed.x}
                   y={labelY + 4}
-                  textAnchor={nearEnd ? "end" : "start"}
+                  textAnchor={placed.anchor}
                   className="fill-[var(--color-text)] text-[12px]"
                 >
                   {marker.label}
@@ -288,19 +421,11 @@ export function DrawdownChart<Row extends ChartRow>({
             height={plotBottom - marginTop - THUMB_SIZE / 2}
             fill="transparent"
             style={{ touchAction: "pan-y", cursor: "ew-resize" }}
-            onPointerDown={(event) => {
-              dragging.current = true;
-              event.currentTarget.setPointerCapture?.(event.pointerId);
-              onDraw(drawAtPointer(event));
-            }}
-            onPointerMove={(event) => {
-              const value = drawAtPointer(event);
-              setHover(value);
-              if (dragging.current) onDraw(value);
-            }}
-            onPointerUp={() => {
-              dragging.current = false;
-            }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={endPress}
+            onLostPointerCapture={endPress}
             onPointerLeave={() => setHover(null)}
           />
 
@@ -334,7 +459,8 @@ export function DrawdownChart<Row extends ChartRow>({
           max={Math.max(top, step)}
           step={step}
           value={Math.min(draw, top)}
-          onChange={(event) => onDraw(Number(event.target.value))}
+          onChange={(event) => onDraw(Math.min(Number(event.target.value), top))}
+          onKeyDown={onKeyDown}
           style={{
             left: MARGIN.left - THUMB_SIZE / 2,
             width: plotWidth + THUMB_SIZE,

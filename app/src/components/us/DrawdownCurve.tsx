@@ -1,6 +1,6 @@
 "use client";
 
-import type { USDrawdownMarker, USDrawdownOutcome } from "../../lib/api-us-drawdown";
+import type { USDrawdownSlice, USDrawdownMarker, USDrawdownOutcome } from "../../lib/api-us-drawdown";
 import { compactDollars, dollars, markerLabel, taxesOf } from "../../lib/us-drawdown";
 import { DrawdownChart } from "../drawdown/DrawdownChart";
 
@@ -18,6 +18,7 @@ const LABELS = {
  */
 export function DrawdownCurve({
   sweep,
+  bands,
   draw,
   top,
   step,
@@ -25,6 +26,7 @@ export function DrawdownCurve({
   onDraw,
 }: {
   sweep: USDrawdownOutcome[];
+  bands?: USDrawdownSlice[];
   draw: number;
   top: number;
   step: number;
@@ -34,6 +36,7 @@ export function DrawdownCurve({
   return (
     <DrawdownChart
       sweep={sweep}
+      bands={bands}
       draw={draw}
       top={top}
       step={step}

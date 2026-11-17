@@ -1,6 +1,6 @@
 "use client";
 
-import type { DrawdownMarker, DrawdownOutcome } from "../../lib/api-uk-drawdown";
+import type { DrawdownBand, DrawdownMarker, DrawdownOutcome } from "../../lib/api-uk-drawdown";
 import { compactPounds, pounds } from "../../lib/uk-drawdown";
 import { DrawdownChart } from "../drawdown/DrawdownChart";
 
@@ -25,6 +25,7 @@ const taxOf = (row: DrawdownOutcome) => row.income_tax + row.employee_ni;
  */
 export function DrawdownCurve({
   sweep,
+  bands,
   draw,
   top,
   step,
@@ -32,6 +33,7 @@ export function DrawdownCurve({
   onDraw,
 }: {
   sweep: DrawdownOutcome[];
+  bands?: DrawdownBand[];
   draw: number;
   top: number;
   step: number;
@@ -41,6 +43,7 @@ export function DrawdownCurve({
   return (
     <DrawdownChart
       sweep={sweep}
+      bands={bands}
       draw={draw}
       top={top}
       step={step}
