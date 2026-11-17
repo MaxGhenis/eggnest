@@ -880,11 +880,13 @@ def test_a_change_of_rate_lands_within_its_dollar_and_stray(kinks, rates, kink):
     thorough profile (seed 11). Each change lands on an edge within $1 of where
     the lines on either side cross, which strays less than $1 from the series.
 
-    - A benefit rises 40.6 cents a dollar to 7,367.19, then 0.4 cents to
-      11,367.19, then not at all. The lines cross at 7,367.25, but the first
-      run's edge at 7,368.24 was evaluated, within $1, so the edge goes there
-      with no third run: $1.05 from the change, which the band's line misses
-      by 42 cents.
+    - A benefit rises 40.6 cents a dollar from 6,062.50 to 7,367.19, then 0.4
+      cents to 11,367.19, then not at all until it rises a dollar a dollar
+      from 29,867.19 to 40,117.19. Between 7,367.19 and 29,867.19 the 0.4-cent
+      change stays within the $15 a benefit's line may stray. The lines cross
+      at 7,367.25, but the first run's edge at 7,368.24 was evaluated, within
+      $1, so the edge goes there with no third run: $1.05 from the change,
+      which the band's line misses by 42 cents.
     - A benefit rises 10 cents a dollar from 11,000, 11 cents from 16,500 and
       20 cents from 17,880. The 1-cent change stays within the $15 a benefit's
       line may stray, so the line before 17,880 runs from 11,000 at 10.2 cents
