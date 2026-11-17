@@ -48,9 +48,10 @@ Invariants, for every input:
   Allowance of ITA 2007 ss.12A-12B and the allowance rounded up to the pound
   of s.35(3), in pence), each fall in the Personal Savings Allowance gets a
   band one penny wide with jump set, tax moves £1 or more across every jump
-  band, and every other band charges 0p to 62p a pound and stays within £1
-  of the straight line between its ends, so no step of £2 or more hides in
-  it. That holds where a change of rate sits within a 24th of a grid
+  band, and every other band charges 0p to 62p a pound (plus a penny of
+  rounding across a band under £1, so a one-penny sweep can charge 100p) and
+  stays within £1 of the straight line between its ends, so no step of £2 or
+  more hides in it. That holds where a change of rate sits within a 24th of a grid
   interval of a jump too, since a run then looks again at the pieces around
   the jump: on the 20 examples CI runs and on HYPOTHESIS_PROFILE=thorough
   with 150 examples (two seeds) and 500, with interest from £600. At the
@@ -1085,14 +1086,21 @@ def _assert_no_band_hides_a_step(
     inputs: UKDrawdownYearInput, result: UKDrawdownYearResult
 ) -> None:
     """Every band without ``jump`` stays within £1 of the straight line
-    between its ends on the stepped stand-in and charges 0p to 62p a pound;
-    every jump band is one penny across which tax moves £1 or more."""
+    between its ends on the stepped stand-in and charges 0p to 62p a pound,
+    plus, in a band under £1, a penny of rounding; every jump band is one
+    penny across which tax moves £1 or more."""
     for band in result.bands:
         if band.jump:
             assert round(band.draw_to - band.draw_from, 2) == 0.01, band
             assert abs(band.to_tax) * 0.01 >= 1.0, band
             continue
-        assert -1e-6 <= band.to_tax <= 0.62, band
+        # Tax rounds to the penny, so each end of a band can be half a penny
+        # off and the band's rate a penny over its width off. Under £1, which
+        # only a sweep under £1 or a gap between two jumps leaves, that can
+        # be a large share; a penny's band can charge 100p a pound.
+        cents = round((band.draw_to - band.draw_from) * 100)
+        top = 0.62 if cents >= 100 else 0.62 + 1.0 / cents
+        assert -1e-6 <= band.to_tax <= top, band
         inside = np.round(np.linspace(band.draw_from, band.draw_to, 66), 2)
         tax = _stepped_tax(inputs, inside)
         chord = np.interp(inside, [inside[0], inside[-1]], [tax[0], tax[-1]])
@@ -1185,13 +1193,43 @@ class TestStepsInIncomeTax:
     def test_no_band_hides_a_step(self, inputs, interest, tax_free):
         """Every band without ``jump`` stays within £1 of a straight line, so
         no step of £2 or more hides in it, and it charges between 0p and
-        62p a pound; every jump band is one penny across which tax moves £1
-        or more."""
+        62p a pound, plus a penny of rounding in a band under £1; every jump
+        band is one penny across which tax moves £1 or more."""
         update = {"savings_interest": interest}
         if tax_free is not None and not inputs.sipp_tax_free_cash_first:
             update["sipp_tax_free_fraction"] = tax_free
         inputs = inputs.model_copy(update=update)
         _assert_no_band_hides_a_step(inputs, run_uk_drawdown_year(inputs, STEPPED))
+
+    # HYPOTHESIS_PROFILE=thorough, seed 4242, found this pot of one penny.
+    # The stand-in rounds tax to the penny, and £13,566.42 of interest fills
+    # the £1,000 savings allowance exactly, so the penny drawn takes tax from
+    # 0p to 1p (20% of it, rounded): 100p a pound across the sweep's one band.
+    # The same household with a £5 pot pays 20p a pound.
+    @pytest.mark.parametrize(
+        "pot, sweep_tax, to_tax", [(0.01, [0.0, 0.01], 1.0), (5.0, None, 0.2)]
+    )
+    def test_a_band_under_a_pound_carries_a_penny_of_rounding(
+        self, pot, sweep_tax, to_tax
+    ):
+        inputs = UKDrawdownYearInput(
+            birth_date=date(1972, 1, 1),
+            state_pension=0.0,
+            other_pension_income=1.06,
+            employment_income=1.27,
+            savings_interest=13_566.42,
+            dividend_income=1.27,
+            sipp_balance=pot,
+            draw_amount=0.0,
+            sipp_tax_free_fraction=0.0,
+        )
+        result = run_uk_drawdown_year(inputs, STEPPED)
+        [band] = result.bands
+        assert (band.draw_from, band.draw_to, band.jump) == (0.0, pot, False)
+        assert band.to_tax == pytest.approx(to_tax)
+        if sweep_tax is not None:
+            assert [row.income_tax for row in result.sweep] == sweep_tax
+        _assert_no_band_hides_a_step(inputs, result)
 
     # Hypothesis found these with 150 examples. Each draws a £400,000.50
     # lump sum from a pot of £800,001, so the grid runs in £5,000 steps and
