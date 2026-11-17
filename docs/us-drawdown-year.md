@@ -326,7 +326,14 @@ to index it, and no other page links to it.
 them with Hypothesis on a stand-in engine, whose kinks and cliffs sit where its
 rules put them:
 
-- Each band and the next $1,000 split into kept, tax and benefits that add to 1.
+- Each band and the next $1,000 split into kept, tax and benefits that add to
+  1. That holds by construction, since kept is what tax and benefits leave of
+  each dollar; what ties a band to the engine is the next check.
+- Each band's and the next $1,000's rates, times its width, give the change in
+  money to spend, taxes, benefits and taxable Social Security between the
+  sweep's rows at its ends, to within those rows' rounding to the cent: a cent
+  for a figure rounded once at each end, 3 cents for taxes, the sum of three
+  figures each rounded.
 - Money to spend equals income entered plus the draw, less taxes, plus
   benefits, at every point of the sweep.
 - Bands run from nothing to the top of the sweep, in order and without gaps.

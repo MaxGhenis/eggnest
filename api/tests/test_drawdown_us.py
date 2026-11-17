@@ -14,7 +14,14 @@ Invariants held for every input:
 - Every amount of money comes in rounded to the cent, half a cent up, as the
   page's fields show it.
 - Each band and the next $1,000 split into kept, tax and benefits that add
-  to 1, however narrow the band.
+  to 1, however narrow the band. This holds by construction: kept is what
+  tax and benefits leave of each dollar (drawdown_us._slice), so the check
+  guards that construction and proves nothing about the rates.
+- Each band's and the next $1,000's rates, times its width, give the change
+  in money to spend, taxes, benefits and taxable Social Security between the
+  sweep's rows at its ends, to within those rows' rounding to the cent: a
+  cent for a figure rounded once at each end, 3 cents for taxes, the sum of
+  three figures each rounded. This ties every band's rates to the sweep.
 - Money to spend equals income entered plus the draw, less taxes, plus
   benefits, at every point of the sweep.
 - Bands tile the sweep, from nothing to its top, in order.
@@ -238,6 +245,41 @@ def _run(inputs: USDrawdownYearInput):
     return run_us_drawdown_year(inputs, StandInEngine())
 
 
+# Each sweep figure is rounded to the cent, so it sits within half a cent of
+# the engine's figure the rates come from, and a change between two rows
+# within a cent of the engine's. Taxes add three figures, each rounded. The
+# float slack covers dividing a change by the width and multiplying back.
+_HALF_CENT = 0.005
+_FLOAT_SLACK = 1e-6
+
+
+def _tax_of(row) -> float:
+    return row.federal_income_tax + row.state_income_tax + row.other_taxes
+
+
+def _assert_rates_match_the_sweep(result) -> None:
+    """Each band's and the next $1,000's rates, times its width, give the
+    change between the sweep's rows at its ends, to within those rows'
+    rounding to the cent."""
+    rows = {row.draw: row for row in result.sweep}
+    slices = [*result.bands, *([result.next_1000] if result.next_1000 else [])]
+    for piece in slices:
+        low, high = rows[piece.draw_from], rows[piece.draw_to]
+        width = piece.draw_to - piece.draw_from
+        for rate, change, figures in (
+            (piece.kept, high.money_to_spend - low.money_to_spend, 1),
+            (piece.to_tax, _tax_of(high) - _tax_of(low), 3),
+            (piece.to_benefits, low.benefits - high.benefits, 1),
+            (
+                piece.social_security_taxed,
+                high.taxable_social_security - low.taxable_social_security,
+                1,
+            ),
+        ):
+            allowed = 2 * figures * _HALF_CENT + _FLOAT_SLACK
+            assert abs(rate * width - change) <= allowed, (piece, rate, change)
+
+
 def _assert_invariants(inputs: USDrawdownYearInput, result) -> None:
     sweep = result.sweep
     draws = [point.draw for point in sweep]
@@ -283,6 +325,7 @@ def _assert_invariants(inputs: USDrawdownYearInput, result) -> None:
             1.0, abs=1e-9
         )
         assert piece.draw_to > piece.draw_from
+    _assert_rates_match_the_sweep(result)
     assert result.bands[0].draw_from == 0.0
     assert result.bands[-1].draw_to == pytest.approx(draws[-1], abs=0.005)
     for left, right in zip(result.bands, result.bands[1:], strict=False):
@@ -361,6 +404,42 @@ def households(draw):
 @given(households())
 def test_invariants_hold_for_any_household(inputs):
     _assert_invariants(inputs, _run(inputs))
+
+
+def test_the_rate_check_fails_a_band_with_a_sign_or_index_error():
+    """P2-1: since kept became what tax and benefits leave of each dollar,
+    a band's shares add to 1 whatever its rates, so that check can't fail.
+    Rates read with the wrong sign, or from the wrong rows, still add to 1
+    and passed; the check against the sweep's rows now fails them."""
+    inputs = _inputs()
+    result = _run(inputs)
+    _assert_invariants(inputs, result)
+    bands = result.bands
+    k = next(
+        k
+        for k, band in enumerate(bands[:-1])
+        if not band.jump and band.to_tax * (band.draw_to - band.draw_from) > 100.0
+    )
+
+    def with_band(band) -> object:
+        changed = [*bands[:k], band, *bands[k + 1 :]]
+        return result.model_copy(update={"bands": changed})
+
+    band = bands[k]
+    flipped = band.model_copy(
+        update={"to_tax": -band.to_tax, "kept": 1.0 + band.to_tax - band.to_benefits}
+    )
+    after = bands[k + 1]
+    shifted = band.model_copy(
+        update={
+            name: getattr(after, name)
+            for name in ("kept", "to_tax", "to_benefits", "social_security_taxed")
+        }
+    )
+    for wrong in (flipped, shifted):
+        assert wrong.kept + wrong.to_tax + wrong.to_benefits == pytest.approx(1.0)
+        with pytest.raises(AssertionError):
+            _assert_invariants(inputs, with_band(wrong))
 
 
 @given(households(), st.floats(0, 1))
