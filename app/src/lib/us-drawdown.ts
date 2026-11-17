@@ -16,9 +16,16 @@ import type {
   USRequiredMinimum,
   USTraditionalAccount,
 } from "./api-us-drawdown";
-import { bandRangeIn, joined, rowAt } from "./drawdown";
+import {
+  drawLimitNote as drawLimitNoteIn,
+  joined,
+  ladderRangeIn,
+  ladderRowsOf,
+  rowAt,
+  type MarkedSpan,
+} from "./drawdown";
 
-export { chartTop, drawStep, niceTicks } from "./drawdown";
+export { chartTop, drawStep, failureMessage, niceTicks } from "./drawdown";
 
 const wholeDollars = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -51,9 +58,16 @@ export function compactDollars(value: number): string {
   return `${sign}$${Math.round(size)}`;
 }
 
-/** The result at any draw, read along the straight line between sweep rows. */
-export function outcomeAt(sweep: USDrawdownOutcome[], draw: number): USDrawdownOutcome {
-  return rowAt(sweep, draw);
+/**
+ * The result at any draw, read along the straight line between sweep rows,
+ * or, inside a band the API marks as a jump, from the nearer row.
+ */
+export function outcomeAt(
+  sweep: USDrawdownOutcome[],
+  draw: number,
+  bands: readonly MarkedSpan[] = [],
+): USDrawdownOutcome {
+  return rowAt(sweep, draw, bands);
 }
 
 export function taxesOf(row: USDrawdownOutcome): number {
@@ -65,9 +79,10 @@ export function sliceBetween(
   sweep: USDrawdownOutcome[],
   from: number,
   to: number,
+  bands: readonly MarkedSpan[] = [],
 ): USDrawdownSlice | null {
-  const a = outcomeAt(sweep, from);
-  const b = outcomeAt(sweep, to);
+  const a = outcomeAt(sweep, from, bands);
+  const b = outcomeAt(sweep, to, bands);
   const width = b.draw - a.draw;
   if (width <= 0) return null;
   return {
@@ -299,41 +314,14 @@ function sameInCents(a: USDrawdownSlice, b: USDrawdownSlice): boolean {
   );
 }
 
-function joinSlices(a: USDrawdownSlice, b: USDrawdownSlice): USDrawdownSlice {
-  const left = a.draw_to - a.draw_from;
-  const right = b.draw_to - b.draw_from;
-  const mix = (x: number, y: number) => (x * left + y * right) / (left + right);
-  return {
-    draw_from: a.draw_from,
-    draw_to: b.draw_to,
-    kept: mix(a.kept, b.kept),
-    to_tax: mix(a.to_tax, b.to_tax),
-    to_benefits: mix(a.to_benefits, b.to_benefits),
-    social_security_taxed: mix(a.social_security_taxed, b.social_security_taxed),
-    jump: false,
-  };
-}
-
 /** The API's bands for the ladder: each jump the API located stands alone, and neighbours that read the same in whole cents join. */
 export function ladderRows(bands: readonly USDrawdownSlice[]): LadderRow[] {
-  const rows: LadderRow[] = [];
-  for (const band of bands) {
-    const step = band.jump;
-    const last = rows[rows.length - 1];
-    if (last && !last.step && !step && sameInCents(last, band)) {
-      rows[rows.length - 1] = { ...joinSlices(last, band), step: false };
-    } else {
-      rows.push({ ...band, step });
-    }
-  }
-  return rows;
+  return ladderRowsOf(bands, sameInCents);
 }
 
 /** A ladder row's draw amounts, in words. The sweep can stop short of a large balance. */
 export function ladderRange(rows: readonly LadderRow[], index: number, balance: number): string {
-  const row = rows[index];
-  if (row.step) return `At about ${dollars(row.draw_to)}`;
-  return bandRangeIn(dollars, rows, index, balance);
+  return ladderRangeIn(dollars, rows, index, balance);
 }
 
 const SOURCE_NAMES: Record<
@@ -662,6 +650,18 @@ export function describeAccountLeft(inputs: USDrawdownYearInput): string {
     : "after your draw";
   const source = sourceName(inputs.draw_source, inputs.draw_owner, inputs.draw_account);
   return `${left} stays in ${source} ${after}, before any growth.`;
+}
+
+/**
+ * What the draw field says when it holds more than the source can pay: its
+ * balance, less any other withdrawals and conversion from the same account.
+ */
+export function drawLimitNote(inputs: USDrawdownYearInput, typed: number): string | null {
+  const source = sourceName(inputs.draw_source, inputs.draw_owner, inputs.draw_account);
+  const after = sharesTraditionalAccount(inputs)
+    ? " after other withdrawals and Roth conversions"
+    : "";
+  return drawLimitNoteIn(dollars, typed, sourceBalance(inputs), `${source}${after}`);
 }
 
 /** Keeps the draw inside what the chosen source holds. */

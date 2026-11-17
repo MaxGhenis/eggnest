@@ -3,6 +3,24 @@
  * amount; these read amounts off its sweep and lay out the chart.
  */
 
+import { ApiError, NetworkError, TimeoutError } from "./api";
+
+/** A range of draws, as the API's bands give it. */
+export interface DrawSpan {
+  draw_from: number;
+  draw_to: number;
+}
+
+/** A band of the API's, which marks where a tax or benefit jumps. */
+export interface MarkedSpan extends DrawSpan {
+  jump?: boolean;
+}
+
+/** Draws are money: two that agree to the penny are the same draw. */
+export function sameDraw(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.005;
+}
+
 function isAmounts(value: unknown): value is Record<string, number> {
   return (
     typeof value === "object" &&
@@ -12,26 +30,18 @@ function isAmounts(value: unknown): value is Record<string, number> {
   );
 }
 
-/**
- * The result at any draw, read along the straight line between sweep rows.
- * Amounts nested one level down, such as benefits by program, follow the same
- * line.
- */
-export function rowAt<Row extends { draw: number }>(sweep: readonly Row[], draw: number): Row {
-  const first = sweep[0];
-  const last = sweep[sweep.length - 1];
-  if (draw <= first.draw) return first;
-  if (draw >= last.draw) return last;
-  let low = 0;
-  let high = sweep.length - 1;
-  while (high - low > 1) {
-    const middle = (low + high) >> 1;
-    if (sweep[middle].draw <= draw) low = middle;
-    else high = middle;
+/** A copy of a row at another draw, with its nested amounts copied too. */
+function movedTo<Row extends { draw: number }>(row: Row, draw: number): Row {
+  const copy = { ...row, draw };
+  for (const key of Object.keys(row) as (keyof Row)[]) {
+    const value = row[key];
+    if (isAmounts(value)) copy[key] = { ...value } as Row[keyof Row];
   }
-  const a = sweep[low];
-  const b = sweep[high];
-  if (a.draw === draw) return a;
+  return copy;
+}
+
+/** The row at a draw on the straight line through two rows, nested amounts included. */
+function along<Row extends { draw: number }>(a: Row, b: Row, draw: number): Row {
   const share = (draw - a.draw) / (b.draw - a.draw);
   const row = { ...a, draw };
   for (const key of Object.keys(a) as (keyof Row)[]) {
@@ -51,11 +61,187 @@ export function rowAt<Row extends { draw: number }>(sweep: readonly Row[], draw:
   return row;
 }
 
+/**
+ * The result at any draw, read along the straight line between sweep rows.
+ * Amounts nested one level down, such as benefits by program, follow the same
+ * line. Between two rows inside a band the API marks as a jump, that line
+ * would give a figure no draw yields, so this takes the nearer row's side of
+ * the jump: the line through the nearer row and the row beyond it, carried to
+ * the draw. Those figures are ones a draw on that side yields, and they add up
+ * as the rows do. The API places the jump only to within the band, so they
+ * can still be the other side's until the API answers for the draw. A jump
+ * at either end of the sweep has no row beyond it, so there this gives the
+ * nearer row's figures as they are. The API's own rows come back as they are.
+ */
+export function rowAt<Row extends { draw: number }>(
+  sweep: readonly Row[],
+  draw: number,
+  bands: readonly MarkedSpan[] = [],
+): Row {
+  const first = sweep[0];
+  const last = sweep[sweep.length - 1];
+  if (draw <= first.draw) return first;
+  if (draw >= last.draw) return last;
+  let low = 0;
+  let high = sweep.length - 1;
+  while (high - low > 1) {
+    const middle = (low + high) >> 1;
+    if (sweep[middle].draw <= draw) low = middle;
+    else high = middle;
+  }
+  const a = sweep[low];
+  const b = sweep[high];
+  if (a.draw === draw) return a;
+  const inJump = (x: Row, y: Row) =>
+    bands.some((band) => band.jump && band.draw_from <= x.draw && y.draw <= band.draw_to);
+  if (!inJump(a, b)) return along(a, b, draw);
+  const nearA = draw - a.draw <= b.draw - draw;
+  const [x, y] = nearA ? [sweep[low - 1], a] : [b, sweep[high + 1]];
+  if (x && y && !inJump(x, y)) return along(x, y, draw);
+  return movedTo(nearA ? a : b, draw);
+}
+
 /** "a", "a and b", "a, b and c". */
 export function joined(parts: string[]): string {
   return parts.length < 2
     ? (parts[0] ?? "")
     : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/** The API's row at this draw, if it returned one. */
+export function rowOn<Row extends { draw: number }>(
+  sweep: readonly Row[],
+  draw: number,
+): Row | null {
+  let low = 0;
+  let high = sweep.length - 1;
+  while (low <= high) {
+    const middle = (low + high) >> 1;
+    if (sameDraw(sweep[middle].draw, draw)) return sweep[middle];
+    if (sweep[middle].draw < draw) low = middle + 1;
+    else high = middle - 1;
+  }
+  return null;
+}
+
+/**
+ * The rows for the turning-points table: the API's own row at each band edge
+ * and at the draw, once each, lowest first. A draw the API holds no row for
+ * (one past the sweep's top, or a new draw before the API answers) stays out
+ * rather than be read off a line.
+ */
+export function turningPoints<Row extends { draw: number }>(
+  sweep: readonly Row[],
+  bands: readonly MarkedSpan[],
+  draw: number,
+): Row[] {
+  const rows = new Set<Row>();
+  for (const amount of [...bands.flatMap((band) => [band.draw_from, band.draw_to]), draw]) {
+    const row = rowOn(sweep, amount);
+    if (row) rows.add(row);
+  }
+  return [...rows].sort((a, b) => a.draw - b.draw);
+}
+
+/**
+ * True while the figures on show can't be the API's for the inputs on the
+ * page: a run for other figures; a draw past the top of its sweep, where the
+ * page would repeat the top row's figures; or a draw between the rows of a
+ * band the API marks as a jump, where it doesn't know which side of the jump
+ * the draw falls.
+ */
+export function resultIsStale(
+  runBaseKey: string,
+  baseKey: string,
+  sweep: readonly { draw: number }[],
+  draw: number,
+  bands: readonly MarkedSpan[] = [],
+): boolean {
+  if (runBaseKey !== baseKey || draw > sweep[sweep.length - 1].draw + 0.005) return true;
+  return (
+    rowOn(sweep, draw) === null &&
+    bands.some((band) => band.jump && band.draw_from < draw && draw < band.draw_to)
+  );
+}
+
+/** What the draw field says when it holds more than the source the draw comes from. */
+export function drawLimitNote(
+  format: (value: number) => string,
+  draw: number,
+  balance: number,
+  source: string,
+): string | null {
+  if (!(balance > 0) || draw <= balance + 0.005) return null;
+  return `You can draw up to ${format(balance)} from ${source}, so we use ${format(balance)}.`;
+}
+
+/** Why a run failed, in words that say what to do next. */
+export function failureMessage(error: unknown): string {
+  if (error instanceof NetworkError) {
+    return "We couldn’t reach the calculator. Check your connection and try again.";
+  }
+  if (error instanceof TimeoutError) {
+    return "The calculator took too long to answer. Try again.";
+  }
+  if (error instanceof ApiError && error.statusCode === 503) {
+    return "The calculator isn’t running right now. Try again later.";
+  }
+  if (error instanceof ApiError && error.statusCode !== undefined) {
+    return "The calculator couldn’t work out this year. Try again, or change a figure.";
+  }
+  return "We couldn’t work this out. Try again.";
+}
+
+/** Two neighbouring bands as one, each rate weighted by its band's width. */
+export function joinBands<Band extends DrawSpan & { jump?: boolean }>(a: Band, b: Band): Band {
+  const left = a.draw_to - a.draw_from;
+  const right = b.draw_to - b.draw_from;
+  const joined = { ...a, draw_to: b.draw_to };
+  for (const key of Object.keys(a) as (keyof Band)[]) {
+    const x = a[key];
+    const y = b[key];
+    if (key !== "draw_from" && key !== "draw_to" && typeof x === "number" && typeof y === "number") {
+      joined[key] = ((x * left + y * right) / (left + right)) as Band[keyof Band];
+    }
+  }
+  if ("jump" in a) joined.jump = false;
+  return joined;
+}
+
+/**
+ * The API's bands for the ladder. A band the API marks as a jump stands alone
+ * and shows as a step; neighbours that read the same join.
+ */
+export function ladderRowsOf<Band extends DrawSpan & { jump: boolean }>(
+  bands: readonly Band[],
+  same: (a: Band, b: Band) => boolean,
+): (Band & { step: boolean })[] {
+  const rows: (Band & { step: boolean })[] = [];
+  for (const band of bands) {
+    const last = rows[rows.length - 1];
+    if (last && !last.step && !band.jump && same(last, band)) {
+      rows[rows.length - 1] = { ...joinBands<Band>(last, band), step: false };
+    } else {
+      rows.push({ ...band, step: band.jump });
+    }
+  }
+  return rows;
+}
+
+/** A ladder row's draw amounts, in words; a jump by where it lands. */
+export function ladderRangeIn(
+  format: (value: number) => string,
+  rows: readonly (DrawSpan & { step: boolean })[],
+  index: number,
+  balance: number,
+): string {
+  const row = rows[index];
+  if (row.step) {
+    // A jump placed to the penny lands there; a wider one lies somewhere in it.
+    const exact = row.draw_to - row.draw_from <= 0.015;
+    return `At ${exact ? "" : "about "}${format(row.draw_to)}`;
+  }
+  return bandRangeIn(format, rows, index, balance);
 }
 
 /** A band's draw amounts, in words. The sweep can stop short of a large balance. */
@@ -84,6 +270,56 @@ export function drawStep(top: number): number {
   if (top <= 30_000) return 50;
   if (top <= 120_000) return 100;
   return 500;
+}
+
+/**
+ * The draw a key moves the slider to, or null to leave the key alone. Keys
+ * step along the slider's grid, and the top of the range is a stop of its own
+ * even off the grid, so the keyboard reaches a balance such as £10,025.
+ */
+export function keyedDraw(key: string, draw: number, top: number, step: number): number | null {
+  // The grid point just below or just above a value, kept inside 0 to top.
+  const below = (value: number) => Math.max(Math.ceil(value / step - 1e-9) - 1, 0) * step;
+  const above = (value: number) => Math.min((Math.floor(value / step + 1e-9) + 1) * step, top);
+  switch (key) {
+    case "Home":
+      return 0;
+    case "End":
+      return top;
+    case "ArrowRight":
+    case "ArrowUp":
+      return draw >= top ? top : above(draw);
+    case "ArrowLeft":
+    case "ArrowDown":
+      return draw <= 0 ? 0 : below(draw);
+    case "PageUp":
+      return draw >= top ? top : above(draw + 9 * step);
+    case "PageDown":
+      return draw <= 0 ? 0 : below(Math.max(draw - 9 * step, 0));
+    default:
+      return null;
+  }
+}
+
+/** Room a marker's label needs, before the page has measured it: 12 px text. */
+export function estimatedLabelWidth(label: string): number {
+  return label.length * 6.6;
+}
+
+/**
+ * Where a marker's label goes: just right of its line if it fits there, else
+ * just left of it, else as near its line as the chart's edges allow.
+ */
+export function labelPlacement(
+  lineX: number,
+  labelWidth: number,
+  width: number,
+  gap = 5,
+  edge = 2,
+): { x: number; anchor: "start" | "end" } {
+  if (lineX + gap + labelWidth <= width - edge) return { x: lineX + gap, anchor: "start" };
+  if (lineX - gap - labelWidth >= edge) return { x: lineX - gap, anchor: "end" };
+  return { x: Math.max(Math.min(lineX + gap, width - edge - labelWidth), 0), anchor: "start" };
 }
 
 /** Round axis values across a range; always at least the two ends' worth. */
