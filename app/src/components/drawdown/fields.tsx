@@ -5,10 +5,16 @@ import { useId, useState, type ReactNode } from "react";
 export const INPUT_CLASS =
   "w-full rounded-[var(--radius-sm)] border border-[var(--color-border-strong)] bg-[var(--color-bg-card)] px-3 py-2 text-base";
 
-/** Reads an amount typed with or without a currency or percent sign or commas. */
+/**
+ * Reads an amount typed with or without a currency or percent sign or commas,
+ * to the two decimals the field shows once it loses focus: half up on the
+ * decimal typed, as the API rounds money (api/eggnest/money.py), so 0.125
+ * reads as 0.13 on the page and in the API alike.
+ */
 export function parseAmount(text: string): number {
   const value = Number(text.replace(/[£$%,\s]/g, ""));
-  return Number.isFinite(value) && value > 0 ? value : 0;
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Number(value.toLocaleString("en-US", { maximumFractionDigits: 2, useGrouping: false }));
 }
 
 function grouped(value: number): string {
