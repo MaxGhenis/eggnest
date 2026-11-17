@@ -298,8 +298,9 @@ def _given_back(at, size, stretch, before, after, extra=0.0):
     ``after`` for ``stretch``, then ``before`` again until it has given the
     jump back, and ``extra`` more of draw, then ``after``: the Personal
     Savings Allowance's fall at the higher rate (ITA 2007 s.12B), in cents.
-    The line past the give-back meets the line before the jump ``extra``
-    short of ``at``."""
+    The line past the give-back, before * x + (after - before) * (x - at -
+    extra), meets the line before the jump, before * x, ``extra`` past
+    ``at``: short of it for a negative ``extra``."""
     kink = at + stretch
     back = kink + size / (after - before) + extra
 
